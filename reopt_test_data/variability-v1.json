@@ -1,0 +1,559 @@
+{
+ "url": "https://reopt.nlr.gov/tool/results/53747394-abf9-4aa6-860d-485b2d8f84d7",
+ "rows": {
+  "Grid Serving Load (kWh)": [
+   "6,492,853"
+  ],
+  "Grid Charging Battery (kWh)": [
+   "0"
+  ],
+  "Grid Total Electricity Consumed (kWh)": [
+   "6,492,853"
+  ],
+  "PV Serving Load (kWh)": [
+   "1,507,147"
+  ],
+  "PV Charging Battery (kWh)": [
+   "0"
+  ],
+  "PV Exported to Grid (kWh)": [
+   "0"
+  ],
+  "PV Curtailment (kWh)": [
+   "2,180"
+  ],
+  "PV Total Electricity Produced (kWh)": [
+   "1,509,327"
+  ],
+  "Distributed Energy Resources": [
+   "Total nameplate capacity (Optimized)",
+   "Number of units",
+   "Nameplate capacity per unit",
+   "Total nameplate capacity"
+  ],
+  "PV (kW DC)": [
+   "1,200 kW DC",
+   "1",
+   "kW DC",
+   "1,200 kW DC"
+  ],
+  "PV Size": [
+   "0 kW",
+   "1,200 kW",
+   "1,200 kW"
+  ],
+  "Average Annual PV Energy Production": [
+   "0 kWh",
+   "1,509,327 kWh",
+   "1,509,327 kWh"
+  ],
+  "Average Annual Energy Supplied from Grid": [
+   "8,000,000 kWh",
+   "6,492,853 kWh",
+   "-1,507,147 kWh"
+  ],
+  "Annual Renewable Electricity (% of electricity consumption)": [
+   "0%",
+   "19%",
+   "19%"
+  ],
+  "Avoided CO2e Emissions throughout Analysis Period": [
+   "N/A",
+   "3,213 tonnes",
+   "3,213 tonnes"
+  ],
+  "Avoided NOx Emissions throughout Analysis Period": [
+   "N/A",
+   "5.67 tonnes",
+   "5.67 tonnes"
+  ],
+  "Avoided SO2 Emissions throughout Analysis Period": [
+   "N/A",
+   "6.44 tonnes",
+   "6.44 tonnes"
+  ],
+  "Avoided PM2.5 Emissions throughout Analysis Period": [
+   "N/A",
+   "0.98 tonnes",
+   "0.98 tonnes"
+  ],
+  "Utility Export Benefit": [
+   "$0",
+   "$0",
+   "$0"
+  ],
+  "Utility Energy Cost": [
+   "$2,157,384",
+   "$1,750,947",
+   "-$406,437"
+  ],
+  "Utility Demand Cost": [
+   "$0",
+   "$0",
+   "$0"
+  ],
+  "Utility Fixed Cost": [
+   "$467",
+   "$467",
+   "$0"
+  ],
+  "Utility Minimum Cost Adder": [
+   "$0",
+   "$0",
+   "$0"
+  ],
+  "Total Year 1 Utility Cost - Before Tax": [
+   "$2,157,851",
+   "$1,751,414",
+   "-$406,437"
+  ],
+  "Technology Capital Costs + Replacements, After Incentives": [
+   "$0",
+   "$1,067,830",
+   "$1,067,830"
+  ],
+  "O&M Costs": [
+   "$0",
+   "$330,164",
+   "$330,164"
+  ],
+  "Total Utility Electricity Cost": [
+   "$29,685,233",
+   "$24,093,942",
+   "-$5,591,292"
+  ],
+  "Total Production-Based Incentive": [
+   "$0",
+   "$0",
+   "$0"
+  ],
+  "Cost of Climate Emissions throughout Analysis Period (If Included in Objective)": [
+   "$0",
+   "$0",
+   "$0"
+  ],
+  "Cost of Health Emissions throughout Analysis Period (If Included in Objective)": [
+   "$0",
+   "$0",
+   "$0"
+  ],
+  "Total Upfront Capital Cost Before Incentives": [
+   "$0",
+   "$2,100,000",
+   "$2,100,000"
+  ],
+  "Year 1 O&M Cost, Before Tax": [
+   "$0",
+   "$24,000",
+   "$24,000"
+  ],
+  "Total Life Cycle Costs": [
+   "$29,685,233",
+   "$25,491,936",
+   "-$4,193,297"
+  ],
+  "Net Present Value": [
+   "$0",
+   "$4,193,297",
+   "$4,193,297"
+  ],
+  "Payback Period": [
+   "N/A",
+   "3.36 yrs",
+   "3.36 yrs"
+  ],
+  "Internal Rate of Return": [
+   "N/A",
+   "26.0%",
+   "26.0%"
+  ],
+  "PV Levelized Cost of Energy": [
+   "N/A",
+   "$0.067/kWh",
+   "$0.067/kWh"
+  ],
+  "Cost of Climate Emissions throughout Analysis Period": [
+   "$843,415",
+   "$716,072",
+   "-$127,343"
+  ],
+  "Cost of Health Emissions throughout Analysis Period": [
+   "$4,259,313",
+   "$3,428,471",
+   "-$830,842"
+  ],
+  "Average Annual Emissions (t CO2e)": [
+   "709",
+   "602",
+   "-107"
+  ],
+  "Average Annual Emissions from Grid Purchases (t CO2e)": [
+   "709",
+   "602",
+   "-107"
+  ],
+  "Average Annual Emissions from Onsite Fuel Burn (t CO2e)": [
+   "0",
+   "0",
+   "0"
+  ],
+  "Total Emissions throughout Analysis Period (t CO2e)": [
+   "21,280",
+   "18,067",
+   "-3,213"
+  ],
+  "Emissions from Grid Purchases throughout Analysis Period (t CO2e)": [
+   "21,280",
+   "18,067",
+   "-3,213"
+  ],
+  "Emissions from Onsite Fuel Burn throughout Analysis Period (t CO2e)": [
+   "0",
+   "0",
+   "0"
+  ],
+  "Percent Reduction in CO2 Emissions from BAU (%)": [
+   "N/A",
+   "15.10%",
+   "15.10%"
+  ],
+  "Breakeven Cost of CO2e Emissions Reduction ($/t CO2e)": [
+   "N/A",
+   "N/A",
+   "N/A"
+  ],
+  "Average Annual Emissions (t NOx)": [
+   "0.97",
+   "0.79",
+   "-0.19"
+  ],
+  "Average Annual Emissions from Grid Purchases (t NOx)": [
+   "0.97",
+   "0.79",
+   "-0.19"
+  ],
+  "Average Annual Emissions from Onsite Fuel Burn (t NOx)": [
+   "0.00",
+   "0.00",
+   "0.00"
+  ],
+  "Total Emissions throughout Analysis Period (t NOx)": [
+   "29.23",
+   "23.56",
+   "-5.67"
+  ],
+  "Emissions from Grid Purchases throughout Analysis Period (t NOx)": [
+   "29.23",
+   "23.56",
+   "-5.67"
+  ],
+  "Emissions from Onsite Fuel Burn throughout Analysis Period (t NOx)": [
+   "0.00",
+   "0.00",
+   "0.00"
+  ],
+  "Average Annual Emissions (t SO2)": [
+   "1.11",
+   "0.89",
+   "-0.21"
+  ],
+  "Average Annual Emissions from Grid Purchases (t SO2)": [
+   "1.11",
+   "0.89",
+   "-0.21"
+  ],
+  "Average Annual Emissions from Onsite Fuel Burn (t SO2)": [
+   "0.00",
+   "0.00",
+   "0.00"
+  ],
+  "Total Emissions throughout Analysis Period (t SO2)": [
+   "33.17",
+   "26.73",
+   "-6.44"
+  ],
+  "Emissions from Grid Purchases throughout Analysis Period (t SO2)": [
+   "33.17",
+   "26.73",
+   "-6.44"
+  ],
+  "Emissions from Onsite Fuel Burn throughout Analysis Period (t SO2)": [
+   "0.00",
+   "0.00",
+   "0.00"
+  ],
+  "Average Annual Emissions (t PM2.5)": [
+   "0.17",
+   "0.13",
+   "-0.03"
+  ],
+  "Average Annual Emissions from Grid Purchases (t PM2.5)": [
+   "0.17",
+   "0.13",
+   "-0.03"
+  ],
+  "Average Annual Emissions from Onsite Fuel Burn (t PM2.5)": [
+   "0.00",
+   "0.00",
+   "0.00"
+  ],
+  "Total Emissions throughout Analysis Period (t PM2.5)": [
+   "4.97",
+   "3.99",
+   "-0.98"
+  ],
+  "Emissions from Grid Purchases throughout Analysis Period (t PM2.5)": [
+   "4.97",
+   "3.99",
+   "-0.98"
+  ],
+  "Emissions from Onsite Fuel Burn throughout Analysis Period (t PM2.5)": [
+   "0.00",
+   "0.00",
+   "0.00"
+  ],
+  "Evaluation name": [
+   "V1 debug"
+  ],
+  "Site Location": [
+   "Chicago Heights, IL, United States (41.50246, -87.64058)"
+  ],
+  "PV & wind space available": [
+   "Roofspace"
+  ],
+  "Roofspace available (sq ft)": [
+   "120,000"
+  ],
+  "URDB rate": [
+   "Northern Indiana Pub Serv Co - Commercial Spaceheating (Rate 622)"
+  ],
+  "Compensation type": [
+   "Net metering (full retail rate)"
+  ],
+  "Net metering system size limit (kW)": [
+   "1000.0"
+  ],
+  "Typical electric load profile type": [
+   "simulated building"
+  ],
+  "Type of building": [
+   "Hospital"
+  ],
+  "Annual electric energy consumption (kWh)": [
+   "8,000,000"
+  ],
+  "Analysis period (years)": [
+   "30"
+  ],
+  "Host discount rate, nominal (%)": [
+   "6%"
+  ],
+  "Electricity cost escalation rate, nominal (%/year)": [
+   "2.5%"
+  ],
+  "Cambium location": [
+   "PJM West"
+  ],
+  "Cambium Levelization Years": [
+   "30"
+  ],
+  "System capital cost ($/kW-DC)": [
+   "1750.0"
+  ],
+  "Maximum new PV size (kW-DC)": [
+   "1500.0"
+  ],
+  "Array type": [
+   "Rooftop, Fixed"
+  ],
+  "Size class": [
+   "Large Commercial (101 - 2,000 kW)"
+  ],
+  "Sector": [
+   "Commercial/Industrial"
+  ],
+  "Solver optimality tolerance (%)": [
+   "0.1%"
+  ],
+  "Solver name": [
+   "HiGHS"
+  ],
+  "Optimization timeout (seconds)": [
+   "600"
+  ],
+  "PV can net meter": [
+   "Yes"
+  ],
+  "Compensation for excess export beyond annual grid purchases ($/kWh)": [
+   "0"
+  ],
+  "Load adjustment (%)": [
+   "100%"
+  ],
+  "Host effective tax rate (%)": [
+   "26%"
+  ],
+  "O&M cost escalation rate (%/year)": [
+   "2.5%"
+  ],
+  "Minimum capital cost, before incentives ($)": [
+   "None"
+  ],
+  "Maximum capital cost, before incentives ($)": [
+   "None"
+  ],
+  "Third Party Ownership": [
+   "No"
+  ],
+  "Third-party owner discount rate, nominal (%)": [
+   "6.24%"
+  ],
+  "Third-party owner effective tax rate (%)": [
+   "26%"
+  ],
+  "EPA's AVERT Region": [
+   "Mid-Atlantic"
+  ],
+  "Geographic resolution": [
+   "GEA Regions 2023"
+  ],
+  "Metric": [
+   "LRMER CO2e Combined"
+  ],
+  "Grid scenario": [
+   "Mid-case"
+  ],
+  "Use emissions averaged over the analysis period?": [
+   "Yes"
+  ],
+  "Cambium start year": [
+   "2025"
+  ],
+  "Include distribution losses?": [
+   "Enduse"
+  ],
+  "Projected annual percent decrease in grid health emissions factors (%/year)": [
+   "4.590%"
+  ],
+  "Count exported renewable electricity towards renewable energy goals?": [
+   "true"
+  ],
+  "Count exported electricity towards emissions offsets?": [
+   "true"
+  ],
+  "CO₂ cost ($/t CO₂)": [
+   "51.0"
+  ],
+  "On-site fuel burn NOx cost ($/t NOx)": [
+   "52,724.02"
+  ],
+  "On-site fuel burn SO₂ cost ($/t SO₂)": [
+   "66,787.20"
+  ],
+  "On-site fuel burn PM2.5 cost ($/t PM2.5)": [
+   "700,708.49"
+  ],
+  "Grid emissions NOx cost ($/t NOx)": [
+   "41,725.37"
+  ],
+  "Grid emissions SO₂ cost ($/t SO₂)": [
+   "66,503.29"
+  ],
+  "Grid emissions PM2.5 cost ($/t PM2.5)": [
+   "383,831.71"
+  ],
+  "CO₂ cost escalation rate, nominal (%)": [
+   "4.22%"
+  ],
+  "NOx cost escalation rate, nominal (%)": [
+   "3.44%"
+  ],
+  "SO₂ cost escalation rate, nominal (%)": [
+   "4.12%"
+  ],
+  "PM2.5 cost escalation rate, nominal (%)": [
+   "4.03%"
+  ],
+  "O&M cost ($/kW-DC per year)": [
+   "$20"
+  ],
+  "Minimum new PV size (kW-DC)": [
+   "0"
+  ],
+  "Module type": [
+   "Standard"
+  ],
+  "Array azimuth (deg)": [
+   "180"
+  ],
+  "Array tilt (deg)": [
+   "20"
+  ],
+  "DC to AC size ratio": [
+   "1.2"
+  ],
+  "System losses (%)": [
+   "14%"
+  ],
+  "PV Station Search Radius (mi)": [
+   "Unlimited"
+  ],
+  "Rooftop power density (kW-DC per square foot)": [
+   "0.01"
+  ],
+  "Federal percentage-based incentive (%)": [
+   "30%"
+  ],
+  "Federal maximum incentive (%)": [
+   "Unlimited"
+  ],
+  "Federal rebate ($/kW-DC)": [
+   "$0"
+  ],
+  "Federal maximum rebate ($)": [
+   "Unlimited"
+  ],
+  "State percentage-based incentive (%)": [
+   "0%"
+  ],
+  "State maximum incentive ($)": [
+   "Unlimited"
+  ],
+  "State rebate ($/kW-DC)": [
+   "$0"
+  ],
+  "State maximum rebate ($)": [
+   "Unlimited"
+  ],
+  "Utility percentage-based incentive (%)": [
+   "0%"
+  ],
+  "Utility maximum incentive ($)": [
+   "Unlimited"
+  ],
+  "Utility rebate ($/kW-DC)": [
+   "$0"
+  ],
+  "Utility maximum rebate ($)": [
+   "Unlimited"
+  ],
+  "Production incentive ($/kWh)": [
+   "$0"
+  ],
+  "Incentive duration (years)": [
+   "1"
+  ],
+  "Maximum incentive ($)": [
+   "Unlimited"
+  ],
+  "System size limit (kW-DC)": [
+   "Unlimited"
+  ],
+  "MACRS bonus depreciation": [
+   "100%"
+  ],
+  "MACRS schedule": [
+   "5 years"
+  ]
+ }
+}

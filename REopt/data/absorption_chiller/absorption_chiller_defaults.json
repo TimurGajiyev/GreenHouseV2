@@ -1,0 +1,49 @@
+{
+    "hot_water":{
+        "installed_cost_per_ton": [
+            7000.0,
+            4500.0,
+            2300.0,
+            1850.0,
+            1600.0
+        ],
+        "tech_sizes_for_cost_data": [
+            10,
+            50,
+            250,
+            500,
+            1000
+        ],
+        "om_cost_per_ton":[
+            500.0,
+            150.0,
+            40.0,
+            30.0,
+            20.0
+        ],
+        "cop_thermal": 0.74,
+        "heating_load_input": "DomesticHotWater"
+    },
+    "steam":{
+        "installed_cost_per_ton": [
+            3200.0,
+            2150.0,
+            1650.0,
+            1300.0
+        ],
+        "tech_sizes_for_cost_data": [
+            200,
+            500,
+            1000,
+            2000
+        ],
+        "om_cost_per_ton":[
+            50.0,
+            36.0,
+            26.0,
+            16.0
+        ],
+        "cop_thermal":1.42,
+        "heating_load_input": "DomesticHotWater"
+    }
+}

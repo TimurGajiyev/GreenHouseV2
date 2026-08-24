@@ -1,0 +1,44 @@
+{
+    "Site": {
+        "latitude": 37.78,
+        "longitude": -122.45
+    },
+    "ElectricLoad": {
+        "doe_reference_name": "Hospital"
+    },
+    "SpaceHeatingLoad": {
+        "doe_reference_name": "LargeOffice",
+        "annual_mmbtu": 5000
+    },
+    "DomesticHotWaterLoad": {
+        "doe_reference_name": "LargeOffice",
+        "annual_mmbtu": 5000
+    },    
+    "CoolingLoad": {
+        "doe_reference_name": "LargeOffice"
+    },    
+    "ElectricTariff": {
+        "blended_annual_energy_rate": 0.1,
+        "blended_annual_demand_rate": 10
+    },
+    "ExistingChiller": {
+    },
+    "ElectricUtility" : {
+        "co2_from_avert" : true
+    },
+    "ExistingBoiler": {
+        "fuel_cost_per_mmbtu": [11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11],
+        "production_type": "hot_water"
+    },
+    "PV": {
+        "max_kw": 0
+    },    
+    "Storage": {
+        "max_kwh": 0,
+        "max_kw": 0
+    },
+    "CHP": {
+        "prime_mover": "recip_engine",
+        "fuel_cost_per_mmbtu": 10
+    }
+}

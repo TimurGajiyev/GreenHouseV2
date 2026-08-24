@@ -1,0 +1,290 @@
+{
+  "FlatLoad_8_7": {
+    "V": {
+      "name": "V",
+      "desc": "vendor design as specified [FlatLoad_8_7]",
+      "pv_kw": 1500.0,
+      "battery_kw": 1500.0,
+      "battery_kwh": 3132.0,
+      "gen_kw": 1000.0,
+      "lcc": 2213003.4034474515,
+      "peak_kw": 875.0,
+      "annual_kwh": 2555000.0,
+      "pv_kwh": 2716673.346794077,
+      "pv_curtailed_kwh": 261325.51833972402,
+      "diesel_kwh": 138825.07236679306,
+      "diesel_gal": 10592.967201824671,
+      "diesel_litres": 40098.742873312614,
+      "co2_tonnes": 108.1541951306299,
+      "upfront": 1516800.0,
+      "breakdown": {
+        "grid_serving_load": 0.0,
+        "grid_charging_battery": 0.0,
+        "grid_total": 0.0,
+        "pv_serving_load": 2068927.7690976297,
+        "pv_charging_battery": 386420.0593567236,
+        "pv_exported": 0.0,
+        "pv_curtailed": 261325.51833972402,
+        "pv_total": 2716673.346794077,
+        "battery_serving_load": 347221.60853557754,
+        "battery_exported": 0.0,
+        "fueltech_serving_load": 138825.07236679306
+      }
+    },
+    "O": {
+      "name": "O",
+      "desc": "same prices, optimizer sizes [FlatLoad_8_7]",
+      "pv_kw": 1606.173264872415,
+      "battery_kw": 695.849199938728,
+      "battery_kwh": 1452.9331294720641,
+      "gen_kw": 523.3056279145189,
+      "lcc": 1725402.1117112113,
+      "peak_kw": 875.0,
+      "annual_kwh": 2555000.0,
+      "pv_kwh": 2908965.399341409,
+      "pv_curtailed_kwh": 466030.28430287895,
+      "diesel_kwh": 151760.8639661875,
+      "diesel_gal": 11580.025330488766,
+      "diesel_litres": 43835.16434505067,
+      "co2_tonnes": 118.23205862429032,
+      "upfront": 1084159.6772566359,
+      "breakdown": {
+        "grid_serving_load": 0.0,
+        "grid_charging_battery": 0.0,
+        "grid_total": 0.0,
+        "pv_serving_load": 2051358.5278469152,
+        "pv_charging_battery": 391576.58719161485,
+        "pv_exported": 0.0,
+        "pv_curtailed": 466030.28430287895,
+        "pv_total": 2908965.399341409,
+        "battery_serving_load": 351855.05818689783,
+        "battery_exported": 0.0,
+        "fueltech_serving_load": 151760.8639661875
+      }
+    },
+    "D": {
+      "name": "D",
+      "desc": "diesel only (the counterfactual) [FlatLoad_8_7]",
+      "pv_kw": 0.0,
+      "battery_kw": 0.0,
+      "battery_kwh": 0.0,
+      "gen_kw": 962.4903749999503,
+      "lcc": 5562176.367679455,
+      "peak_kw": 875.0,
+      "annual_kwh": 2555000.0,
+      "pv_kwh": 0.0,
+      "pv_curtailed_kwh": 0.0,
+      "diesel_kwh": 2554974.449999868,
+      "diesel_gal": 194955.8540754092,
+      "diesel_litres": 737988.1873768384,
+      "co2_tonnes": 1990.4992701099281,
+      "upfront": 295003.2999374848,
+      "breakdown": {
+        "grid_serving_load": 0.0,
+        "grid_charging_battery": 0.0,
+        "grid_total": 0.0,
+        "pv_serving_load": 0.0,
+        "pv_charging_battery": 0.0,
+        "pv_exported": 0.0,
+        "pv_curtailed": 0.0,
+        "pv_total": 0.0,
+        "battery_serving_load": 0.0,
+        "battery_exported": 0.0,
+        "fueltech_serving_load": 2554974.449999868
+      }
+    },
+    "raw": {
+      "V": {
+        "pv_kw": 1500.0,
+        "battery_kw": 1500.0,
+        "battery_kwh": 3132.0,
+        "fueltech_kw": 1000.0,
+        "fueltech_kind": "Diesel Generator"
+      },
+      "O": {
+        "pv_kw": 1606.173264872415,
+        "battery_kw": 695.849199938728,
+        "battery_kwh": 1452.9331294720641,
+        "fueltech_kw": 523.3056279145189,
+        "fueltech_kind": "Diesel Generator"
+      },
+      "D": {
+        "pv_kw": 0.0,
+        "battery_kw": 0.0,
+        "battery_kwh": 0.0,
+        "fueltech_kw": 962.4903749999503,
+        "fueltech_kind": "Diesel Generator"
+      }
+    }
+  },
+  "FlatLoad_16_7": {
+    "V": {
+      "name": "V",
+      "desc": "vendor design as specified [FlatLoad_16_7]",
+      "pv_kw": 1500.0,
+      "battery_kw": 1500.0,
+      "battery_kwh": 3132.0,
+      "gen_kw": 1000.0,
+      "lcc": 2482149.8863571524,
+      "peak_kw": 437.5,
+      "annual_kwh": 2555000.0,
+      "pv_kwh": 2716673.346794077,
+      "pv_curtailed_kwh": 342695.33809449605,
+      "diesel_kwh": 271190.71955779684,
+      "diesel_gal": 20693.05168539662,
+      "diesel_litres": 78331.72169682142,
+      "co2_tonnes": 211.2760577078995,
+      "upfront": 1516800.0,
+      "breakdown": {
+        "grid_serving_load": 0.0,
+        "grid_charging_battery": 0.0,
+        "grid_total": 0.0,
+        "pv_serving_load": 1484838.8302948333,
+        "pv_charging_battery": 889139.1784047477,
+        "pv_exported": 0.0,
+        "pv_curtailed": 342695.33809449605,
+        "pv_total": 2716673.346794077,
+        "battery_serving_load": 798944.9001473698,
+        "battery_exported": 0.0,
+        "fueltech_serving_load": 271190.71955779684
+      }
+    },
+    "O": {
+      "name": "O",
+      "desc": "same prices, optimizer sizes [FlatLoad_16_7]",
+      "pv_kw": 1725.783526375123,
+      "battery_kw": 1685.1321557350554,
+      "battery_kwh": 3518.555941174796,
+      "gen_kw": 126.267241728028,
+      "lcc": 2061024.6119992763,
+      "peak_kw": 437.5,
+      "annual_kwh": 2555000.0,
+      "pv_kwh": 3125593.405626394,
+      "pv_curtailed_kwh": 588798.7265396102,
+      "diesel_kwh": 122934.45357093366,
+      "diesel_gal": 9380.442685529146,
+      "diesel_litres": 35508.83828093863,
+      "co2_tonnes": 95.77431981925258,
+      "upfront": 1414557.120495146,
+      "breakdown": {
+        "grid_serving_load": 0.0,
+        "grid_charging_battery": 0.0,
+        "grid_total": 0.0,
+        "pv_serving_load": 1504118.3910572426,
+        "pv_charging_battery": 1032676.2880295408,
+        "pv_exported": 0.0,
+        "pv_curtailed": 588798.7265396102,
+        "pv_total": 3125593.405626394,
+        "battery_serving_load": 927921.6053718237,
+        "battery_exported": 0.0,
+        "fueltech_serving_load": 122934.45357093366
+      }
+    },
+    "D": {
+      "name": "D",
+      "desc": "diesel only (the counterfactual) [FlatLoad_16_7]",
+      "pv_kw": 0.0,
+      "battery_kw": 0.0,
+      "battery_kwh": 0.0,
+      "gen_kw": 481.24518749996577,
+      "lcc": 5378674.497716008,
+      "peak_kw": 437.5,
+      "annual_kwh": 2555000.0,
+      "pv_kwh": 0.0,
+      "pv_curtailed_kwh": 0.0,
+      "diesel_kwh": 2554974.449999818,
+      "diesel_gal": 194955.8540754054,
+      "diesel_litres": 737988.187376824,
+      "co2_tonnes": 1990.4992701098893,
+      "upfront": 147501.6499687395,
+      "breakdown": {
+        "grid_serving_load": 0.0,
+        "grid_charging_battery": 0.0,
+        "grid_total": 0.0,
+        "pv_serving_load": 0.0,
+        "pv_charging_battery": 0.0,
+        "pv_exported": 0.0,
+        "pv_curtailed": 0.0,
+        "pv_total": 0.0,
+        "battery_serving_load": 0.0,
+        "battery_exported": 0.0,
+        "fueltech_serving_load": 2554974.449999818
+      }
+    },
+    "raw": {
+      "V": {
+        "pv_kw": 1500.0,
+        "battery_kw": 1500.0,
+        "battery_kwh": 3132.0,
+        "fueltech_kw": 1000.0,
+        "fueltech_kind": "Diesel Generator"
+      },
+      "O": {
+        "pv_kw": 1725.783526375123,
+        "battery_kw": 1685.1321557350554,
+        "battery_kwh": 3518.555941174796,
+        "fueltech_kw": 126.267241728028,
+        "fueltech_kind": "Diesel Generator"
+      },
+      "D": {
+        "pv_kw": 0.0,
+        "battery_kw": 0.0,
+        "battery_kwh": 0.0,
+        "fueltech_kw": 481.24518749996577,
+        "fueltech_kind": "Diesel Generator"
+      }
+    }
+  },
+  "diesel_sensitivity": [
+    {
+      "usd_per_litre": 0.45,
+      "usd_per_kwh": 0.12997964982373678,
+      "pv_kw": 1397.7500122717884,
+      "battery_kwh": 1069.528116917911,
+      "gen_kw": 607.6699586783315,
+      "lcc_optimized": 1515671.4243960392,
+      "lcc_diesel_only": 2964183.4281153823,
+      "saving": 1448512.003719343
+    },
+    {
+      "usd_per_litre": 0.7,
+      "usd_per_kwh": 0.2021905663924794,
+      "pv_kw": 1497.2193112891266,
+      "battery_kwh": 1241.3223740707429,
+      "gen_kw": 569.5277758769653,
+      "lcc_optimized": 1645216.5445614827,
+      "lcc_diesel_only": 4407061.032665455,
+      "saving": 2761844.488103972
+    },
+    {
+      "usd_per_litre": 0.9,
+      "usd_per_kwh": 0.25995929964747355,
+      "pv_kw": 1606.173264872415,
+      "battery_kwh": 1452.9331294720635,
+      "gen_kw": 523.3056279145192,
+      "lcc_optimized": 1725353.8060495919,
+      "lcc_diesel_only": 5561363.11630498,
+      "saving": 3836009.310255388
+    },
+    {
+      "usd_per_litre": 1.2,
+      "usd_per_kwh": 0.3466123995299647,
+      "pv_kw": 1710.0716400216115,
+      "battery_kwh": 1757.8953214868193,
+      "gen_kw": 467.2495749747418,
+      "lcc_optimized": 1809540.6886721628,
+      "lcc_diesel_only": 7292816.2417653445,
+      "saving": 5483275.553093182
+    },
+    {
+      "usd_per_litre": 1.6,
+      "usd_per_kwh": 0.462149866039953,
+      "pv_kw": 1791.571094459437,
+      "battery_kwh": 1989.9098345839332,
+      "gen_kw": 424.5552605698769,
+      "lcc_optimized": 1892166.273400017,
+      "lcc_diesel_only": 9601420.409044754,
+      "saving": 7709254.135644737
+    }
+  ]
+}

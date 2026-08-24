@@ -1,0 +1,670 @@
+
+===== PAGE 1 =====
+Sana'a Factory, Yemen
+PV-Storage-Diesel-Storage-type
+DVR Microgrid System Technical
+Proposal
+ProjectLocation:BaniMattarDistrict,Sana'aCity,Yemen
+GeographicCoordinates:15.2811°N/44.0811°E
+Date:May2026
+===== PAGE 2 =====
+Table of Contents
+1.ProjectOverview........................................................................................................1
+1.1ProjectBackground..........................................................................................1
+1.2LoadDemand...................................................................................................1
+1.3DesignRequirements.......................................................................................1
+1.4SiteConditions.................................................................................................2
+2.SystemArchitecture...................................................................................................3
+2.1SystemComposition........................................................................................3
+2.2PrimarySystemTopology................................................................................3
+2.3SystemLayout..................................................................................................4
+3.PhotovoltaicSystemDesign......................................................................................5
+3.1InstalledCapacity.............................................................................................5
+3.2ModuleSelection..............................................................................................5
+3.3InverterConfiguration.......................................................................................5
+3.4MountingandInstallation.................................................................................5
+3.5EnergyYieldEstimation...................................................................................6
+4.BatteryEnergyStorageSystemDesign....................................................................7
+4.1InstalledCapacity.............................................................................................7
+4.2BatterySelection..............................................................................................7
+4.3PCSConfiguration............................................................................................7
+4.4SafetyandFireProtection................................................................................8
+5.DieselGeneratorSystem..........................................................................................9
+5.1InstallationScheme..........................................................................................9
+5.2TechnicalParameters.......................................................................................9
+5.3OperationStrategy.........................................................................................10
+6.Storage-typeDVRSystemDesign..........................................................................11
+6.1SystemPositioning.........................................................................................11
+6.2TechnicalSpecifications.................................................................................11
+6.3WorkingPrinciple............................................................................................11
+6.4OperationScenarios.......................................................................................11
+7.EnergyManagementSystem(EMS).......................................................................13
+7.1SystemArchitecture.......................................................................................13
+7.2CoreFunctions...............................................................................................13
+7.3CommunicationIntegration............................................................................13
+8.SystemOperationStrategies..................................................................................14
+8.1FiveWeatherConditionStrategiesandFaultModes....................................14
+8.2MorningStart-upStrategy..............................................................................16
+8.3EnergyStorageManualMaintenance(SpecialOperatingConditions)........17
+8.4DieselGeneratorIntervention/ExitLogic.......................................................17
+8.5NightOperation..............................................................................................17
+9.MainEquipmentList................................................................................................18
+9.1PVSystem......................................................................................................18
+===== PAGE 3 =====
+9.2EnergyStorageSystem.................................................................................18
+9.3DieselGeneratorandDistributionSystem....................................................19
+9.4StorageDVRandDistributionSystem...........................................................19
+9.5EnergyCoordinationManagementSystem...................................................20
+10.EconomicAnalysisandInvestmentEstimate.......................................................22
+10.1InvestmentEstimate.....................................................................................22
+10.2EconomicBenefits........................................................................................24
+11.ProjectImplementationPlan..................................................................................25
+12.RiskManagementandMitigation..........................................................................25
+13.Conclusion.............................................................................................................26
+===== PAGE 4 =====
+1/29
+1. Project Overview
+1.1 Project Background
+Thisproposaldesignsamicrogridsystemforacleanworkshopfactorylocatedin
+theBaniMattarDistrictofSana'aCity,Yemen(approximately18kmfromthecapital).
+The system comprises a photovoltaic (PV) system, a battery energy storage system
+(BESS),adieselgenerator(DG),andastorage-typedynamicvoltagerestorer(DVR).
+The system aims to achieve uninterrupted power supply during 10 working hours
+whileoptimizingthecost-performanceratioofPVandstorage,meetingthedemandof
+loadshighlysensitivetopowerquality.
+1.2 Load Demand
+NO. Load Type Power (kW) Remarks
+1 Airconditioningload 200 Constantoperation
+2 Aircompressor 200 Variablefrequencystart
+3 Automatedfillingline ~300 Includes purification,injection,
+blowmolding,filling, labeling
+4 PLCsandservo motors,
+etc. - Highly sensitivetopower
+quality
+Total Averagetotal load 650~700 Sequentialequipmentstart-up
+required
+The plant plans to install a 1000 kVA transformer and configure an 800 kW
+containerizeddieselgenerator(orreservedengineroom).Basedon10hours/dayand
+700kWtotalload,dailyaverageelectricityconsumption≥7000kWh.
+1.3 Design Requirements
+• Uninterruptedpowersupplyduring10workinghours
+• Optimalcost-performanceratiobetweenPVandstorage
+• Voltagefluctuation≤±5%,meetingsensitiveloadpowerqualityrequirements
+• WhenPVorstoragefails,dieselgeneratorrespondsimmediatelywithtransfer
+time≤5ms
+===== PAGE 5 =====
+2/29
+• StorageDVRsystemsupportsupto20minutesofemergencypower
+• PCSmusthavegrid-formingcapability
+• AllpowerelectronicdevicesshallbeintegratedintotheplantSCADAsystem
+viaModbusTCP/IP
+1.4 Site Conditions
+Parameter Value Remarks
+Latitude 15.2811°N Low-latitudetropicalhighland
+climate
+Longitude 44.0811°E
+Timezone UTC+3 Earlysunrise,latesunset,very
+longsunshineduration
+Systemefficiency 82% ComprehensivePRvalue
+Peakgeneration period 8:00-16:00 Localpeaksunshinehours
+N-type moduledegradation
+(10y) ≤8% OptimizedLCOE
+SOHBatterySOHafter10
+years ≥85% LFPchemistry
+Spring(Mar–May) Strongestsunlight,mild
+temperatures Peak annualgeneration
+Summer(Jun–Sep) Occasionalclouds,dust Slightreduction ingeneration
+Autumn/Winter(Oct–Feb) Mostlysunny,stable Steadygeneration
+===== PAGE 6 =====
+3/29
+2. System Architecture
+2.1 System Composition
+This microgrid consists of four core subsystems connectedin parallel to a 400 V
+low-voltage busbar, coordinated by an Energy Management System (EMS). The
+architectureisasfollows:
+• PVsystem:≥1500kWp,N-typemonocrystallinesiliconmodules,connected
+viathree400Vfeeders.
+• BESS:≥3132kWh,twelve261kWhoutdoorbatterycabinets+twoPCS
+cabinetsof750kWtotal,grid-formingoperation.
+• Dieselgenerator:1000kWcontainerized,autostart/stop,foremergency
+backupandpeakshaving.
+• Storage-typeDVR:800kW/375kWh,supportsupto20minutes,transfertime
+≤ 5ms,ensurespowerquality.
+2.2 Primary System Topology
+The system uses a 400 V low-voltage common busbar where all sources and
+loadsareconnectedinparallel.
+
+===== PAGE 7 =====
+4/29
+• PVsystemconnectsviagrid-followinginverterstothe400Vbus,three
+independentMPPTcontrollers.
+• BESSconnectsviagrid-formingPCS,withblack-startandislandingcapability.
+• DGconnectsviaautomatictransferswitch(ATS)andcansynchronizefor
+paralleloperation.
+• Storage-typeDVRisconnectedinseriesbetweenthebusandsensitiveloads,
+providingreal-timevoltagesupport.
+• 1000kVAtransformerservesasutilityinterface(ifavailable)orreservedgrid
+connectionpoint.
+2.3 System Layout
+ThePVarrayisinstalledonfactoryrooftopsandopenareas,usingfixed-tiltracks
+(optimal tilt ~15°). Battery cabinets are placed in a dedicated outdoor area with fire
+access. The DG is containerized or placed in a reserved room. DVR and PCS
+equipmentarelocatedinsidetheelectricalroom.
+===== PAGE 8 =====
+5/29
+3. Photovoltaic System Design
+3.1 Installed Capacity
+Total PV capacity≥1500 kWp, using N-type TOPCon or HJT high-efficiency
+monocrystalline modules with efficiency ≥ 22.5%, first-year degradation≤1%, linear
+degradation≤0.4%peryear,resultingin~8%powerreductionafter10years.
+3.2 Module Selection
+Parameter Specification Remarks
+Module type N-typeTOPCon
+monocrystalline Highefficiency,lowdegradation
+Singlemodule power 580Wp Mainstreamlarge-format
+Moduleefficiency ≥22.5% Industryleading
+First-yeardegradation ≤1%
+Annualdegradation ≤0.4% Linear
+Efficiencyafter10years ≥92% Betterthanaverage
+Estimatedquantity ≥2586pieces 1500kWp/580Wp
+Estimatedtotal area ≥8,500m² Approx.3.3m²permodule
+3.3 Inverter Configuration
+String grid-following inverters, three feeders to 400 V bus, each ~500 kWp.
+Inverter efficiency≥98.6%, support active/reactive power regulation, low-voltage
+ride-through(LVRT)capability.
+3.4 Mounting and Installation
+• Mounting:Fixed-tiltrack,optimaltilt~15°(closetolocallatitude)
+• Orientation:Truesouthtomaximizeannualyield
+• Rowspacing:Noshadingfrom9:00to15:00onwintersolstice
+• Corrosionprotection:ClassC4(fortropicalcoastalenvironments)
+===== PAGE 9 =====
+6/29
+3.5 Energy Yield Estimation
+Month
+Daily average generation
+(kWh) Remarks
+Jan,Feb,Mar,Apr,Oct,Nov,
+Dec ≥9000 Peakgeneration,strongest
+sunlight
+May,Sep ≥7500 Occasionalclouds/dust,slight
+reduction
+Jun,Jul,Aug ≥6200 Mostlysunny,stable
+generation
+Annualdaily average ≥7500 Systemefficiency82%
+Annualgeneration ≥27,375,00 Approx.1825kWh/kWp/year
+===== PAGE 10 =====
+7/29
+4. Battery Energy Storage System Design
+4.1 Installed Capacity
+Total BESS capacity≥3132 kWh, using twelve 261 kWh outdoor cabinets. Each
+cabinetintegratesLFPbatterycluster,grid-formingPCS,BMS,thermalmanagement,
+andfiresuppression.
+4.2 Battery Selection
+Parameter Specification Remarks
+Cellchemistry LFP(Lithium Iron
+Phosphate) Highsafety,longlife
+Singlecabinetcapacity 261kWh Standardizedoutdoor cabinet
+Numberofcabinets 12 套 Totalcapacity 3132kWh
+Systemtotalcapacity ≥3132kWh Meets10-hour operation
+requirement
+Cyclelife ≥6000cycles @80% DoD
+SOHafter10years ≥85% Meetsdegradation
+requirement
+Round-tripefficiency ≥85% RTE
+Operatingtemperature -20°C~+55°C SuitableforYemen'stropical
+climate
+4.3 PCS Configuration
+Twelve PCS units, each ≥ 125 kW, meeting full load charge/discharge
+requirements.PCScapabilities:
+• Grid-forming:Independentlyestablish400V/50Hzmicrogridvoltageand
+frequencyreference.
+• Black-start:Autonomousrecoveryafterfullsystemoutage.
+===== PAGE 11 =====
+8/29
+• Independentactive/reactivepowercontrol:Participateinmicrogridfrequency
+andvoltageregulation.
+4.4 Safety and Fire Protection
+• Eachcabinet:Pack-levelfiresuppression(Novec1230oraerosol)
+• BMSthree-levelprotection:cell,module,system.
+• Outdoorcabinet:IP55,corrosionclassC4.
+• Thermalmanagement:Hybridliquidcooling+aircooling,suitableforambient
+temperaturesabove45°C.
+===== PAGE 12 =====
+9/29
+5. Diesel Generator System
+5.1 Installation Scheme
+One 1000 kW containerized diesel generator (or reserved room installation) as
+theultimatebackupemergencypowersource.
+1. Equipmentstart-upcharacteristics:
+• Airconditioning:Variablefrequency,startcurrent1.5–2rated,peak~300kW
+for~200s.
+• Aircompressor:Variablefrequency,startcurrent1.5–2rated,peak~300kW.
+• Fillingline:Multipleservomotors,variablefrequencystart,startcurrent~3
+rated,peak~600kW.
+• Worst-casetotalstartpeak:300+300+600=1200kW.
+2. Powerredundancyrequirement:
+To keep voltage fluctuation≤±5% for sensitive loads, sufficient power margin is
+needed.
+Calculated required generator power ≈ (Total load power + Maximum single
+motorpower×Startingmultiplier)×1.2
+With sequential start-up, the largest single motor≤75kW with start multiplier ≤3,
+totalDGpowercanbekeptwithin1000kW.
+TentativeDGrating:1000kW(PRP)or1250kVA,containerizedsilenttype.
+• AutomaticallysynchronizeandparallelwithstoragePCSwhenSOCislowor
+PVoutputispersistentlylow.
+• Independentpowersourceduringstoragemaintenance.
+• Emergencybackup(DVRsupportsfor5mswhileDGstartsandtransfers).
+5.2 Technical Parameters
+Parameter Specification Remarks
+Ratedpower 1000kW Primepower (PRP)
+Ratedvoltage 400V Three-phasefour-wire
+Frequency 50Hz
+Startmode Auto/manual Receivesstartcommandfrom
+EMS
+===== PAGE 13 =====
+10/29
+Parameter Specification Remarks
+Startresponse time ≤3min Fromstartsignaltofullload
+Fueltype Diesel LocallyavailableinYemen
+Installation Containerized/room Noisereduction,dust
+protection
+Parallelingcapability Yes Canparallelwith storage
+5.3 Operation Strategy
+• Emergency:DGstartsimmediatelyuponPVorstoragefailure.
+• Peakshaving/backup:DGauto-startsandparallelswhenstorageSOC≤set
+threshold(e.g.,20%)
+• SOCrecovery:DGrunstochargestorageuntilSOCrecoverstosetvalue(e.g.,
+80%),thenDGexits.
+• Nightoperation:Lightingpoweredbyremainingstorage;ifinsufficient,DG
+supplements.
+• Maintenancemode:DGsuppliespoweralonewhenstorageismanually
+disconnected
+===== PAGE 14 =====
+11/29
+6. Storage-type DVR System Design
+6.1 System Positioning
+The storage-type DVR is key to ensuring power quality. Sensitive loads (PLCs,
+servo motors, automated lines) require voltage fluctuation≤±5%. The DVR is
+connected in series between the bus and sensitive loads, detecting and
+compensatingvoltagesags,swells,harmonics,etc.,inrealtime.
+6.2 Technical Specifications
+Parameter Specification Remarks
+Ratedpower 800kW Coversallloads
+Storagesupporttime 20minutes LFPbattery
+Transfertime ≤5ms Meetssensitiveload
+requirements
+Voltagecompensationrange 0%~+120% Deepvoltageconditioning
+Compensationtype Sag,swell,flicker,
+harmonics LFPbattery
+Responsetime ≤5ms Fromdetectionto
+compensation
+Topology Series+storage Onlineoperation
+Efficiency ≥97% Verylowlossesin normal
+operation
+6.3 Working Principle
+The DVR injects compensating voltage via a series transformer to keep load
+voltage constant. In normal conditions, DVR is in standby (zero power draw). When
+bus voltage exceeds the threshold, within 5 ms the DVR discharges storage and
+injectscompensationvoltage,keepingloadvoltagefluctuationwithin±5%.
+6.4 Operation Scenarios
+• Scenario1–DGtransition:DVRmaintainspowerqualityduringDGstart-up
+andstabilizatio.
+===== PAGE 15 =====
+12/29
+• Scenario2–PV/storagefault:DVRsupports~20minutes,buyingtimeforDG
+startandtransfer.
+• Scenario3–Microgridvoltagedisturbance:PCSbuilt-inDVRfunction
+switchestovoltagesourcewithin5ms,forcingsupportwhiletriggeringDG
+start.
+===== PAGE 16 =====
+13/29
+7. Energy Management System (EMS)
+7.1 System Architecture
+TheEMSisthe"brain"ofthemicrogrid,coordinatingPV,storage,DG,andDVR–
+all AC-coupled so that failure of any one subsystem does not affect the others. It
+achievesoptimalenergydispatchwithalayeredarchitecture:
+• Schedulinglayer:Globalenergyoptimizationschedule.
+• Controllayer:Microgridcentralcontroller(MGCC)forsecond-levelreal-time
+control,modeswitching,frequency/voltageregulation.
+• Devicelayer:Localcontrollersexecutecommandsandreportstatus.
+7.2 Core Functions
+• PVpowerdetectionanddecision-making.
+• Storagecharge/dischargeschedulingforlifetimeextensionandcostreduction.
+• DGintelligentstart/stopbasedonSOC,PVoutput,loaddemand.
+• DVRcoordinationtopre-reserveenergyforpowerqualityevents.
+• Black-startmanagementfororderlyrestorationafterfulloutage.
+7.3 Communication Integration
+Interface Protocol Connected Systems
+ModbusTCP/IP Ethernet PLC/SCADA
+ModbusTCP/IP Ethernet EMS
+ModbusTCP/IP Ethernet BMS
+ModbusTCP/IP Ethernet PCS,DG,SVG,etc.
+IEC61850 Ethernet Protectiondevices(optional)
+OPCUA Ethernet Upper-levelmonitoring
+===== PAGE 17 =====
+14/29
+8. System Operation Strategies
+8.1 Five Weather Condition Strategies and Fault Modes
+Condition 1 – Sunny, high irradiance (PV at full output)
+PVoutput≥700kW,fullymeetingload.ExcessPVchargesstorage,SOCrises.If
+storageisfullandPVstillhassurplus,MPPTcurtailmentreducesPVoutput.
+Condition 2 – Cloudy, intermittent (PV fluctuating)
+PV output 300–600 kW. Storage fills the gap; SVG compensates short-term
+fluctuations.EMSdynamicallyadjustsstoragepowertokeepbusstable.
+Condition 3 – Overcast/rainy (low PV output)
+PV output ≤200 kW, mainly storage power. When SOC drops to threshold (e.g.,
+30%), EMS auto-starts DG to parallel, DG takes main load and charges storage. DG
+exitswhenSOCreaches80%.
+Condition 4 – Sandstorm/extreme weather (PV nearly zero)
+PV negligible, storage alone. When SOC reaches 20%, DG starts. If SOC falls
+below5%,storageDVRintervenes(upto20min)untilDGstabilizes,thentransfersto
+DG.
+Condition 5 – PV or storage system fault
+Regardless, if bothPV and storagefail, DG responds immediately (≤5 ms), DVR
+supports(upto20min)untilDGstabilizes,thentransferstoDGemergencysupply.
+Mode A – Normal state (applicable to Conditions 1, 2)
+
+===== PAGE 18 =====
+15/29
+Mode B – Storage normal, PV fault (applicable to Condition 3)
+Mode C – PV normal, storage fault (applicable to Conditions 4, 5 transition)
+
+===== PAGE 19 =====
+16/29
+Mode D – Both PV and storage fault (during Conditions 4,5)
+Mode E – DVR fault
+8.2 Morning Start-up Strategy
+At 8:00 when production starts, storage must have reserved energy (suggested
+===== PAGE 20 =====
+17/29
+SOC ≥30%) to meet startupinrush currents for the 200 kW air compressor and filling
+line.DGisbackup;ifreservedSOCinsufficient,DGauto-startstoassist.
+By 7:45 daily, EMS checks if SOC ≥20%. If not, start DG 15 minutes in advance
+to parallel; load is shared by DG + storage. Air compressor VFD soft-start, air
+conditioners PLC-staged, production line step-by-step start, keeping peak current
+below 1200 A (instantaneously supported by storage PCS). After start-up, if PV is
+normal,graduallyrampdownDG.
+8.3 Energy Storage Manual Maintenance (Special Operating
+Conditions)
+WhenEMSdeterminesseverePVfaultcondition(SOC<20%):
+DG starts in parallel, charges until SOC ≥80% or PV fault clears, then PV
+auto-synchronizes,DGexitswithoutshock.
+WhenEMSdeterminesseverePV+storagefault:
+System automatically transfers all active power to DG. DG immediately starts in
+islandmode,DVRconnects;afterDGvoltagestabilizes,DVRdisconnects,loadsfully
+supplied by DG. Manual disconnection and EMS selects storage isolation mode both
+AC and DC switches open for safe isolation. Storage cabinets can be serviced.After
+maintenance, manual closing of switches, exit isolation mode, EMS decides whether
+to exit DG. If DG exits, DVR connects, storage island mode supplies power, voltage
+stabilizes,PVconnects,DVRdisconnects,thenstorage+PVsupply.
+8.4 Diesel Generator Intervention/Exit Logic
+Trigger Condition Action Threshold
+StorageSOCbelowlower limit DGauto-start SOC≤20% (adjustable)
+PV+Storage<loadfor5min DGauto-start Persistentdeficit
+PV/storagefault DGemergency start Immediate
+StorageSOCrecoverstoupper
+limit DGexit SOC≥80% (adjustable)
+Loaddrops tonightlevel DGexit Storagealonesufficient
+Storagemaintenancemode DGalonesupply Manualtrigger
+8.5 Night Operation
+At night (17:00 – 8:00), factory load is mainly lighting, small. Priority is storage
+supply.IfstorageSOCinsufficient,DGstartsbrieflytosupplement.Duringthisperiod,
+storagecanreceivetricklechargeformaintenance.
+===== PAGE 21 =====
+18/29
+9. Main Equipment List
+9.1 PV System
+No. Equipment Specification Qty
+1 PVmodule 580Wp,efficiency≥22.5% ≥2,580pcs
+2 Stringinverter 150kW,efficiency≥98.6% 10units
+3 Fixedmountingsystem 15°tilt,C4corrosion 1lot
+4 ACcombiner panel 800V,2500A 1
+5 ACgrid-connectionpanel 400V,2500A 1
+6 Lightning&grounding accordingtoIEC62305 1set
+9.2 Energy Storage System
+NO. Equipment Specification Qty
+1 Outdoorbattery
+cabinet
+261kWh,LFP,liquidcooling,BMS,
+firesuppression 12
+2 PCSGrid-forming
+PCS 125kW，AC400V 12
+3 StorageAC
+combiner panel 12*250A400VAC 1
+4 EMSforstorage
+Thecontrol systemmeetsthedual
+requirementsofcommunicatingwith
+thepowerdispatchingplatform(upper
+level)and accessingfield devices
+(lowerlevel),is compatiblewith
+ModbusTCP/RTUprotocols,and
+enablescomprehensivedata
+acquisition,measurement,and
+controloftheenergystorage system.
+Itfeatures multi-energycoordinated
+control,grid-formingmode,
+anti-reversepower flow/demand
+1set
+===== PAGE 22 =====
+19/29
+NO. Equipment Specification Qty
+management,andblackstart
+capability.Thesystemsupports
+complexlocal strategiesandensures
+millisecond-levelcommanddelivery
+latency.
+9.3 Diesel Generator and Distribution System
+NO. Equipment Specification Qty
+1 Dieselgenerator set 1000kW,400V/50Hz 1set
+2 ATSpanel 400V2500A,4P 1
+3 DGsynchronizingpanel
+Includinggrid-connected
+contactor,synchronizing
+relay,and multi-function
+meter.
+1
+4 Container/enclosure Noise-reducing,dust-proof 1set
+9.4 Storage DVR and Distribution System
+NO. Equipment Specification Qty
+1 DVRcabinet 800kW,375kWh,163Ah, 20
+minsupport 1
+2 Isolationtransformer
+cabinet 800kVAmatchedtoDVR 1
+3 Statictransferswitch
+(STS)cabinet 2000kW 1
+4 Battery cabinet 1P240S,3.2V,163Ah 3
+5 Bypassswitchgear ACB2500A-400V /AC 1
+6 Dry-typetransformer 1000kVA10/0.4kV 1
+7 SVGcabinet 300kVA-400V/AC 1
+===== PAGE 23 =====
+20/29
+NO. Equipment Specification Qty
+8 LVincoming(utility) ACB2000A-400V /AC 1
+9 LVparallelincoming
+(storage) ACB2500A-400V /AC 1
+10 LVparallelincoming(PV) ACB2500A-400V /AC 1
+11 LVoutgoing(loads) ACB2000A-400V /AC 1
+12 Container(DVR+control) Noise-reducing,dust-proof 1set
+13 Container(distribution) Noise-reducing,dust-proof 1set
+9.5 Energy Coordination Management System
+NO. Equipment Specification Qty
+1
+Microgrid
+coordinationcontrol
+panel
+Microgridcoordinator,smartgateway,
+GPS/Beidouclock,industrial Ethernet
+switch,dataserver,operatorworkstation,
+O&Msoftware,systemcabinet
+1
+2 UPS(Uninterruptible
+PowerSupply)
+Onlinetype,6kVA,220VAC,including
+batterypack (backuptime ≥2hours);
+usedforservers,workstations,switches,
+etc.
+1
+===== PAGE 24 =====
+21/29
+
+===== PAGE 25 =====
+22/29
+10. Economic Analysis and Investment Estimate
+10.1 Investment Estimate
+System Main Investment Items Estimated Amount
+(USD 10k) Remarks
+PV System 59.7
+Equipment
+Details
+PVmodules 42.6 2580pcs
+Mountingstructure 9.95 1lot
+WInverters150kW 4.15 10units
+ACgridpanel
+400V/2500A 1.5 1
+ACcombiner panel
+400V/2500A 1.5 1
+Energy Storage
+System 61.33
+Equipment
+Details
+Storagecabinets
+125kW/261kWh
+（Grid-forming）
+59.1 12units
+StorageACcombiner
+panel12×250A,400VAC
+2.23 1
+Diesel Generator
+System 30.65
+Equipment
+Details
+1000kWDGset 20.9 1set
+ATScabinet 3.75 1
+Synchronizingpanel 3.0 1
+Container(noise/dust) 3.0 1
+DVR System 25.95
+===== PAGE 26 =====
+23/29
+System Main Investment Items Estimated Amount
+(USD 10k) Remarks
+Equipment
+Details
+DVR-800kW 3.5 1units
+STS2000kW 3.5 1
+Isolationtransformer
+0.4/0.4kV800kVA 2.35 1
+BypassswitchgearACB
+2500A 3.75 1
+Batterycabinets3×125
+kWh
+7.5 3
+DCcombinerpanel 1.2 1
+Container(DVR+control) 4.15 1
+Microgrid
+Coordination
+Control System
+Microgrid coordinator,
+gateway, GPS/Beidou
+clock, switch, server,
+workstation, O&M
+software, cabinet
+15.0 1lot
+Distribution
+System 17.56
+Equipment
+Details
+SVG300kVA 3.0 1units
+Dry-typetransformer
+1000kVA10/0.4kV 3.0 1
+UtilityincomingACB
+2000A-400V /AC 2.08 1
+Storageparallelincoming
+ACB 2500A-400V /AC 2.24 1
+PVparallelincomingACB
+2500A-800V /AC 2.24 1
+LoadoutgoingACB
+2000A-400V /AC 2.0 1
+===== PAGE 27 =====
+24/29
+System Main Investment Items Estimated Amount
+(USD 10k) Remarks
+Container (distribution) 3.0 1
+Grid connection
+test,
+documentation,
+and training
+1~2 5.5 1lot
+Total equipment
+cost - 216.19
+Gross margin ~10% 20
+Total Project
+Cost 236.19
+Remarks: Above prices exclude certification fees, on-site commissioning (remote
+program testing and guidance), on-site installation, external cables, and international
+shipping.
+10.2 Economic Benefits
+• AnnualPVgeneration:~2,737,500kWh.
+• Annualelectricitycostsaving:Basedondieselgenerationcost~$0.26/kWh,
+saving~711,750USdollarsperyear
+• Simplepaybackperiod:~3.3years(excludingfinancingcosts).Ifthecostsfor
+installation,cables,shipping,etc.areincluded,itisexpectedtorecoverthe
+investmentwithinfouryears.
+• Lifetime(10years)totalbenefit:farexceedsinitialinvestment
+• Dieselreduction:~3millionlitersperyear
+• CO₂reduction:~8,000tonsperyear
+===== PAGE 28 =====
+25/29
+11. Project Implementation Plan
+Phase Work Content Duration
+Phase1 Detaileddesignoptimization:clarify
+requirements,customequipment,specs 4-8weeks
+Phase4 Manufacturingofstorage,DG,PV,DVR
+systems 10-12 weeks
+Phase5 Electricalwiringandcommunication
+systemcommissioning 4-6weeks
+Phase6 Systemintegration,trial run,acceptance 2-4weeks
+Total Fromstarttooperation 20-30weeks
+12. Risk Management and Mitigation
+Risk Item Impact Mitigation Measures
+Extremeheat(>50°C) Batteryperformance
+degrades Liquidcooling+shadingdesign
+Frequentsandstorms PVoutputreduction,dust
+accumulation
+Regularcleaning+sealed
+protection
+Unstablediesel supply DGunabletorefuel 20,000Lfuelstorage+alternative
+supplychannels
+InsufficientlocalO&M
+capability Slowfaultrecovery Remotemonitoring+local training
+===== PAGE 29 =====
+26/29
+13. Conclusion
+This microgrid solution for the Sana'a factory adopts a four-in-one hybrid energy
+architecture: "PV + storage + diesel + storage-type DVR", achieving the following
+objectives:
+• Uninterruptedpowersupply:Coversallfiveweatherconditions,guaranteeing
+powerfor10workinghours.
+• Powerquality:DVRensurestransfertime≤5msandsupport≥20minduring
+voltagedips/transients;SVGprovidesvoltagecompensationtokeepsensitive
+loadvoltagefluctuationwithin±5%.
+• Economicoptimality:PV≥1500kWp+BESS≥3132kWhwithbest
+cost-performanceratio.
+• Intelligentdispatch:Grid-forming PCS+EMSforfullyautomaticenergy
+management.
+• Safetyandreliability:Multi-levelprotection,black-startcapability,remote
+monitoring.
+• Greenandlow-carbon:~8,000tonsCO₂reductionperyear,reduceddiesel
+dependence.
+This proposal fully considersYemen's local climate (low latitude, highirradiation,
+occasional sandstorms) and infrastructure conditions, using mature and reliable
+technology with modular design to ensure stable operation and economic returns
+throughoutthemicrogrid'slifecycle.
+Through deep AC coupling of PV and grid-forming storage, supplemented by
+diesel and storage-type DVR backup, this system achieves 10 hours of continuous
+high-quality power supply and seamless production under all weather conditions,
+meetingtheplant'shigh-qualityprocessrequirements.
+Projectdesign：
+Authorized units of Sunwoda ：Guangzhou Jiancheng International Energy Co., Ltd. （ Sunwoda
+CertificateNo.:SUN-SES-001）
+Contacts：Lee
+EmailAdd：jcie@sunwoda.com

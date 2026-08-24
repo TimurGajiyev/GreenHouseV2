@@ -1,0 +1,1679 @@
+{
+ "sections": [
+  {
+   "id": "system_performance",
+   "title": "System Performance Year One",
+   "intro": "This interactive graph shows the dispatch strategy optimized by REopt for typical operation of the optimized system for every hour of the year. Graphs showing the optimized dispatch strategy during specified outages can be found in the Resilience vs. Financial tab below. To zoom in on a date range, ",
+   "tables": [
+    {
+     "header": [],
+     "rows": [
+      {
+       "group": "Average Annual Dispatch Results"
+      },
+      {
+       "label": "Grid Serving Load (kWh)",
+       "values": [
+        "4,751,911"
+       ]
+      },
+      {
+       "label": "Grid Charging Battery (kWh)",
+       "values": [
+        "8,217"
+       ]
+      },
+      {
+       "label": "Grid Total Electricity Consumed (kWh)",
+       "values": [
+        "4,760,128"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [],
+     "rows": [
+      {
+       "group": "Average Annual Dispatch Results"
+      },
+      {
+       "label": "PV Serving Load (kWh)",
+       "values": [
+        "239,468"
+       ]
+      },
+      {
+       "label": "PV Charging Battery (kWh)",
+       "values": [
+        "1,324"
+       ]
+      },
+      {
+       "label": "PV Exported to Grid (kWh)",
+       "values": [
+        "0"
+       ]
+      },
+      {
+       "label": "PV Curtailment (kWh)",
+       "values": [
+        "0"
+       ]
+      },
+      {
+       "label": "PV Total Electricity Produced (kWh)",
+       "values": [
+        "240,791"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [],
+     "rows": [
+      {
+       "group": "Average Annual Dispatch Results"
+      },
+      {
+       "label": "Battery Serving Load (kWh)",
+       "values": [
+        "8,622"
+       ]
+      },
+      {
+       "label": "Battery Exported to Grid (kWh)",
+       "values": [
+        "0"
+       ]
+      }
+     ]
+    }
+   ],
+   "subheads": [
+    "Grid",
+    "PV",
+    "Battery"
+   ]
+  },
+  {
+   "id": "grid_sys_perform",
+   "title": "Grid",
+   "intro": "",
+   "tables": [
+    {
+     "header": [],
+     "rows": [
+      {
+       "group": "Average Annual Dispatch Results"
+      },
+      {
+       "label": "Grid Serving Load (kWh)",
+       "values": [
+        "4,751,911"
+       ]
+      },
+      {
+       "label": "Grid Charging Battery (kWh)",
+       "values": [
+        "8,217"
+       ]
+      },
+      {
+       "label": "Grid Total Electricity Consumed (kWh)",
+       "values": [
+        "4,760,128"
+       ]
+      }
+     ]
+    }
+   ],
+   "subheads": []
+  },
+  {
+   "id": "pv_sys_perform",
+   "title": "PV",
+   "intro": "",
+   "tables": [
+    {
+     "header": [],
+     "rows": [
+      {
+       "group": "Average Annual Dispatch Results"
+      },
+      {
+       "label": "PV Serving Load (kWh)",
+       "values": [
+        "239,468"
+       ]
+      },
+      {
+       "label": "PV Charging Battery (kWh)",
+       "values": [
+        "1,324"
+       ]
+      },
+      {
+       "label": "PV Exported to Grid (kWh)",
+       "values": [
+        "0"
+       ]
+      },
+      {
+       "label": "PV Curtailment (kWh)",
+       "values": [
+        "0"
+       ]
+      },
+      {
+       "label": "PV Total Electricity Produced (kWh)",
+       "values": [
+        "240,791"
+       ]
+      }
+     ]
+    }
+   ],
+   "subheads": []
+  },
+  {
+   "id": "battery_sys_perform",
+   "title": "Battery",
+   "intro": "",
+   "tables": [
+    {
+     "header": [],
+     "rows": [
+      {
+       "group": "Average Annual Dispatch Results"
+      },
+      {
+       "label": "Battery Serving Load (kWh)",
+       "values": [
+        "8,622"
+       ]
+      },
+      {
+       "label": "Battery Exported to Grid (kWh)",
+       "values": [
+        "0"
+       ]
+      }
+     ]
+    }
+   ],
+   "subheads": []
+  },
+  {
+   "id": "erp_tool",
+   "title": "Energy Resilience Performance",
+   "intro": "The Energy Resilience Performance (ERP) of the solution is assessed based on the reliability of assets included for all possible outage periods in a year. The SOC for the start of an outage any time in the year is based on the optimization dispatch results. You can also modify the system architectur",
+   "tables": [
+    {
+     "header": [
+      "Distributed Energy Resources",
+      "Total nameplate capacity (Optimized)",
+      "Number of units",
+      "Nameplate capacity per unit",
+      "Total nameplate capacity",
+      "Battery Power (kW)"
+     ],
+     "rows": [
+      {
+       "label": "Distributed Energy Resources",
+       "values": [
+        "Total nameplate capacity (Optimized)",
+        "Number of units",
+        "Nameplate capacity per unit",
+        "Total nameplate capacity"
+       ]
+      },
+      {
+       "label": "Battery Power (kW)",
+       "values": [
+        "79 kW",
+        "1",
+        "kW",
+        "79 kW"
+       ]
+      },
+      {
+       "label": "Battery Energy (kWh)",
+       "values": [
+        "172 kWh",
+        "1",
+        "kWh",
+        "172 kWh"
+       ]
+      },
+      {
+       "label": "PV (kW DC)",
+       "values": [
+        "166 kW DC",
+        "1",
+        "kW DC",
+        "166 kW DC"
+       ]
+      }
+     ]
+    }
+   ],
+   "subheads": [
+    "Battery",
+    "PV"
+   ]
+  },
+  {
+   "id": "battery",
+   "title": "Battery",
+   "intro": "",
+   "tables": [],
+   "subheads": []
+  },
+  {
+   "id": "pv",
+   "title": "PV",
+   "intro": "",
+   "tables": [],
+   "subheads": []
+  },
+  {
+   "id": "compare_results",
+   "title": "Results Comparison",
+   "intro": "These results show how doing business as usual compares to the optimal case.",
+   "tables": [
+    {
+     "header": [
+      "",
+      "Business As Usual",
+      "Financial",
+      "Difference"
+     ],
+     "rows": [
+      {
+       "label": "",
+       "values": [
+        "Business As Usual",
+        "Financial",
+        "Difference"
+       ]
+      },
+      {
+       "group": "System Size"
+      },
+      {
+       "label": "PV Size",
+       "values": [
+        "0 kW",
+        "165 kW",
+        "165 kW"
+       ]
+      },
+      {
+       "label": "Battery Power",
+       "values": [
+        "0 kW",
+        "78 kW",
+        "78 kW"
+       ]
+      },
+      {
+       "label": "Battery Capacity",
+       "values": [
+        "0 kWh",
+        "171 kWh",
+        "171 kWh"
+       ]
+      },
+      {
+       "group": "Energy Production and Fuel Use"
+      },
+      {
+       "label": "Average Annual PV Energy Production",
+       "values": [
+        "0 kWh",
+        "240,791 kWh",
+        "240,791 kWh"
+       ]
+      },
+      {
+       "label": "Average Annual Energy Supplied from Grid",
+       "values": [
+        "5,000,000 kWh",
+        "4,760,128 kWh",
+        "-239,872 kWh"
+       ]
+      },
+      {
+       "group": "Renewable Energy Metrics"
+      },
+      {
+       "label": "Annual Renewable Electricity (% of electricity consumption)",
+       "values": [
+        "0%",
+        "5%",
+        "5%"
+       ]
+      },
+      {
+       "group": "Climate Emissions"
+      },
+      {
+       "label": "Avoided CO2e Emissions throughout Analysis Period",
+       "values": [
+        "N/A",
+        "679 tonnes",
+        "679 tonnes"
+       ]
+      },
+      {
+       "group": "Health Emissions"
+      },
+      {
+       "label": "Avoided NOx Emissions throughout Analysis Period",
+       "values": [
+        "N/A",
+        "1.38 tonnes",
+        "1.38 tonnes"
+       ]
+      },
+      {
+       "label": "Avoided SO2 Emissions throughout Analysis Period",
+       "values": [
+        "N/A",
+        "0.91 tonnes",
+        "0.91 tonnes"
+       ]
+      },
+      {
+       "label": "Avoided PM2.5 Emissions throughout Analysis Period",
+       "values": [
+        "N/A",
+        "0.10 tonnes",
+        "0.10 tonnes"
+       ]
+      },
+      {
+       "group": "Year 1 Utility Electricity Cost — Before Tax"
+      },
+      {
+       "label": "Utility Export Benefit",
+       "values": [
+        "$0",
+        "$0",
+        "$0"
+       ]
+      },
+      {
+       "label": "Utility Energy Cost",
+       "values": [
+        "$318,150",
+        "$302,887",
+        "-$15,263"
+       ]
+      },
+      {
+       "label": "Utility Demand Cost",
+       "values": [
+        "$193,252",
+        "$177,523",
+        "-$15,729"
+       ]
+      },
+      {
+       "label": "Utility Fixed Cost",
+       "values": [
+        "$480",
+        "$480",
+        "$0"
+       ]
+      },
+      {
+       "label": "Utility Minimum Cost Adder",
+       "values": [
+        "$0",
+        "$0",
+        "$0"
+       ]
+      },
+      {
+       "label": "Total Year 1 Utility Cost - Before Tax",
+       "values": [
+        "$511,882",
+        "$480,890",
+        "-$30,992"
+       ]
+      },
+      {
+       "group": "Life Cycle Cost Breakdown"
+      },
+      {
+       "label": "Technology Capital Costs + Replacements, After Incentives",
+       "values": [
+        "$0",
+        "$196,571",
+        "$196,571"
+       ]
+      },
+      {
+       "label": "O&M Costs",
+       "values": [
+        "$0",
+        "$60,234",
+        "$60,234"
+       ]
+      },
+      {
+       "label": "Total Utility Electricity Cost",
+       "values": [
+        "$4,624,884",
+        "$4,344,872",
+        "-$280,012"
+       ]
+      },
+      {
+       "label": "Total Production-Based Incentive",
+       "values": [
+        "$0",
+        "$0",
+        "$0"
+       ]
+      },
+      {
+       "label": "Cost of Climate Emissions throughout Analysis Period (If Included in Objective)",
+       "values": [
+        "$0",
+        "$0",
+        "$0"
+       ]
+      },
+      {
+       "label": "Cost of Health Emissions throughout Analysis Period (If Included in Objective)",
+       "values": [
+        "$0",
+        "$0",
+        "$0"
+       ]
+      },
+      {
+       "group": "Summary Financial Metrics"
+      },
+      {
+       "label": "Total Upfront Capital Cost Before Incentives",
+       "values": [
+        "$0",
+        "$378,800",
+        "$378,800"
+       ]
+      },
+      {
+       "label": "Year 1 O&M Cost, Before Tax",
+       "values": [
+        "$0",
+        "$6,162",
+        "$6,162"
+       ]
+      },
+      {
+       "label": "Total Life Cycle Costs",
+       "values": [
+        "$4,624,883",
+        "$4,601,676",
+        "-$23,207"
+       ]
+      },
+      {
+       "label": "Net Present Value",
+       "values": [
+        "$0",
+        "$23,207",
+        "$23,207"
+       ]
+      },
+      {
+       "label": "Payback Period",
+       "values": [
+        "N/A",
+        "9.15 yrs",
+        "9.15 yrs"
+       ]
+      },
+      {
+       "label": "Internal Rate of Return",
+       "values": [
+        "N/A",
+        "9.5%",
+        "9.5%"
+       ]
+      },
+      {
+       "label": "PV Levelized Cost of Energy",
+       "values": [
+        "N/A",
+        "$0.067/kWh",
+        "$0.067/kWh"
+       ]
+      }
+     ]
+    }
+   ],
+   "subheads": []
+  },
+  {
+   "id": "clean_energy",
+   "title": "Renewable Energy & Emissions Metrics",
+   "intro": "These results show emissions outcomes for the business as usual and optimized cases. If marginal grid emissions rates are utilized (the default inputs), users should focus on avoided emissions, rather than emissions totals. Note for all emissions outputs, “t” (as in, \"t CO2e\") represents metric tons",
+   "tables": [
+    {
+     "header": [
+      "",
+      "Business As Usual",
+      "Financial",
+      "Difference"
+     ],
+     "rows": [
+      {
+       "label": "",
+       "values": [
+        "Business As Usual",
+        "Financial",
+        "Difference"
+       ]
+      },
+      {
+       "group": "Renewable Energy"
+      },
+      {
+       "label": "Annual Renewable Electricity (% of electricity consumption)",
+       "values": [
+        "0%",
+        "5%",
+        "5%"
+       ]
+      },
+      {
+       "group": "Climate & Health Emissions Costs"
+      },
+      {
+       "label": "Cost of Climate Emissions throughout Analysis Period",
+       "values": [
+        "$600,023",
+        "$578,191",
+        "-$21,832"
+       ]
+      },
+      {
+       "label": "Cost of Health Emissions throughout Analysis Period",
+       "values": [
+        "$427,092",
+        "$406,556",
+        "-$20,536"
+       ]
+      },
+      {
+       "group": "Climate Emissions, CO2e"
+      },
+      {
+       "label": "Average Annual Emissions (t CO2e)",
+       "values": [
+        "747",
+        "719",
+        "-27"
+       ]
+      },
+      {
+       "label": "Average Annual Emissions from Grid Purchases (t CO2e)",
+       "values": [
+        "747",
+        "719",
+        "-27"
+       ]
+      },
+      {
+       "label": "Average Annual Emissions from Onsite Fuel Burn (t CO2e)",
+       "values": [
+        "0",
+        "0",
+        "0"
+       ]
+      },
+      {
+       "label": "Total Emissions throughout Analysis Period (t CO2e)",
+       "values": [
+        "18,664",
+        "17,985",
+        "-679"
+       ]
+      },
+      {
+       "label": "Emissions from Grid Purchases throughout Analysis Period (t CO2e)",
+       "values": [
+        "18,664",
+        "17,985",
+        "-679"
+       ]
+      },
+      {
+       "label": "Emissions from Onsite Fuel Burn throughout Analysis Period (t CO2e)",
+       "values": [
+        "0",
+        "0",
+        "0"
+       ]
+      },
+      {
+       "label": "Percent Reduction in CO2 Emissions from BAU (%)",
+       "values": [
+        "N/A",
+        "3.64%",
+        "3.64%"
+       ]
+      },
+      {
+       "label": "Breakeven Cost of CO2e Emissions Reduction ($/t CO2e)",
+       "values": [
+        "N/A",
+        "N/A",
+        "N/A"
+       ]
+      },
+      {
+       "group": "Health Emissions, NOx"
+      },
+      {
+       "label": "Average Annual Emissions (t NOx)",
+       "values": [
+        "1.16",
+        "1.10",
+        "-0.06"
+       ]
+      },
+      {
+       "label": "Average Annual Emissions from Grid Purchases (t NOx)",
+       "values": [
+        "1.16",
+        "1.10",
+        "-0.06"
+       ]
+      },
+      {
+       "label": "Average Annual Emissions from Onsite Fuel Burn (t NOx)",
+       "values": [
+        "0.00",
+        "0.00",
+        "0.00"
+       ]
+      },
+      {
+       "label": "Total Emissions throughout Analysis Period (t NOx)",
+       "values": [
+        "28.92",
+        "27.54",
+        "-1.38"
+       ]
+      },
+      {
+       "label": "Emissions from Grid Purchases throughout Analysis Period (t NOx)",
+       "values": [
+        "28.92",
+        "27.54",
+        "-1.38"
+       ]
+      },
+      {
+       "label": "Emissions from Onsite Fuel Burn throughout Analysis Period (t NOx)",
+       "values": [
+        "0.00",
+        "0.00",
+        "0.00"
+       ]
+      },
+      {
+       "group": "Health Emissions, SO2"
+      },
+      {
+       "label": "Average Annual Emissions (t SO2)",
+       "values": [
+        "0.75",
+        "0.72",
+        "-0.04"
+       ]
+      },
+      {
+       "label": "Average Annual Emissions from Grid Purchases (t SO2)",
+       "values": [
+        "0.75",
+        "0.72",
+        "-0.04"
+       ]
+      },
+      {
+       "label": "Average Annual Emissions from Onsite Fuel Burn (t SO2)",
+       "values": [
+        "0.00",
+        "0.00",
+        "0.00"
+       ]
+      },
+      {
+       "label": "Total Emissions throughout Analysis Period (t SO2)",
+       "values": [
+        "18.82",
+        "17.91",
+        "-0.91"
+       ]
+      },
+      {
+       "label": "Emissions from Grid Purchases throughout Analysis Period (t SO2)",
+       "values": [
+        "18.82",
+        "17.91",
+        "-0.91"
+       ]
+      },
+      {
+       "label": "Emissions from Onsite Fuel Burn throughout Analysis Period (t SO2)",
+       "values": [
+        "0.00",
+        "0.00",
+        "0.00"
+       ]
+      },
+      {
+       "group": "Health Emissions, PM2.5"
+      },
+      {
+       "label": "Average Annual Emissions (t PM2.5)",
+       "values": [
+        "0.08",
+        "0.07",
+        "-0.00"
+       ]
+      },
+      {
+       "label": "Average Annual Emissions from Grid Purchases (t PM2.5)",
+       "values": [
+        "0.08",
+        "0.07",
+        "-0.00"
+       ]
+      },
+      {
+       "label": "Average Annual Emissions from Onsite Fuel Burn (t PM2.5)",
+       "values": [
+        "0.00",
+        "0.00",
+        "0.00"
+       ]
+      },
+      {
+       "label": "Total Emissions throughout Analysis Period (t PM2.5)",
+       "values": [
+        "1.92",
+        "1.82",
+        "-0.10"
+       ]
+      },
+      {
+       "label": "Emissions from Grid Purchases throughout Analysis Period (t PM2.5)",
+       "values": [
+        "1.92",
+        "1.82",
+        "-0.10"
+       ]
+      },
+      {
+       "label": "Emissions from Onsite Fuel Burn throughout Analysis Period (t PM2.5)",
+       "values": [
+        "0.00",
+        "0.00",
+        "0.00"
+       ]
+      }
+     ]
+    }
+   ],
+   "subheads": []
+  },
+  {
+   "id": "your_inputs",
+   "title": "Inputs",
+   "intro": "The results are based on the following user supplied inputs.",
+   "tables": [
+    {
+     "header": [
+      "Energy Goals"
+     ],
+     "rows": [
+      {
+       "group": "Energy Goals"
+      },
+      {
+       "group": "Cost-Savings"
+      }
+     ]
+    },
+    {
+     "header": [
+      "Technologies Selected"
+     ],
+     "rows": [
+      {
+       "group": "Technologies Selected"
+      },
+      {
+       "group": "PV Battery"
+      }
+     ]
+    },
+    {
+     "header": [
+      "Site",
+      "Evaluation name"
+     ],
+     "rows": [
+      {
+       "group": "Site"
+      },
+      {
+       "label": "Evaluation name",
+       "values": [
+        "AB TEST PV+Battery"
+       ]
+      },
+      {
+       "label": "Site Location",
+       "values": [
+        "1617 Cole Blvd, Golden, CO 80401-3382, United States (39.74437, -105.15199)"
+       ]
+      },
+      {
+       "label": "PV & wind space available",
+       "values": [
+        "Land"
+       ]
+      },
+      {
+       "label": "Land available (acres)",
+       "values": [
+        "5"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Utilities",
+      "URDB rate"
+     ],
+     "rows": [
+      {
+       "group": "Utilities"
+      },
+      {
+       "label": "URDB rate",
+       "values": [
+        "Intermountain Rural Elec Assn - Commercial Demand Metered Time of Use (B-TOU)"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Load Profile",
+      "Typical electric load profile type"
+     ],
+     "rows": [
+      {
+       "group": "Load Profile"
+      },
+      {
+       "label": "Typical electric load profile type",
+       "values": [
+        "simulated building"
+       ]
+      },
+      {
+       "label": "Type of building",
+       "values": [
+        "Office - Large"
+       ]
+      },
+      {
+       "label": "Annual electric energy consumption (kWh)",
+       "values": [
+        "5,000,000"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Financial",
+      "Analysis period (years)"
+     ],
+     "rows": [
+      {
+       "group": "Financial"
+      },
+      {
+       "label": "Analysis period (years)",
+       "values": [
+        "25"
+       ]
+      },
+      {
+       "label": "Host discount rate, nominal (%)",
+       "values": [
+        "8.3%"
+       ]
+      },
+      {
+       "label": "Electricity cost escalation rate, nominal (%/year)",
+       "values": [
+        "1.7%"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Renewable Energy & Emissions Accounting",
+      "Cambium location"
+     ],
+     "rows": [
+      {
+       "group": "Renewable Energy & Emissions Accounting"
+      },
+      {
+       "label": "Cambium location",
+       "values": [
+        "West Connect North"
+       ]
+      },
+      {
+       "label": "Cambium Levelization Years",
+       "values": [
+        "25"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "PV",
+      "System capital cost ($/kW-DC)"
+     ],
+     "rows": [
+      {
+       "group": "PV"
+      },
+      {
+       "label": "System capital cost ($/kW-DC)",
+       "values": [
+        "1600.0"
+       ]
+      },
+      {
+       "label": "Minimum new PV size (kW-DC)",
+       "values": [
+        "0.0"
+       ]
+      },
+      {
+       "label": "Maximum new PV size (kW-DC)",
+       "values": [
+        "2000.0"
+       ]
+      },
+      {
+       "label": "Size class",
+       "values": [
+        "Large Commercial (101 - 2,000 kW)"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Battery",
+      "Energy capacity cost ($/kWh)"
+     ],
+     "rows": [
+      {
+       "group": "Battery"
+      },
+      {
+       "label": "Energy capacity cost ($/kWh)",
+       "values": [
+        "$300.00"
+       ]
+      },
+      {
+       "label": "Power capacity cost ($/kW)",
+       "values": [
+        "$800.00"
+       ]
+      },
+      {
+       "label": "Constant cost ($)",
+       "values": [
+        "$0.00"
+       ]
+      },
+      {
+       "label": "Maximum energy capacity (kWh)",
+       "values": [
+        "4000.0"
+       ]
+      }
+     ]
+    }
+   ],
+   "subheads": []
+  },
+  {
+   "id": "default_inputs",
+   "title": "Defaults",
+   "intro": "The results are based on the following default inputs.",
+   "tables": [
+    {
+     "header": [
+      "Site",
+      "Sector"
+     ],
+     "rows": [
+      {
+       "group": "Site"
+      },
+      {
+       "label": "Sector",
+       "values": [
+        "Commercial/Industrial"
+       ]
+      },
+      {
+       "label": "Solver optimality tolerance (%)",
+       "values": [
+        "0.1%"
+       ]
+      },
+      {
+       "label": "Solver name",
+       "values": [
+        "HiGHS"
+       ]
+      },
+      {
+       "label": "Optimization timeout (seconds)",
+       "values": [
+        "600"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Utilities",
+      "Compensation type"
+     ],
+     "rows": [
+      {
+       "group": "Utilities"
+      },
+      {
+       "label": "Compensation type",
+       "values": [
+        "No compensation for exports"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Load Profile",
+      "Load adjustment (%)"
+     ],
+     "rows": [
+      {
+       "group": "Load Profile"
+      },
+      {
+       "label": "Load adjustment (%)",
+       "values": [
+        "100%"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Financial",
+      "Host effective tax rate (%)"
+     ],
+     "rows": [
+      {
+       "group": "Financial"
+      },
+      {
+       "label": "Host effective tax rate (%)",
+       "values": [
+        "26%"
+       ]
+      },
+      {
+       "label": "O&M cost escalation rate (%/year)",
+       "values": [
+        "2.5%"
+       ]
+      },
+      {
+       "label": "Minimum capital cost, before incentives ($)",
+       "values": [
+        "None"
+       ]
+      },
+      {
+       "label": "Maximum capital cost, before incentives ($)",
+       "values": [
+        "None"
+       ]
+      },
+      {
+       "label": "Third Party Ownership",
+       "values": [
+        "No"
+       ]
+      },
+      {
+       "label": "Third-party owner discount rate, nominal (%)",
+       "values": [
+        "6.24%"
+       ]
+      },
+      {
+       "label": "Third-party owner effective tax rate (%)",
+       "values": [
+        "26%"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Renewable Energy & Emissions Accounting",
+      "EPA's AVERT Region"
+     ],
+     "rows": [
+      {
+       "group": "Renewable Energy & Emissions Accounting"
+      },
+      {
+       "label": "EPA's AVERT Region",
+       "values": [
+        "Rocky Mountains"
+       ]
+      },
+      {
+       "label": "Geographic resolution",
+       "values": [
+        "GEA Regions 2023"
+       ]
+      },
+      {
+       "label": "Metric",
+       "values": [
+        "LRMER CO2e Combined"
+       ]
+      },
+      {
+       "label": "Grid scenario",
+       "values": [
+        "Mid-case"
+       ]
+      },
+      {
+       "label": "Use emissions averaged over the analysis period?",
+       "values": [
+        "Yes"
+       ]
+      },
+      {
+       "label": "Cambium start year",
+       "values": [
+        "2025"
+       ]
+      },
+      {
+       "label": "Include distribution losses?",
+       "values": [
+        "Enduse"
+       ]
+      },
+      {
+       "label": "Projected annual percent decrease in grid health emissions factors (%/year)",
+       "values": [
+        "4.590%"
+       ]
+      },
+      {
+       "label": "Count exported renewable electricity towards renewable energy goals?",
+       "values": [
+        "true"
+       ]
+      },
+      {
+       "label": "Count exported electricity towards emissions offsets?",
+       "values": [
+        "true"
+       ]
+      },
+      {
+       "label": "CO₂ cost ($/t CO₂)",
+       "values": [
+        "51.0"
+       ]
+      },
+      {
+       "label": "On-site fuel burn NOx cost ($/t NOx)",
+       "values": [
+        "5,064.59"
+       ]
+      },
+      {
+       "label": "On-site fuel burn SO₂ cost ($/t SO₂)",
+       "values": [
+        "14,544.85"
+       ]
+      },
+      {
+       "label": "On-site fuel burn PM2.5 cost ($/t PM2.5)",
+       "values": [
+        "211,828.74"
+       ]
+      },
+      {
+       "label": "Grid emissions NOx cost ($/t NOx)",
+       "values": [
+        "4,541.52"
+       ]
+      },
+      {
+       "label": "Grid emissions SO₂ cost ($/t SO₂)",
+       "values": [
+        "15,887.31"
+       ]
+      },
+      {
+       "label": "Grid emissions PM2.5 cost ($/t PM2.5)",
+       "values": [
+        "103,498.17"
+       ]
+      },
+      {
+       "label": "CO₂ cost escalation rate, nominal (%)",
+       "values": [
+        "4.22%"
+       ]
+      },
+      {
+       "label": "NOx cost escalation rate, nominal (%)",
+       "values": [
+        "3.16%"
+       ]
+      },
+      {
+       "label": "SO₂ cost escalation rate, nominal (%)",
+       "values": [
+        "4.36%"
+       ]
+      },
+      {
+       "label": "PM2.5 cost escalation rate, nominal (%)",
+       "values": [
+        "4.17%"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "PV",
+      "O&M cost ($/kW-DC per year)"
+     ],
+     "rows": [
+      {
+       "group": "PV"
+      },
+      {
+       "label": "O&M cost ($/kW-DC per year)",
+       "values": [
+        "$20"
+       ]
+      },
+      {
+       "label": "Module type",
+       "values": [
+        "Standard"
+       ]
+      },
+      {
+       "label": "Array type",
+       "values": [
+        "Ground Mount, Fixed"
+       ]
+      },
+      {
+       "label": "Array azimuth (deg)",
+       "values": [
+        "180"
+       ]
+      },
+      {
+       "label": "Array tilt (deg)",
+       "values": [
+        "20"
+       ]
+      },
+      {
+       "label": "DC to AC size ratio",
+       "values": [
+        "1.2"
+       ]
+      },
+      {
+       "label": "System losses (%)",
+       "values": [
+        "14%"
+       ]
+      },
+      {
+       "label": "PV Station Search Radius (mi)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "Ground-mount power density (acres per kW-DC)",
+       "values": [
+        "0.006"
+       ]
+      },
+      {
+       "label": "Federal percentage-based incentive (%)",
+       "values": [
+        "30%"
+       ]
+      },
+      {
+       "label": "Federal maximum incentive (%)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "Federal rebate ($/kW-DC)",
+       "values": [
+        "$0"
+       ]
+      },
+      {
+       "label": "Federal maximum rebate ($)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "State percentage-based incentive (%)",
+       "values": [
+        "0%"
+       ]
+      },
+      {
+       "label": "State maximum incentive ($)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "State rebate ($/kW-DC)",
+       "values": [
+        "$0"
+       ]
+      },
+      {
+       "label": "State maximum rebate ($)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "Utility percentage-based incentive (%)",
+       "values": [
+        "0%"
+       ]
+      },
+      {
+       "label": "Utility maximum incentive ($)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "Utility rebate ($/kW-DC)",
+       "values": [
+        "$0"
+       ]
+      },
+      {
+       "label": "Utility maximum rebate ($)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "Production incentive ($/kWh)",
+       "values": [
+        "$0"
+       ]
+      },
+      {
+       "label": "Incentive duration (years)",
+       "values": [
+        "1"
+       ]
+      },
+      {
+       "label": "Maximum incentive ($)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "System size limit (kW-DC)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "MACRS bonus depreciation",
+       "values": [
+        "100%"
+       ]
+      },
+      {
+       "label": "MACRS schedule",
+       "values": [
+        "5 years"
+       ]
+      }
+     ]
+    },
+    {
+     "header": [
+      "Battery",
+      "Annual O&M cost as a percent of upfront cost (%)"
+     ],
+     "rows": [
+      {
+       "group": "Battery"
+      },
+      {
+       "label": "Annual O&M cost as a percent of upfront cost (%)",
+       "values": [
+        "2.5%"
+       ]
+      },
+      {
+       "label": "Allow grid to charge battery",
+       "values": [
+        "Yes"
+       ]
+      },
+      {
+       "label": "Battery dispatch strategy",
+       "values": [
+        "Cost Optimal (perfect foresight)"
+       ]
+      },
+      {
+       "label": "Energy capacity replacement cost ($/kWh)",
+       "values": [
+        "$0"
+       ]
+      },
+      {
+       "label": "Energy capacity replacement year",
+       "values": [
+        "10"
+       ]
+      },
+      {
+       "label": "Power capacity replacement cost ($/kW)",
+       "values": [
+        "$0"
+       ]
+      },
+      {
+       "label": "Power capacity replacement year",
+       "values": [
+        "10"
+       ]
+      },
+      {
+       "label": "Constant replacement cost ($)",
+       "values": [
+        "$0"
+       ]
+      },
+      {
+       "label": "Constant replacement year",
+       "values": [
+        "10"
+       ]
+      },
+      {
+       "label": "Minimum energy capacity (kWh)",
+       "values": [
+        "0"
+       ]
+      },
+      {
+       "label": "Minimum power capacity (kW)",
+       "values": [
+        "0"
+       ]
+      },
+      {
+       "label": "Maximum power capacity (kW)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "Minimum battery duration (hours)",
+       "values": [
+        "0"
+       ]
+      },
+      {
+       "label": "Maximum battery duration (hours)",
+       "values": [
+        "Unlimited"
+       ]
+      },
+      {
+       "label": "Rectifier efficiency (%)",
+       "values": [
+        "96%"
+       ]
+      },
+      {
+       "label": "Round trip efficiency (%)",
+       "values": [
+        "97.5%"
+       ]
+      },
+      {
+       "label": "Inverter efficiency (%)",
+       "values": [
+        "96%"
+       ]
+      },
+      {
+       "label": "Minimum state of charge (%)",
+       "values": [
+        "20%"
+       ]
+      },
+      {
+       "label": "Initial state of charge (%)",
+       "values": [
+        "50%"
+       ]
+      },
+      {
+       "label": "Total percentage-based incentive (%)",
+       "values": [
+        "30%"
+       ]
+      },
+      {
+       "label": "Total power capacity rebate ($/kW)",
+       "values": [
+        "$0"
+       ]
+      },
+      {
+       "label": "MACRS bonus depreciation",
+       "values": [
+        "100%"
+       ]
+      },
+      {
+       "label": "MACRS schedule",
+       "values": [
+        "5 years"
+       ]
+      }
+     ]
+    }
+   ],
+   "subheads": []
+  },
+  {
+   "id": "caution",
+   "title": "Caution",
+   "intro": "Investment decisions should not be made on REopt results alone. These results assume perfect prediction of solar irradiance, wind speed, and electrical and thermal loads. In practice, actual savings may be lower based on the ability to accurately predict solar irradiance, wind speed, and load, and t",
+   "tables": [],
+   "subheads": []
+  },
+  {
+   "id": "next_steps",
+   "title": "Next Steps",
+   "intro": "This model provides an estimate of the techno-economic feasibility of solar, wind, battery, and/or CHP but investment decisions should not be made based on these results alone. Before moving ahead with project development, verify:",
+   "tables": [],
+   "subheads": []
+  }
+ ]
+}

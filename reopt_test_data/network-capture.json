@@ -1,0 +1,1029 @@
+[
+ {
+  "t": 1787467290426,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool",
+  "body": null
+ },
+ {
+  "t": 1787467290748,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool"
+ },
+ {
+  "t": 1787467290812,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/application-8dc57e8d9d7841e0b6f89a53aa514802192eea825208a960f9b6ba3bc8458315.css",
+  "body": null
+ },
+ {
+  "t": 1787467290812,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/application-8dc57e8d9d7841e0b6f89a53aa514802192eea825208a960f9b6ba3bc8458315.css"
+ },
+ {
+  "t": 1787467290813,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/application-3f11ca267e6a6e65f2ef7084bfd3a38b686819c45a4a1a9a54f2918e5cc1b66a.js",
+  "body": null
+ },
+ {
+  "t": 1787467290813,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/application-3f11ca267e6a6e65f2ef7084bfd3a38b686819c45a4a1a9a54f2918e5cc1b66a.js"
+ },
+ {
+  "t": 1787467290814,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/application-Bz-DrEd3.js",
+  "body": null
+ },
+ {
+  "t": 1787467290814,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/application-Bz-DrEd3.js"
+ },
+ {
+  "t": 1787467290814,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/index-BfzwMRAT.js",
+  "body": null
+ },
+ {
+  "t": 1787467290814,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/index-BfzwMRAT.js"
+ },
+ {
+  "t": 1787467290814,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/reopt-color-horizontal-a98b8b2a8aaccfcbfb7a30a80c11a8ad0f1699c67326d7d4a2ec0210214d2c66.png",
+  "body": null
+ },
+ {
+  "t": 1787467290814,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/reopt-color-horizontal-a98b8b2a8aaccfcbfb7a30a80c11a8ad0f1699c67326d7d4a2ec0210214d2c66.png"
+ },
+ {
+  "t": 1787467290814,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/run_new-3SEPzPlM.js",
+  "body": null
+ },
+ {
+  "t": 1787467290814,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/run_new-3SEPzPlM.js"
+ },
+ {
+  "t": 1787467290816,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/vue.esm-BNJtOGTB.js",
+  "body": null
+ },
+ {
+  "t": 1787467290816,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/vue.esm-BNJtOGTB.js"
+ },
+ {
+  "t": 1787467290816,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/vuex.esm-C4q4tI23.js",
+  "body": null
+ },
+ {
+  "t": 1787467290816,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/vuex.esm-C4q4tI23.js"
+ },
+ {
+  "t": 1787467290816,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/Tooltip-BjKgqtwj.js",
+  "body": null
+ },
+ {
+  "t": 1787467290816,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/Tooltip-BjKgqtwj.js"
+ },
+ {
+  "t": 1787467290816,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/_plugin-vue2_normalizer-p4i_2SC9.js",
+  "body": null
+ },
+ {
+  "t": 1787467290816,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/_plugin-vue2_normalizer-p4i_2SC9.js"
+ },
+ {
+  "t": 1787467290816,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/HorizontalStringInputNested2-ZORQY6sA.js",
+  "body": null
+ },
+ {
+  "t": 1787467290816,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/HorizontalStringInputNested2-ZORQY6sA.js"
+ },
+ {
+  "t": 1787467290816,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/highcharts-vue.min-D7XycXlg.js",
+  "body": null
+ },
+ {
+  "t": 1787467290816,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/highcharts-vue.min-D7XycXlg.js"
+ },
+ {
+  "t": 1787467290816,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/AddressAutocompleteInput-CD7nrFIE.js",
+  "body": null
+ },
+ {
+  "t": 1787467290816,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/AddressAutocompleteInput-CD7nrFIE.js"
+ },
+ {
+  "t": 1787467290816,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/NewCriticalBuildModal-CAKtyPs8.js",
+  "body": null
+ },
+ {
+  "t": 1787467290818,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/NewCriticalBuildModal-CAKtyPs8.js"
+ },
+ {
+  "t": 1787467290818,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/index.es-BkWHEEWD.js",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/index.es-BkWHEEWD.js"
+ },
+ {
+  "t": 1787467290819,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/run_new-BSmDHyiw.css",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/run_new-BSmDHyiw.css"
+ },
+ {
+  "t": 1787467290819,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/vue-CykgTt8c.css",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/vue-CykgTt8c.css"
+ },
+ {
+  "t": 1787467290819,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/NewCriticalBuildModal-BaQRu6Cz.css",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/NewCriticalBuildModal-BaQRu6Cz.css"
+ },
+ {
+  "t": 1787467290819,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod1-c59439281170d2172bffca9de3274703afe9c0db5f79495eac7d82714148f615.png",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod1-c59439281170d2172bffca9de3274703afe9c0db5f79495eac7d82714148f615.png"
+ },
+ {
+  "t": 1787467290819,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod2-c1eeb46b22eefe5306fca0d2a26f317b50f4585662c46712c8dbb89e1c3c2eec.png",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod2-c1eeb46b22eefe5306fca0d2a26f317b50f4585662c46712c8dbb89e1c3c2eec.png"
+ },
+ {
+  "t": 1787467290819,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod3-0a339673ff849c249e285c3faddab52760e40bfc5cdf4d4167002bc5e48da99b.png",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod3-0a339673ff849c249e285c3faddab52760e40bfc5cdf4d4167002bc5e48da99b.png"
+ },
+ {
+  "t": 1787467290819,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod4-513c35f3cd3ad89e41bacd8d0cad15e10c93ea6142efeabafa4f35d4749572e7.png",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod4-513c35f3cd3ad89e41bacd8d0cad15e10c93ea6142efeabafa4f35d4749572e7.png"
+ },
+ {
+  "t": 1787467290819,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod5-f97c9ed37e182616befc5432b75cd361ee26eb18e46a3d4b8ad2e9570a9cb0e2.png",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod5-f97c9ed37e182616befc5432b75cd361ee26eb18e46a3d4b8ad2e9570a9cb0e2.png"
+ },
+ {
+  "t": 1787467290819,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod6-4d1fec51040ad18001ec2122963ea9b53478521462a11189586dd9f31b4d0676.png",
+  "body": null
+ },
+ {
+  "t": 1787467290819,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/tutorial-vid-mod6-4d1fec51040ad18001ec2122963ea9b53478521462a11189586dd9f31b4d0676.png"
+ },
+ {
+  "t": 1787467290851,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/bootstrap/glyphicons-halflings-regular-fe185d11a49676890d47bb783312a0cda5a44c4039214094e7957b4c040ef11c.woff2",
+  "body": null
+ },
+ {
+  "t": 1787467290852,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/bootstrap/glyphicons-halflings-regular-fe185d11a49676890d47bb783312a0cda5a44c4039214094e7957b4c040ef11c.woff2"
+ },
+ {
+  "t": 1787467290852,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/font-awesome/fa-solid-900-886c86112a804ef1ddd1cb206af4c8c40e34b73c26652ca231404aa35a6b30d9.woff2",
+  "body": null
+ },
+ {
+  "t": 1787467290852,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/font-awesome/fa-solid-900-886c86112a804ef1ddd1cb206af4c8c40e34b73c26652ca231404aa35a6b30d9.woff2"
+ },
+ {
+  "t": 1787467290852,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/font-awesome/fa-regular-400-9169d8be7a8177e5a92a4d04b6de7f6504b938573bf4da5889871c4f376d3849.woff2",
+  "body": null
+ },
+ {
+  "t": 1787467290852,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/font-awesome/fa-regular-400-9169d8be7a8177e5a92a4d04b6de7f6504b938573bf4da5889871c4f376d3849.woff2"
+ },
+ {
+  "t": 1787467290852,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/font-awesome/fa-brands-400-faae6fc0aa94cc5bde5076647c817a23206096a1cbeda10d1c6f3d89d6163ed1.woff2",
+  "body": null
+ },
+ {
+  "t": 1787467290852,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/font-awesome/fa-brands-400-faae6fc0aa94cc5bde5076647c817a23206096a1cbeda10d1c6f3d89d6163ed1.woff2"
+ },
+ {
+  "t": 1787467290869,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/nlr-logo-color-horizontal-png-v2-5918143ca32c69e7146bd6ba3a68a2886d93a30e5a44b42ea6f395b641532477.png",
+  "body": null
+ },
+ {
+  "t": 1787467290870,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/nlr-logo-color-horizontal-png-v2-5918143ca32c69e7146bd6ba3a68a2886d93a30e5a44b42ea6f395b641532477.png"
+ },
+ {
+  "t": 1787467290926,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-8PZ4ZDWX73&gtm=45je68j0v9121378465z8890100053za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115616986~115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422~120420414&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=page_view&tfd=499",
+  "body": null
+ },
+ {
+  "t": 1787467290953,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-7MVSXJXTPF&gtm=45je68j0v9121357411z8890100053za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=12&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120213116~120315470~120385423~120420416&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=page_view&tfd=526",
+  "body": null
+ },
+ {
+  "t": 1787467290998,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-D36B6EXMET&gtm=45je68j0v885835086z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=5&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315470~120385423&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&en=page_view&ep.debug_mode=true&tfd=570",
+  "body": null
+ },
+ {
+  "t": 1787467291026,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&en=page_view&up.nrel_staff=false&tfd=599",
+  "body": null
+ },
+ {
+  "t": 1787467291027,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-8PZ4ZDWX73&gtm=45je68j0v9121378465z8890100053za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115616986~115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422~120420414&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=page_view&tfd=499"
+ },
+ {
+  "t": 1787467291031,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/alliance-for-energy-innovation-fy26-logo-black-22fb8826a46e534261ac9bc5f6bd289eddafbb28765cba9f5516b895a7b9b123.svg",
+  "body": null
+ },
+ {
+  "t": 1787467291031,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/alliance-for-energy-innovation-fy26-logo-black-22fb8826a46e534261ac9bc5f6bd289eddafbb28765cba9f5516b895a7b9b123.svg"
+ },
+ {
+  "t": 1787467291031,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/u-s-department-of-energy-16cc67bcb5ca0b924e639c1537c7ef1507af4b39b6ae4195a6aaa5e4c9ef28b7.svg",
+  "body": null
+ },
+ {
+  "t": 1787467291031,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/u-s-department-of-energy-16cc67bcb5ca0b924e639c1537c7ef1507af4b39b6ae4195a6aaa5e4c9ef28b7.svg"
+ },
+ {
+  "t": 1787467291130,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/grid-tied-CptKN8dA.png",
+  "body": null
+ },
+ {
+  "t": 1787467291130,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/grid-tied-CptKN8dA.png"
+ },
+ {
+  "t": 1787467291130,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/vite/assets/off-grid-B42uVox-.png",
+  "body": null
+ },
+ {
+  "t": 1787467291131,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/vite/assets/off-grid-B42uVox-.png"
+ },
+ {
+  "t": 1787467291131,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/fetch-federal-defaults?sector=commercial%2Findustrial&federal_procurement_type=&federal_sector_state=",
+  "body": null
+ },
+ {
+  "t": 1787467291131,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/minus-circle-2247687adbb3cdbb19de66b950e28092b61e89710d1a0902f4681550fc168c95.svg",
+  "body": null
+ },
+ {
+  "t": 1787467291131,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/minus-circle-2247687adbb3cdbb19de66b950e28092b61e89710d1a0902f4681550fc168c95.svg"
+ },
+ {
+  "t": 1787467291131,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/assets/plus-circle-efce75e46861b5a5cdf2351a94421eaf9ab1476f5c645f7ab48ea6e97786f981.svg",
+  "body": null
+ },
+ {
+  "t": 1787467291131,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/assets/plus-circle-efce75e46861b5a5cdf2351a94421eaf9ab1476f5c645f7ab48ea6e97786f981.svg"
+ },
+ {
+  "t": 1787467291165,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-7MVSXJXTPF&gtm=45je68j0v9121357411z8890100053za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=12&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120213116~120315470~120385423~120420416&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=page_view&tfd=526"
+ },
+ {
+  "t": 1787467291165,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-D36B6EXMET&gtm=45je68j0v885835086z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=5&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315470~120385423&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&en=page_view&ep.debug_mode=true&tfd=570"
+ },
+ {
+  "t": 1787467291166,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&en=page_view&up.nrel_staff=false&tfd=599"
+ },
+ {
+  "t": 1787467291530,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/fetch-federal-defaults?sector=commercial%2Findustrial&federal_procurement_type=&federal_sector_state="
+ },
+ {
+  "t": 1787467294327,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAAQ&ae=a&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=2&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&en=scroll&epn.percent_scrolled=90&_et=14&tfd=3892",
+  "body": null
+ },
+ {
+  "t": 1787467294411,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAAQ&ae=a&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=2&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&en=scroll&epn.percent_scrolled=90&_et=14&tfd=3892"
+ },
+ {
+  "t": 1787467295933,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-8PZ4ZDWX73&gtm=45je68j0v9121378465za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAAQ&ae=a&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=2&tag_exp=115616986~115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422~120420414&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=scroll&epn.percent_scrolled=90&_et=12&tfd=5505",
+  "body": null
+ },
+ {
+  "t": 1787467295963,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-7MVSXJXTPF&gtm=45je68j0v9121357411za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAAQ&ae=a&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=12&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=2&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120213116~120315470~120385423~120420416&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=scroll&epn.percent_scrolled=90&_et=12&tfd=5535",
+  "body": null
+ },
+ {
+  "t": 1787467295974,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-CSLL4ZEK4L&gtm=45je68j0v9131934939z8890100053za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115616986~115938466~115938469~118897920~118897930~119367802~119367810~119791748~120213116~120315470~120385422&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=page_view&ep.agency=DOE&ep.subagency=REOPT.NLR.GOV&ep.site_topic=unspecified%3Areopt.nlr.gov&ep.site_platform=unspecified%3Areopt.nlr.gov&ep.protocol=https%3A&tfd=5546",
+  "body": null
+ },
+ {
+  "t": 1787467296006,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-D36B6EXMET&gtm=45je68j0v885835086za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAAQ&ae=a&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=5&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=2&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315470~120385423&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&en=scroll&ep.debug_mode=true&epn.percent_scrolled=90&_et=11&tfd=5580",
+  "body": null
+ },
+ {
+  "t": 1787467296022,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-8PZ4ZDWX73&gtm=45je68j0v9121378465za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAAQ&ae=a&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=2&tag_exp=115616986~115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422~120420414&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=scroll&epn.percent_scrolled=90&_et=12&tfd=5505"
+ },
+ {
+  "t": 1787467296052,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-7MVSXJXTPF&gtm=45je68j0v9121357411za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAAQ&ae=a&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=12&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=2&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120213116~120315470~120385423~120420416&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=scroll&epn.percent_scrolled=90&_et=12&tfd=5535"
+ },
+ {
+  "t": 1787467296063,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-CSLL4ZEK4L&gtm=45je68j0v9131934939z8890100053za20gzb890100053zd890100053&_p=1787467290814&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=6&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=1&tag_exp=115616986~115938466~115938469~118897920~118897930~119367802~119367810~119791748~120213116~120315470~120385422&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&sid=1787467221&sct=1&seg=1&_tu=QA&en=page_view&ep.agency=DOE&ep.subagency=REOPT.NLR.GOV&ep.site_topic=unspecified%3Areopt.nlr.gov&ep.site_platform=unspecified%3Areopt.nlr.gov&ep.protocol=https%3A&tfd=5546"
+ },
+ {
+  "t": 1787467296094,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-D36B6EXMET&gtm=45je68j0v885835086za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AEAAAAQ&ae=a&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=5&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=2&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315470~120385423&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&en=scroll&ep.debug_mode=true&epn.percent_scrolled=90&_et=11&tfd=5580"
+ },
+ {
+  "t": 1787467299322,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=3&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&en=scroll_25&epn.percent_scrolled=25&_et=3292&tfd=8893",
+  "body": null
+ },
+ {
+  "t": 1787467299415,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=3&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&en=scroll_25&epn.percent_scrolled=25&_et=3292&tfd=8893"
+ },
+ {
+  "t": 1787467396104,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://reopt.nlr.gov/tool/aws-autocomplete-suggestions",
+  "body": "{\"address_query\":\"1617 Cole Blvd, Golden, CO 80401\"}"
+ },
+ {
+  "t": 1787467396832,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/aws-autocomplete-suggestions"
+ },
+ {
+  "t": 1787467399391,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=4&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=GreenHouseV2%20PV%2BBattery%20Resilience%20Test%20%7C%20REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&en=scroll_50&epn.percent_scrolled=50&_et=100063&tfd=108963",
+  "body": null
+ },
+ {
+  "t": 1787467399472,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/aws-get-place?place_id=AQAAAGEA9zETnbDGRMTJqgYV_zF2n8N5Kb37vOXzbLpiOqwrwz4BQPFc3nCWHwKpCo-kjmv3t3Ao9MjJa8o4bCpH4nVxFFy4XMvV0bSxP4zlGf9U871sd8JqYhKFTQtZqeW_R4Q3jQYPltT4agqBx8e520vSF4tbV1ei2t9gR93I6WiAgxTD&intended_use=Storage",
+  "body": null
+ },
+ {
+  "t": 1787467399581,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&_s=4&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=GreenHouseV2%20PV%2BBattery%20Resilience%20Test%20%7C%20REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&en=scroll_50&epn.percent_scrolled=50&_et=100063&tfd=108963"
+ },
+ {
+  "t": 1787467400190,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/aws-get-place?place_id=AQAAAGEA9zETnbDGRMTJqgYV_zF2n8N5Kb37vOXzbLpiOqwrwz4BQPFc3nCWHwKpCo-kjmv3t3Ao9MjJa8o4bCpH4nVxFFy4XMvV0bSxP4zlGf9U871sd8JqYhKFTQtZqeW_R4Q3jQYPltT4agqBx8e520vSF4tbV1ei2t9gR93I6WiAgxTD&intended_use=Storage"
+ },
+ {
+  "t": 1787467400190,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/emissions-profile?latitude=39.74437&longitude=-105.15199&year=2017",
+  "body": null
+ },
+ {
+  "t": 1787467400190,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/emissions-health-defaults?latitude=39.74437&longitude=-105.15199&inflation=0.025",
+  "body": null
+ },
+ {
+  "t": 1787467400190,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/utility-rates?latitude=39.74437&longitude=-105.15199",
+  "body": null
+ },
+ {
+  "t": 1787467401109,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/emissions-health-defaults?latitude=39.74437&longitude=-105.15199&inflation=0.025"
+ },
+ {
+  "t": 1787467401539,
+  "dir": "resp",
+  "status": 500,
+  "url": "https://reopt.nlr.gov/tool/utility-rates?latitude=39.74437&longitude=-105.15199"
+ },
+ {
+  "t": 1787467417316,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/emissions-profile?latitude=39.74437&longitude=-105.15199&year=2017"
+ },
+ {
+  "t": 1787467492577,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://reopt.nlr.gov/tool/aws-autocomplete-suggestions",
+  "body": "{\"address_query\":\"1617 Cole Blvd, Golden, CO 80401\"}"
+ },
+ {
+  "t": 1787467493090,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/aws-autocomplete-suggestions"
+ },
+ {
+  "t": 1787467494339,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/aws-get-place?place_id=AQAAAGEA9zETnbDGRMTJqgYV_zF2n8N5Kb37vOXzbLpiOqwrwz4BQPFc3nCWHwKpCo-kjmv3t3Ao9MjJa8o4bCpH4nVxFFy4XMvV0bSxP4zlGf9U871sd8JqYhKFTQtZqeW_R4Q3jQYPltT4agqBx8e520vSF4tbV1ei2t9gR93I6WiAgxTD&intended_use=Storage",
+  "body": null
+ },
+ {
+  "t": 1787467494906,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/aws-get-place?place_id=AQAAAGEA9zETnbDGRMTJqgYV_zF2n8N5Kb37vOXzbLpiOqwrwz4BQPFc3nCWHwKpCo-kjmv3t3Ao9MjJa8o4bCpH4nVxFFy4XMvV0bSxP4zlGf9U871sd8JqYhKFTQtZqeW_R4Q3jQYPltT4agqBx8e520vSF4tbV1ei2t9gR93I6WiAgxTD&intended_use=Storage"
+ },
+ {
+  "t": 1787467494907,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/emissions-profile?latitude=39.74437&longitude=-105.15199&year=2017",
+  "body": null
+ },
+ {
+  "t": 1787467494907,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/emissions-health-defaults?latitude=39.74437&longitude=-105.15199&inflation=0.025",
+  "body": null
+ },
+ {
+  "t": 1787467494907,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/utility-rates?latitude=39.74437&longitude=-105.15199",
+  "body": null
+ },
+ {
+  "t": 1787467495224,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/utility-rates?latitude=39.74437&longitude=-105.15199"
+ },
+ {
+  "t": 1787467495630,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/emissions-health-defaults?latitude=39.74437&longitude=-105.15199&inflation=0.025"
+ },
+ {
+  "t": 1787467496453,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/emissions-profile?latitude=39.74437&longitude=-105.15199&year=2017"
+ },
+ {
+  "t": 1787467503617,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://reopt.nlr.gov/tool/aws-autocomplete-suggestions",
+  "body": "{\"address_query\":\"1617 Cole Blvd, Golden, CO 80401\"}"
+ },
+ {
+  "t": 1787467504288,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/aws-autocomplete-suggestions"
+ },
+ {
+  "t": 1787467505392,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/aws-get-place?place_id=AQAAAGEA9zETnbDGRMTJqgYV_zF2n8N5Kb37vOXzbLpiOqwrwz4BQPFc3nCWHwKpCo-kjmv3t3Ao9MjJa8o4bCpH4nVxFFy4XMvV0bSxP4zlGf9U871sd8JqYhKFTQtZqeW_R4Q3jQYPltT4agqBx8e520vSF4tbV1ei2t9gR93I6WiAgxTD&intended_use=Storage",
+  "body": null
+ },
+ {
+  "t": 1787467505795,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/aws-get-place?place_id=AQAAAGEA9zETnbDGRMTJqgYV_zF2n8N5Kb37vOXzbLpiOqwrwz4BQPFc3nCWHwKpCo-kjmv3t3Ao9MjJa8o4bCpH4nVxFFy4XMvV0bSxP4zlGf9U871sd8JqYhKFTQtZqeW_R4Q3jQYPltT4agqBx8e520vSF4tbV1ei2t9gR93I6WiAgxTD&intended_use=Storage"
+ },
+ {
+  "t": 1787467505796,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/emissions-profile?latitude=39.74437&longitude=-105.15199&year=2017",
+  "body": null
+ },
+ {
+  "t": 1787467505796,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/emissions-health-defaults?latitude=39.74437&longitude=-105.15199&inflation=0.025",
+  "body": null
+ },
+ {
+  "t": 1787467505796,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/utility-rates?latitude=39.74437&longitude=-105.15199",
+  "body": null
+ },
+ {
+  "t": 1787467506127,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/utility-rates?latitude=39.74437&longitude=-105.15199"
+ },
+ {
+  "t": 1787467506439,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/emissions-health-defaults?latitude=39.74437&longitude=-105.15199&inflation=0.025"
+ },
+ {
+  "t": 1787467506687,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/emissions-profile?latitude=39.74437&longitude=-105.15199&year=2017"
+ },
+ {
+  "t": 1787467514542,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://reopt.nlr.gov/tool/aws-autocomplete-suggestions",
+  "body": "{\"address_query\":\"1617 Cole Blvd, Golden, CO 80401\"}"
+ },
+ {
+  "t": 1787467515212,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/aws-autocomplete-suggestions"
+ },
+ {
+  "t": 1787467516344,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/aws-get-place?place_id=AQAAAGEA9zETnbDGRMTJqgYV_zF2n8N5Kb37vOXzbLpiOqwrwz4BQPFc3nCWHwKpCo-kjmv3t3Ao9MjJa8o4bCpH4nVxFFy4XMvV0bSxP4zlGf9U871sd8JqYhKFTQtZqeW_R4Q3jQYPltT4agqBx8e520vSF4tbV1ei2t9gR93I6WiAgxTD&intended_use=Storage",
+  "body": null
+ },
+ {
+  "t": 1787467516767,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/aws-get-place?place_id=AQAAAGEA9zETnbDGRMTJqgYV_zF2n8N5Kb37vOXzbLpiOqwrwz4BQPFc3nCWHwKpCo-kjmv3t3Ao9MjJa8o4bCpH4nVxFFy4XMvV0bSxP4zlGf9U871sd8JqYhKFTQtZqeW_R4Q3jQYPltT4agqBx8e520vSF4tbV1ei2t9gR93I6WiAgxTD&intended_use=Storage"
+ },
+ {
+  "t": 1787467516768,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/emissions-profile?latitude=39.74437&longitude=-105.15199&year=2017",
+  "body": null
+ },
+ {
+  "t": 1787467516768,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/emissions-health-defaults?latitude=39.74437&longitude=-105.15199&inflation=0.025",
+  "body": null
+ },
+ {
+  "t": 1787467516768,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/utility-rates?latitude=39.74437&longitude=-105.15199",
+  "body": null
+ },
+ {
+  "t": 1787467517084,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/utility-rates?latitude=39.74437&longitude=-105.15199"
+ },
+ {
+  "t": 1787467517877,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/emissions-health-defaults?latitude=39.74437&longitude=-105.15199&inflation=0.025"
+ },
+ {
+  "t": 1787467518087,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/emissions-profile?latitude=39.74437&longitude=-105.15199&year=2017"
+ },
+ {
+  "t": 1787467630381,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/annual-kwh?latitude=39.74437&longitude=-105.15199&doe_reference_name=LargeOffice",
+  "body": null
+ },
+ {
+  "t": 1787467631106,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/annual-kwh?latitude=39.74437&longitude=-105.15199&doe_reference_name=LargeOffice"
+ },
+ {
+  "t": 1787467631107,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/simulated-annual-elec-load?latitude=39.74437&longitude=-105.15199&doe_reference_name=LargeOffice",
+  "body": null
+ },
+ {
+  "t": 1787467631107,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&site_land_acres=5&electric_load_annual_kwh=6127030",
+  "body": null
+ },
+ {
+  "t": 1787467631202,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&site_land_acres=5&electric_load_annual_kwh=6127030",
+  "body": null
+ },
+ {
+  "t": 1787467631647,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&site_land_acres=5&electric_load_annual_kwh=6127030"
+ },
+ {
+  "t": 1787467631809,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/simulated-annual-elec-load?latitude=39.74437&longitude=-105.15199&doe_reference_name=LargeOffice"
+ },
+ {
+  "t": 1787467632083,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&site_land_acres=5&electric_load_annual_kwh=6127030"
+ },
+ {
+  "t": 1787467689732,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/annual-kwh?latitude=39.74437&longitude=-105.15199&doe_reference_name=LargeOffice",
+  "body": null
+ },
+ {
+  "t": 1787467691016,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/annual-kwh?latitude=39.74437&longitude=-105.15199&doe_reference_name=LargeOffice"
+ },
+ {
+  "t": 1787467691017,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/simulated-annual-elec-load?latitude=39.74437&longitude=-105.15199&doe_reference_name=LargeOffice&annual_kwh=5000000",
+  "body": null
+ },
+ {
+  "t": 1787467691017,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&site_land_acres=5&electric_load_annual_kwh=5000000",
+  "body": null
+ },
+ {
+  "t": 1787467691779,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/simulated-annual-elec-load?latitude=39.74437&longitude=-105.15199&doe_reference_name=LargeOffice&annual_kwh=5000000"
+ },
+ {
+  "t": 1787467692097,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&site_land_acres=5&electric_load_annual_kwh=5000000"
+ },
+ {
+  "t": 1787467693780,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=GreenHouseV2%20PV%2BBattery%20Resilience%20Test%20%7C%20REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&_s=5&tfd=403354",
+  "body": "en=scroll_75&epn.percent_scrolled=75&_et=294316\r\nen=scroll_90&epn.percent_scrolled=90&_et=4006"
+ },
+ {
+  "t": 1787467693967,
+  "dir": "resp",
+  "status": 204,
+  "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-HFDNVE0DSC&gtm=45je68j0v872782384z879288587za20gzb79288587zd79288587&_p=1787467290815&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAQ&are=1&cid=1032924697.1787467222&frm=0&ngs=1&pscdl=noapi&rcb=1&sr=1440x900&uaa=x86&uab=64&uafvl=Not%253DA%253FBrand%3B99.0.0.0%7CGoogle%2520Chrome%3B151.0.7922.172%7CChromium%3B151.0.7922.172&uam=&uamb=0&uap=Windows&uapv=10.0.0&uaw=0&ul=en-us&tag_exp=115938466~115938469~118897920~118897930~119367802~119367810~120315471~120385422&sid=1787467221&sct=1&seg=1&dl=https%3A%2F%2Freopt.nlr.gov%2Ftool&dt=GreenHouseV2%20PV%2BBattery%20Resilience%20Test%20%7C%20REopt%20Web%20Tool%20%7C%20REopt%20Energy%20Integration%20%26%20Optimization%20%7C%20NLR&_tu=QA&_s=5&tfd=403354"
+ },
+ {
+  "t": 1787467800223,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&min_kw=0&site_land_acres=5&electric_load_annual_kwh=5000000",
+  "body": null
+ },
+ {
+  "t": 1787467800783,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&min_kw=0&site_land_acres=5&electric_load_annual_kwh=5000000"
+ },
+ {
+  "t": 1787467802226,
+  "dir": "req",
+  "method": "GET",
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&min_kw=0&max_kw=2000&site_land_acres=5&electric_load_annual_kwh=5000000",
+  "body": null
+ },
+ {
+  "t": 1787467802623,
+  "dir": "resp",
+  "status": 200,
+  "url": "https://reopt.nlr.gov/tool/pv-cost-defaults?array_type=0&min_kw=0&max_kw=2000&site_land_acres=5&electric_load_annual_kwh=5000000"
+ },
+ {
+  "t": 1787467853212,
+  "dir": "req",
+  "method": "POST",
+  "url": "https://reopt.nlr.gov/tool/results",
+  "body": "{\"id\":null,\"run_group_id\":null,\"focus\":\"resilience\",\"analyze_pv\":true,\"analyze_battery\":true,\"analyze_wind\":null,\"existing_diesel_generator\":false,\"critical_build_id\":null,\"custom_tariff_id\":null,\"analyze_generator\":null,\"analyze_chp\":null,\"analyze_cws\":null,\"optimality_tolerance_techs\":null,\"analyze_ghp\":null,\"grid\":true,\"clean_energy_targets\":false,\"clean_energy_target\":\"none\",\"include_climate_in_objective\":false,\"include_health_in_objective\":false,\"analyze_prime_generator\":null,\"single_run\":true,\"number_of_runs\":null,\"portfolio_id\":null,\"solver_name\":\"HiGHS\",\"timeout_seconds\":null,\"analyze_ashp_space\":null,\"analyze_ashp_water\":null,\"thermal_build_id\":null,\"analyze_cst\":null,\"site\":{\"id\":null,\"address\":\"1617 Cole Blvd, Golden, CO 80401-3382, United States\",\"latitude\":39.74437,\"longitude\":-105.15199,\"land_acres\":\"5\",\"roof_squarefeet\":null,\"description\":\"GreenHouseV2 PV+Battery Resilience Test\",\"run_id\":null,\"pv_wind_space_available\":\"land\",\"elec_grid_purchases_lbs_co2_per_kwh\":null,\"gen_fuel_consump_lbs_co2_per_kwh\":null,\"include_exported_renewable_electricity_in_total\":true,\"include_exported_elec_emissions_in_total\":true,\"renewable_electricity_min_fraction\":null,\"renewable_electricity_max_fraction\":null,\"CO2_emissions_reduction_min_fraction\":null,\"CO2_emissions_reduction_max_fraction\":null,\"use_latitude_longitude\":false,\"sector\":\"commercial/industrial\",\"federal_procurement_type\":null,\"federal_sector_state\":null,\"electric_tariff\":{\"id\":null,\"add_blended_rates_to_urdb_rate\":null,\"wholesale_rate\":null,\"net_metering_limit_kw\":null,\"interconnection_limit_kw\":null,\"urdb_label\":\"5b44ffc75457a36716a907eb\",\"blended_annual_demand_rate\":null,\"blended_annual_energy_rate\":null,\"blended_monthly_demand_charges_us_dollars_per_kw\":null,\"blended_montly_rates_us_dollars_per_kwh\":null,\"site_id\":null,\"custom_electricity_rate\":null,\"custom_rate_type\":null,\"energy_cost_monthly_1\":null,\"energy_cost_monthly_2\":null,\"energy_cost_monthly_3\":null,\"energy_cost_monthly_4\":null,\"energy_cost_monthly_5\":null,\"energy_cost_monthly_6\":null,\"energy_cost_monthly_7\":null,\"energy_cost_monthly_8\":null,\"energy_cost_monthly_9\":null,\"energy_cost_monthly_10\":null,\"energy_cost_monthly_11\":null,\"energy_cost_monthly_12\":null,\"demand_cost_monthly_1\":null,\"demand_cost_monthly_2\":null,\"demand_cost_monthly_3\":null,\"demand_cost_monthly_4\":null,\"demand_cost_monthly_5\":null,\"demand_cost_monthly_6\":null,\"demand_cost_monthly_7\":null,\"demand_cost_monthly_8\":null,\"demand_cost_monthly_9\":null,\"demand_cost_monthly_10\":null,\"demand_cost_monthly_11\":null,\"demand_cost_monthly_12\":null,\"urdb_rate_name\":null,\"emissions_factor_hourly_source\":null,\"co2_annual_emissions_factor\":null,\"emissions_file_data\":null,\"emissions_type\":\"hourly\",\"chp_standby_rate_per_kw_per_month\":null,\"uploaded_emissions_factor_profile\":null,\"nox_annual_emissions_factor\":null,\"so2_annual_emissions_factor\":null,\"pm25_annual_emissions_factor\":null,\"emissions_factor_CO2_decrease_fraction\":null,\"prime_generator_standby_rate_per_kw_per_month\":null,\"wholesale_rate_series_kw\":null,\"wholesale_rate_file_data\":null,\"custom_wholesale_rate\":null,\"wholesale_rate_file_name\":null,\"emissions_file_name\":null,\"cambium_emissions_type\":\"hourly\",\"cambium_location_type\":\"GEA Regions 2023\",\"cambium_start_year\":null,\"cambium_levelization_years\":\"25\",\"cambium_metric_col\":\"lrmer_co2e\",\"cambium_scenario\":\"Mid-case\",\"cambium_grid_level\":\"enduse\",\"uploaded_cambium_emissions_factor_profile\":null,\"cambium_emissions_file_data\":null,\"emissions_factor_nox_so2_pm25_decrease_fraction\":null,\"cambium_greening_of_grid\":true,\"cambium_emissions_file_name\":null,\"energy_rate_series_kwh\":null,\"energy_rate_file_name\":null,\"energy_rate_file_data\":null,\"compensation_type\":\"no_compensation\",\"export_rate_beyond_net_metering_limit\":null,\"use_year_one_short_run_emissions\":false,\"emissions_avert_region\":\"Rocky Mountains\",\"allow_simultaneous_export_import\":false},\"load_profile\":{\"id\":null,\"typical_load_type\":\"simulated_building\",\"loads_kw_is_net\":null,\"loads_kw\":null,\"year\":null,\"doe_reference_name\":\"LargeOffice\",\"annual_kwh\":\"5000000\",\"critical_load_type\":\"percent\",\"critical_loads_kw_is_net\":null,\"critical_loads_kw\":null,\"critical_load_fraction\":\"50\",\"outage_start_hour\":null,\"outage_start_time_step\":null,\"site_id\":null,\"outage_duration\":\"48\",\"typical_load_file_data\":null,\"critical_load_file_data\":null,\"typical_load_profile_id\":null,\"critical_load_profile_id\":null,\"simulated_load_type\":\"annual\",\"energy_use_monthly_1\":null,\"energy_use_monthly_2\":null,\"energy_use_monthly_3\":null,\"energy_use_monthly_4\":null,\"energy_use_monthly_5\":null,\"energy_use_monthly_6\":null,\"energy_use_monthly_7\":null,\"energy_use_monthly_8\":null,\"energy_use_monthly_9\":null,\"energy_use_monthly_10\":null,\"energy_use_monthly_11\":null,\"energy_use_monthly_12\":null,\"campus_annual_kwh\":null,\"load_reduction\":\"100.00\",\"min_load_met_annual_fraction\":null,\"operating_reserve_required_fraction\":null,\"number_of_outages\":1,\"custom_multiple_outage_dates\":false,\"typical_load_file_name\":null,\"critical_load_file_name\":null,\"add_ev_load\":null,\"peak_electric_load_monthly_1\":null,\"peak_electric_load_monthly_2\":null,\"peak_electric_load_monthly_3\":null,\"peak_electric_load_monthly_4\":null,\"peak_electric_load_monthly_5\":null,\"peak_electric_load_monthly_6\":null,\"peak_electric_load_monthly_7\":null,\"peak_electric_load_monthly_8\":null,\"peak_electric_load_monthly_9\":null,\"peak_electric_load_monthly_10\":null,\"peak_electric_load_monthly_11\":null,\"peak_electric_load_monthly_12\":null,\"campus_buildings\":[{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null},{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null}],\"multiple_outages\":[{\"outage_duration\":\"\",\"outage_start_hour\":\"\",\"outage_start_date\":\"\",\"outage_start_time_step\":\"\"},{\"outage_duration\":\"\",\"outage_start_hour\":\"\",\"outage_start_date\":\"\",\"outage_start_time_step\":\"\"},{\"outage_duration\":\"\",\"outage_start_hour\":\"\",\"outage_start_date\":\"\",\"outage_start_time_step\":\"\"},{\"outage_duration\":\"\",\"outage_start_hour\":\"\",\"outage_start_date\":\"\",\"outage_start_time_step\":\"\"}]},\"financial\":{\"id\":null,\"elec_cost_escalation_rate_fraction\":\"1.7\",\"offtaker_discount_rate_fraction\":\"8.3\",\"value_of_lost_load_us_dollars_per_kwh\":null,\"analysis_years\":\"25\",\"microgrid_upgrade_cost_fraction\":null,\"offtaker_tax_rate_fraction\":null,\"om_cost_escalation_rate_fraction\":null,\"site_id\":null,\"lost_load_value\":null,\"third_party_ownership\":null,\"owner_tax_rate_fraction\":null,\"owner_discount_rate_fraction\":null,\"existing_boiler_fuel_cost_escalation_rate_fraction\":null,\"chp_fuel_cost_escalation_rate_fraction\":null,\"offgrid_other_capital_costs\":null,\"offgrid_other_annual_costs\":null,\"generator_fuel_cost_escalation_rate_fraction\":null,\"CO2_cost_per_tonne\":null,\"NOx_grid_cost_per_tonne\":null,\"SO2_grid_cost_per_tonne\":null,\"PM25_grid_cost_per_tonne\":null,\"NOx_onsite_fuelburn_cost_per_tonne\":null,\"SO2_onsite_fuelburn_cost_per_tonne\":null,\"PM25_onsite_fuelburn_cost_per_tonne\":null,\"CO2_cost_escalation_rate_fraction\":null,\"NOx_cost_escalation_rate_fraction\":null,\"SO2_cost_escalation_rate_fraction\":null,\"PM25_cost_escalation_rate_fraction\":null,\"prime_generator_fuel_cost_escalation_rate_fraction\":null,\"min_initial_capital_costs_before_incentives\":null,\"max_initial_capital_costs_before_incentives\":null},\"pv\":{\"id\":null,\"installed_cost_per_kw\":\"1600\",\"existing_kw\":null,\"loads_kw_is_net\":null,\"federal_itc_fraction\":null,\"federal_rebate_per_kw\":null,\"state_ibi_fraction\":null,\"state_ibi_max\":null,\"state_rebate_per_kw\":null,\"state_rebate_max\":null,\"utility_ibi_fraction\":null,\"utility_ibi_max\":null,\"utility_rebate_per_kw\":null,\"utility_rebate_max\":null,\"production_incentive_per_kwh\":null,\"pbi_years\":null,\"production_incentive_max_benefit\":null,\"pbi_system_max_kw\":null,\"site_id\":null,\"om_cost_per_kw\":null,\"min_kw\":\"0\",\"max_kw\":\"2000\",\"module_type\":\"Standard\",\"array_type\":\"Ground Mount, Fixed\",\"azimuth\":null,\"tilt\":null,\"dc_ac_ratio\":null,\"losses\":null,\"macrs_option_years\":5,\"macrs_bonus_fraction\":1,\"radius\":null,\"prod_factor_series_kw\":null,\"prod_factor_file_data\":null,\"can_net_meter\":true,\"operating_reserve_required_fraction\":null,\"prod_factor_file_name\":null,\"can_wholesale\":true,\"acres_per_kw\":null,\"kw_per_square_foot\":null,\"pv_production\":\"system_characteristics\",\"size_class\":3,\"custom_size_class\":null},\"storage\":{\"id\":null,\"installed_cost_per_kwh\":\"300\",\"installed_cost_per_kw\":\"800\",\"replace_cost_per_kwh\":null,\"battery_replacement_year\":null,\"replace_cost_per_kw\":null,\"inverter_replacement_year\":null,\"min_kwh\":\"0\",\"max_kwh\":\"4000\",\"min_kw\":null,\"max_kw\":null,\"rectifier_efficiency_fraction\":null,\"internal_efficiency_fraction\":null,\"inverter_efficiency_fraction\":null,\"soc_min_fraction\":null,\"soc_init_fraction\":null,\"can_grid_charge\":true,\"total_itc_fraction\":null,\"total_rebate_per_kw\":null,\"macrs_option_years\":5,\"site_id\":null,\"macrs_bonus_fraction\":1,\"min_duration_hours\":null,\"max_duration_hours\":null,\"installed_cost_constant\":\"0\",\"om_cost_fraction_of_installed_cost\":\"2.5\",\"replace_cost_constant\":null,\"cost_constant_replacement_year\":null,\"can_net_meter\":null,\"can_wholesale\":null,\"dispatch_strategy\":\"cost_optimal\",\"custom_soc_series_fraction\":null,\"custom_soc_file_name\":null,\"fixed_soc_series_fraction_tolerance\":null},\"cst\":{\"id\":null,\"min_kw\":null,\"max_kw\":null,\"installed_cost_per_kw\":null,\"om_cost_per_kw\":null,\"macrs_option_years\":0,\"macrs_bonus_fraction\":0,\"can_serve_dhw\":null,\"can_serve_space_heating\":null,\"can_serve_process_heat\":null,\"inlet_temp_degF\":null,\"outlet_temp_degF\":null,\"site_id\":null,\"analyze_htts\":true,\"high_temp_thermal_storage\":{\"id\":null,\"min_kwh\":null,\"max_kwh\":null,\"installed_cost_per_kwh\":null,\"thermal_decay_rate_fraction\":null,\"macrs_option_years\":5,\"macrs_bonus_fraction\":1,\"total_itc_fraction\":null,\"cst_id\":null}},\"wind\":{\"id\":null,\"size_class\":\"commercial\",\"installed_cost_per_kw\":null,\"federal_itc_fraction\":null,\"federal_rebate_per_kw\":null,\"state_ibi_fraction\":null,\"state_ibi_max\":null,\"state_rebate_per_kw\":null,\"state_rebate_max\":null,\"utility_ibi_fraction\":null,\"utility_ibi_max\":null,\"utility_rebate_per_kw\":null,\"utility_rebate_max\":null,\"production_incentive_per_kwh\":null,\"pbi_years\":null,\"production_incentive_max_benefit\":null,\"pbi_system_max_kw\":null,\"om_cost_per_kw\":null,\"min_kw\":null,\"max_kw\":null,\"macrs_option_years\":5,\"site_id\":null,\"macrs_bonus_fraction\":1,\"can_net_meter\":true,\"operating_reserve_required_fraction\":null,\"prod_factor_series_kw\":null,\"prod_factor_file_data\":null,\"prod_factor_file_name\":null,\"can_wholesale\":true},\"generator\":{\"id\":null,\"existing_kw\":null,\"fuel_available_gal\":null,\"fuel_slope_gal_per_kwh\":null,\"fuel_intercept_gal_per_hr\":null,\"min_turn_down_fraction\":null,\"site_id\":null,\"min_kw\":null,\"max_kw\":null,\"installed_cost_per_kw\":null,\"om_cost_per_kw\":null,\"om_cost_per_kwh\":null,\"fuel_cost_per_gallon\":null,\"generator_only_runs_during_grid_outage\":null,\"generator_sells_energy_back_to_grid\":null,\"useful_life_years\":null,\"peak_load_multiplier\":\"200.0\",\"offgrid_size_kw\":null,\"generator_fuel_percent_RE\":null,\"emissions_factor_lb_CO2_per_gal\":null,\"emissions_factor_lb_NOx_per_gal\":null,\"emissions_factor_lb_SO2_per_gal\":null,\"emissions_factor_lb_PM_per_gal\":null,\"elec_effic_full_load\":null,\"elec_effic_half_load\":null,\"fuel_higher_heating_value_kwh_per_gal\":null},\"ghp\":{\"id\":null,\"installed_cost_heatpump_per_ton\":null,\"installed_cost_building_hydronic_loop_per_sqft\":null,\"installed_cost_ghx_per_ft\":null,\"om_cost_per_sqft_year\":null,\"ghp_capacity_sizing_factor_on_peak_load\":null,\"building_sqft\":null,\"borehole_depth_ft\":null,\"ground_thermal_conductivity_btu_per_hr_ft_f\":null,\"max_eft_allowable_f\":null,\"min_eft_allowable_f\":null,\"simulation_years\":null,\"require_ghp_purchase\":false,\"ghx_header_depth_ft\":null,\"borehole_spacing_ft\":null,\"borehole_spacing_type\":\"rectangular\",\"borehole_diameter_inch\":null,\"grout_thermal_conductivity_btu_per_hr_ft_f\":null,\"ground_mass_density_lb_per_ft3\":null,\"ground_specific_heat_btu_per_lb_f\":null,\"ghp_fluid_flow_rate_gpm_per_ton\":null,\"ghx_pump_power_watt_per_gpm\":null,\"ghx_pump_min_speed_fraction\":null,\"ghx_pump_power_exponent\":null,\"ghx_pipe_outer_diameter_inch\":null,\"ghx_pipe_wall_thickness_inch\":null,\"ghx_pipe_thermal_conductivity_btu_per_hr_ft_f\":null,\"ghx_shank_space_inch\":null,\"ghx_fluid_mass_density_lb_per_ft3\":null,\"ghx_fluid_specific_heat_btu_per_lb_f\":null,\"ghx_fluid_thermal_conductivity_btu_per_hr_ft_f\":null,\"ghx_fluid_dynamic_viscosity_lbm_per_ft_hr\":null,\"solver_eft_tolerance_f\":null,\"init_sizing_factor_ft_per_peak_ton\":null,\"state_ibi_fraction\":null,\"state_ibi_max\":null,\"utility_ibi_fraction\":null,\"utility_ibi_max\":null,\"federal_rebate_per_ton\":null,\"state_rebate_per_ton\":null,\"state_rebate_max\":null,\"utility_rebate_per_ton\":null,\"utility_rebate_max\":null,\"federal_itc_fraction\":null,\"macrs_option_years\":0,\"macrs_bonus_fraction\":0,\"site_id\":null,\"cop_table_type\":\"default\",\"cop_table_file_data\":null,\"cop_table\":null,\"can_serve_dhw\":null,\"space_heating_efficiency_thermal_factor\":null,\"cooling_efficiency_thermal_factor\":null,\"hybrid_ghx_sizing_method\":\"None\",\"aux_heater_installed_cost_us_dollars_per_mmbtu_per_hr\":null,\"aux_heater_thermal_efficiency\":null,\"aux_cooler_installed_cost_us_dollars_per_ton\":null,\"aux_cooler_energy_use_intensity_kwe_per_kwt\":null,\"aux_unit_capacity_sizing_factor_on_peak_load\":null,\"heat_pump_configuration\":\"WSHP\",\"installed_cost_wwhp_cooling_pump_per_ton\":null,\"installed_cost_wwhp_heating_pump_per_ton\":null,\"wwhp_cooling_setpoint_f\":null,\"wwhp_heating_setpoint_f\":null,\"existing_boiler_fuel_type\":\"natural_gas\",\"avoided_capex_by_ghp_present_value\":null,\"ghx_useful_life_years\":null,\"cold_cop_table_file_data\":null,\"cold_cop_table\":null,\"hot_cop_table_file_data\":null,\"hot_cop_table\":null,\"cop_table_file_name\":null,\"cold_cop_table_file_name\":null,\"hot_cop_table_file_name\":null,\"max_ton\":null,\"max_number_of_boreholes\":null},\"ashp_space_heater\":{\"id\":null,\"ashp_configuration\":1,\"min_ton\":null,\"max_ton\":null,\"min_allowable_peak_capacity_fraction\":null,\"installed_cost_per_ton\":null,\"om_cost_per_ton\":null,\"sizing_factor\":null,\"avoided_capex_by_ashp_present_value\":null,\"back_up_temp_threshold_degF\":null,\"macrs_option_years\":0,\"macrs_bonus_fraction\":0,\"site_id\":null,\"cop_table_type\":\"default\",\"min_allowable_ton\":null,\"min_non_zero_size_ton\":false,\"cooling_cf_reference\":null,\"cooling_cop_reference\":null,\"cooling_reference_temps_degF\":null,\"cop_table_file_name\":null,\"heating_cf_reference\":null,\"heating_cop_reference\":null,\"heating_reference_temps_degF\":null,\"force_dispatch\":true},\"ashp_water_heater\":{\"id\":null,\"min_ton\":null,\"max_ton\":null,\"min_allowable_peak_capacity_fraction\":null,\"installed_cost_per_ton\":null,\"om_cost_per_ton\":null,\"sizing_factor\":null,\"avoided_capex_by_ashp_present_value\":null,\"back_up_temp_threshold_degF\":null,\"macrs_option_years\":0,\"macrs_bonus_fraction\":0,\"site_id\":null,\"cop_table_type\":\"default\",\"cop_table_file_name\":null,\"min_allowable_ton\":null,\"min_non_zero_size_ton\":false,\"heating_cf_reference\":null,\"heating_cop_reference\":null,\"heating_reference_temps_degF\":null,\"force_dispatch\":true},\"chp\":{\"id\":null,\"analyze_hws\":null,\"analyze_abs_chiller\":null,\"site_id\":null,\"min_kw\":null,\"max_kw\":null,\"installed_cost_per_kw_1\":null,\"om_cost_per_kw\":null,\"om_cost_per_kwh\":null,\"electric_efficiency_full_load\":null,\"thermal_efficiency_full_load\":null,\"min_turn_down_fraction\":null,\"macrs_bonus_fraction\":1,\"prime_mover_type\":\"recip_engine\",\"existing_boiler_fuel_type\":\"natural_gas\",\"fuel_type\":\"natural_gas\",\"fuel_blended_annual_rates_per_mmbtu\":null,\"fuel_monthly_rate_1\":null,\"fuel_monthly_rate_2\":null,\"fuel_monthly_rate_3\":null,\"fuel_monthly_rate_4\":null,\"fuel_monthly_rate_5\":null,\"fuel_monthly_rate_6\":null,\"fuel_monthly_rate_7\":null,\"fuel_monthly_rate_8\":null,\"fuel_monthly_rate_9\":null,\"fuel_monthly_rate_10\":null,\"fuel_monthly_rate_11\":null,\"fuel_monthly_rate_12\":null,\"monthly_fuel_cost\":null,\"min_allowable_kw\":null,\"macrs_option_years\":5,\"size_class\":0,\"federal_itc_fraction\":null,\"federal_rebate_per_kw\":null,\"state_ibi_fraction\":null,\"state_ibi_max\":null,\"state_rebate_per_kw\":null,\"state_rebate_max\":null,\"utility_ibi_fraction\":null,\"utility_ibi_max\":null,\"utility_rebate_per_kw\":null,\"utility_rebate_max\":null,\"production_incentive_per_kwh\":null,\"pbi_years\":null,\"production_incentive_max_benefit\":null,\"pbi_system_max_kw\":null,\"tech_sizes_for_cost_curve_1\":null,\"tech_sizes_for_cost_curve_2\":null,\"installed_cost_per_kw_2\":null,\"single_cost_for_all_sizes\":null,\"installed_cost_per_kw\":null,\"emissions_factor_lb_CO2_per_mmbtu\":null,\"electric_efficiency_half_load\":null,\"thermal_efficiency_half_load\":null,\"downtime_schedule_type\":\"default\",\"downtime_schedule\":null,\"downtime_schedule_file_data\":null,\"can_wholesale\":false,\"cooling_thermal_factor\":null,\"custom_prime_mover\":null,\"can_net_meter\":false,\"supplementary_firing_max_steam_ratio\":null,\"supplementary_firing_efficiency\":null,\"supplementary_firing_capital_cost_per_kw\":null,\"fuel_percent_RE\":null,\"emissions_factor_lb_NOx_per_mmbtu\":null,\"emissions_factor_lb_SO2_per_mmbtu\":null,\"emissions_factor_lb_PM_per_mmbtu\":null,\"downtime_schedule_file_name\":null,\"dispatch_options\":\"cost_optimal\",\"serve_absorption_chiller_only\":false,\"send_chp_heat_to_abs_chiller\":false,\"months_serving_absorption_chiller_only\":[0,0,0,0,1,1,1,1,1,0,0,0],\"existing_chp\":null,\"existing_kw\":null,\"loads_kw_is_net\":null,\"prod_factor_series_kw\":null,\"prod_factor_file_name\":null,\"chp_generation\":\"maximum_capacity\",\"hot_water_storage\":{\"id\":null,\"min_gal\":null,\"max_gal\":null,\"installed_cost_per_gal\":null,\"om_cost_per_gal\":null,\"thermal_decay_rate_fraction\":null,\"soc_min_fraction\":null,\"chp_id\":null,\"hot_water_temp_degF\":null,\"cool_water_temp_degF\":null,\"macrs_bonus_fraction\":1,\"macrs_option_years\":5,\"total_itc_fraction\":null,\"total_rebate_per_kwh\":null},\"absorption_chiller\":{\"id\":null,\"min_ton\":null,\"max_ton\":null,\"cop_thermal\":null,\"installed_cost_per_ton\":null,\"om_cost_per_ton\":null,\"chp_id\":null,\"cop_electric\":null,\"macrs_option_years\":0,\"macrs_bonus_fraction\":0},\"steam_turbine\":{\"id\":null,\"size_class\":null,\"min_kw\":null,\"max_kw\":null,\"installed_cost_per_kw\":null,\"inlet_steam_pressure_psig\":null,\"inlet_steam_temperature_degF\":null,\"outlet_steam_pressure_psig\":null,\"om_cost_per_kw\":null,\"om_cost_per_kwh\":null,\"isentropic_efficiency\":null,\"gearbox_generator_efficiency\":null,\"net_to_gross_electric_ratio\":null,\"macrs_option_years\":5,\"macrs_bonus_fraction\":1,\"chp_id\":null}},\"prime_generator\":{\"id\":null,\"site_id\":null,\"min_kw\":null,\"max_kw\":null,\"installed_cost_per_kw_1\":null,\"om_cost_per_kw\":null,\"om_cost_per_kwh\":null,\"electric_efficiency_full_load\":null,\"min_turn_down_fraction\":null,\"macrs_bonus_fraction\":0,\"prime_mover_type\":\"recip_engine\",\"min_allowable_kw\":null,\"macrs_option_years\":0,\"size_class\":0,\"federal_itc_fraction\":null,\"federal_rebate_per_kw\":null,\"state_ibi_fraction\":null,\"state_ibi_max\":null,\"state_rebate_per_kw\":null,\"state_rebate_max\":null,\"utility_ibi_fraction\":null,\"utility_ibi_max\":null,\"utility_rebate_per_kw\":null,\"utility_rebate_max\":null,\"production_incentive_per_kwh\":null,\"pbi_years\":null,\"production_incentive_max_benefit\":null,\"pbi_system_max_kw\":null,\"tech_sizes_for_cost_curve_1\":null,\"tech_sizes_for_cost_curve_2\":null,\"installed_cost_per_kw_2\":null,\"single_cost_for_all_sizes\":null,\"installed_cost_per_kw\":null,\"emissions_factor_lb_CO2_per_mmbtu\":null,\"electric_efficiency_half_load\":null,\"downtime_schedule_type\":\"default\",\"downtime_schedule\":null,\"downtime_schedule_file_data\":null,\"can_wholesale\":false,\"cooling_thermal_factor\":null,\"custom_prime_mover\":null,\"can_net_meter\":null,\"supplementary_firing_max_steam_ratio\":null,\"supplementary_firing_efficiency\":null,\"supplementary_firing_capital_cost_per_kw\":null,\"emissions_factor_lb_NOx_per_mmbtu\":null,\"emissions_factor_lb_SO2_per_mmbtu\":null,\"emissions_factor_lb_PM_per_mmbtu\":null,\"created_at\":null,\"updated_at\":null,\"fuel_type\":\"natural_gas\",\"fuel_percent_RE\":null,\"fuel_blended_annual_rates_per_mmbtu\":null,\"fuel_monthly_rate_1\":null,\"fuel_monthly_rate_2\":null,\"fuel_monthly_rate_3\":null,\"fuel_monthly_rate_4\":null,\"fuel_monthly_rate_5\":null,\"fuel_monthly_rate_6\":null,\"fuel_monthly_rate_7\":null,\"fuel_monthly_rate_8\":null,\"fuel_monthly_rate_9\":null,\"fuel_monthly_rate_10\":null,\"fuel_monthly_rate_11\":null,\"fuel_monthly_rate_12\":null,\"monthly_fuel_cost\":null,\"downtime_schedule_file_name\":null},\"chilled_water_storage\":{\"id\":null,\"min_gal\":null,\"max_gal\":null,\"installed_cost_per_gal\":null,\"om_cost_per_gal\":null,\"thermal_decay_rate_fraction\":null,\"soc_min_fraction\":null,\"site_id\":null,\"cool_water_temp_degF\":null,\"hot_water_temp_degF\":null,\"macrs_bonus_fraction\":1,\"macrs_option_years\":5,\"total_itc_fraction\":null,\"total_rebate_per_kwh\":null},\"boiler\":{\"id\":null,\"max_thermal_factor_on_peak_load\":null,\"existing_boiler_production_type\":\"hot_water\",\"boiler_efficiency\":null,\"chp_id\":null,\"emissions_factor_lb_CO2_per_mmbtu\":null,\"fuel_percent_RE\":null,\"emissions_factor_lb_NOx_per_mmbtu\":null,\"emissions_factor_lb_SO2_per_mmbtu\":null,\"emissions_factor_lb_PM_per_mmbtu\":null,\"ghp_id\":null,\"fuel_blended_annual_rates_per_mmbtu\":null,\"fuel_monthly_rate_1\":null,\"fuel_monthly_rate_2\":null,\"fuel_monthly_rate_3\":null,\"fuel_monthly_rate_4\":null,\"fuel_monthly_rate_5\":null,\"fuel_monthly_rate_6\":null,\"fuel_monthly_rate_7\":null,\"fuel_monthly_rate_8\":null,\"fuel_monthly_rate_9\":null,\"fuel_monthly_rate_10\":null,\"fuel_monthly_rate_11\":null,\"fuel_monthly_rate_12\":null,\"monthly_fuel_cost\":null,\"site_id\":null,\"fuel_type\":\"natural_gas\",\"installed_cost_per_mmbtu_per_hour\":null,\"installed_cost_dollars\":null},\"load_profile_boiler\":{\"id\":null,\"thermal_load_file_data\":null,\"thermal_load_file_name\":null,\"thermal_load_type\":\"simulated\",\"doe_reference_name\":null,\"loads_mmbtu_per_hour\":null,\"simulated_load_type\":\"annual\",\"annual_mmbtu\":null,\"campus_annual_mmbtu\":null,\"monthly_mmbtu_1\":null,\"monthly_mmbtu_2\":null,\"monthly_mmbtu_3\":null,\"monthly_mmbtu_4\":null,\"monthly_mmbtu_5\":null,\"monthly_mmbtu_6\":null,\"monthly_mmbtu_7\":null,\"monthly_mmbtu_8\":null,\"monthly_mmbtu_9\":null,\"monthly_mmbtu_10\":null,\"monthly_mmbtu_11\":null,\"monthly_mmbtu_12\":null,\"addressable_load_fraction\":null,\"space_heating_load_fraction\":null,\"space_annual_mmbtu\":null,\"water_annual_mmbtu\":null,\"space_monthly_mmbtu_1\":null,\"space_monthly_mmbtu_2\":null,\"space_monthly_mmbtu_3\":null,\"space_monthly_mmbtu_4\":null,\"space_monthly_mmbtu_5\":null,\"space_monthly_mmbtu_6\":null,\"space_monthly_mmbtu_7\":null,\"space_monthly_mmbtu_8\":null,\"space_monthly_mmbtu_9\":null,\"space_monthly_mmbtu_10\":null,\"space_monthly_mmbtu_11\":null,\"space_monthly_mmbtu_12\":null,\"water_monthly_mmbtu_1\":null,\"water_monthly_mmbtu_2\":null,\"water_monthly_mmbtu_3\":null,\"water_monthly_mmbtu_4\":null,\"water_monthly_mmbtu_5\":null,\"water_monthly_mmbtu_6\":null,\"water_monthly_mmbtu_7\":null,\"water_monthly_mmbtu_8\":null,\"water_monthly_mmbtu_9\":null,\"water_monthly_mmbtu_10\":null,\"water_monthly_mmbtu_11\":null,\"water_monthly_mmbtu_12\":null,\"campus_water_annual_mmbtu\":null,\"split_heating_loads\":null,\"site_id\":null,\"campus_space_annual_mmbtu\":null,\"addressable_load_fraction_monthly_1\":null,\"addressable_load_fraction_monthly_2\":null,\"addressable_load_fraction_monthly_3\":null,\"addressable_load_fraction_monthly_4\":null,\"addressable_load_fraction_monthly_5\":null,\"addressable_load_fraction_monthly_6\":null,\"addressable_load_fraction_monthly_7\":null,\"addressable_load_fraction_monthly_8\":null,\"addressable_load_fraction_monthly_9\":null,\"addressable_load_fraction_monthly_10\":null,\"addressable_load_fraction_monthly_11\":null,\"addressable_load_fraction_monthly_12\":null,\"include_site_heating_load\":false,\"add_process_heat_load\":false,\"thermal_load_profile_id\":null,\"thermal_upload_type\":null,\"thermal_build_id\":null,\"year\":null,\"normalize_scale_heat_load\":false,\"normalize_load_type\":\"annual\",\"campus_buildings\":[{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null},{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null}],\"space_heating_load\":{\"id\":null,\"thermal_load_file_data\":null,\"thermal_load_file_name\":null,\"doe_reference_name\":null,\"loads_mmbtu_per_hour\":null,\"annual_mmbtu\":null,\"campus_annual_mmbtu\":null,\"monthly_mmbtu_1\":null,\"monthly_mmbtu_2\":null,\"monthly_mmbtu_3\":null,\"monthly_mmbtu_4\":null,\"monthly_mmbtu_5\":null,\"monthly_mmbtu_6\":null,\"monthly_mmbtu_7\":null,\"monthly_mmbtu_8\":null,\"monthly_mmbtu_9\":null,\"monthly_mmbtu_10\":null,\"monthly_mmbtu_11\":null,\"monthly_mmbtu_12\":null,\"addressable_load_fraction\":null,\"load_profile_boiler_id\":null,\"thermal_load_profile_id\":null,\"thermal_upload_type\":null,\"thermal_build_id\":null,\"campus_buildings\":[{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null},{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null}]},\"water_heating_load\":{\"id\":null,\"thermal_load_file_data\":null,\"thermal_load_file_name\":null,\"doe_reference_name\":null,\"loads_mmbtu_per_hour\":null,\"annual_mmbtu\":null,\"campus_annual_mmbtu\":null,\"monthly_mmbtu_1\":null,\"monthly_mmbtu_2\":null,\"monthly_mmbtu_3\":null,\"monthly_mmbtu_4\":null,\"monthly_mmbtu_5\":null,\"monthly_mmbtu_6\":null,\"monthly_mmbtu_7\":null,\"monthly_mmbtu_8\":null,\"monthly_mmbtu_9\":null,\"monthly_mmbtu_10\":null,\"monthly_mmbtu_11\":null,\"monthly_mmbtu_12\":null,\"addressable_load_fraction\":null,\"load_profile_boiler_id\":null,\"thermal_load_profile_id\":null,\"thermal_upload_type\":null,\"thermal_build_id\":null,\"campus_buildings\":[{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null},{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null}]},\"process_heating_load\":{\"id\":null,\"thermal_load_file_data\":null,\"thermal_load_file_name\":null,\"doe_reference_name\":null,\"loads_mmbtu_per_hour\":null,\"annual_mmbtu\":null,\"campus_annual_mmbtu\":null,\"monthly_mmbtu_1\":null,\"monthly_mmbtu_2\":null,\"monthly_mmbtu_3\":null,\"monthly_mmbtu_4\":null,\"monthly_mmbtu_5\":null,\"monthly_mmbtu_6\":null,\"monthly_mmbtu_7\":null,\"monthly_mmbtu_8\":null,\"monthly_mmbtu_9\":null,\"monthly_mmbtu_10\":null,\"monthly_mmbtu_11\":null,\"monthly_mmbtu_12\":null,\"addressable_load_fraction\":null,\"load_profile_boiler_id\":null,\"thermal_load_profile_id\":null,\"thermal_upload_type\":null,\"thermal_build_id\":null,\"campus_buildings\":[{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null},{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null}]}},\"load_profile_chiller\":{\"id\":null,\"cold_load_file_data\":null,\"cold_load_file_name\":null,\"cold_load_type\":\"simulated\",\"doe_reference_name\":null,\"simulated_load_type\":\"annual\",\"per_time_step_fractions_of_electric_load\":null,\"thermal_loads_ton\":null,\"annual_fraction_of_electric_load\":null,\"lp_fraction_monthly_1\":null,\"lp_fraction_monthly_2\":null,\"lp_fraction_monthly_3\":null,\"lp_fraction_monthly_4\":null,\"lp_fraction_monthly_5\":null,\"lp_fraction_monthly_6\":null,\"lp_fraction_monthly_7\":null,\"lp_fraction_monthly_8\":null,\"lp_fraction_monthly_9\":null,\"lp_fraction_monthly_10\":null,\"lp_fraction_monthly_11\":null,\"lp_fraction_monthly_12\":null,\"custom_load_type\":\"annual\",\"annual_tonhour\":null,\"monthly_tonhour_1\":null,\"monthly_tonhour_2\":null,\"monthly_tonhour_3\":null,\"monthly_tonhour_4\":null,\"monthly_tonhour_5\":null,\"monthly_tonhour_6\":null,\"monthly_tonhour_7\":null,\"monthly_tonhour_8\":null,\"monthly_tonhour_9\":null,\"monthly_tonhour_10\":null,\"monthly_tonhour_11\":null,\"monthly_tonhour_12\":null,\"custom_energy_consump\":null,\"campus_annual_tonhour\":null,\"custom_annual_simulated_campus\":null,\"site_id\":null,\"campus_buildings\":[{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null},{\"id\":null,\"doe_reference_name\":null,\"percent_of_total\":null,\"load_profile_id\":null,\"load_profile_boiler_fuel_id\":null,\"load_profile_chiller_thermal_id\":null,\"load_profile_boiler_id\":null,\"load_profile_chiller_id\":null,\"space_heating_load_id\":null,\"water_heating_load_id\":null,\"process_heating_load_id\":null}]},\"electric_chiller\":{\"id\":null,\"max_thermal_factor_on_peak_load\":null,\"site_id\":null,\"cop\":null,\"installed_cost_per_ton\":null,\"installed_cost_dollars\":null}}}"
+ },
+ {
+  "t": 1787467854555,
+  "dir": "resp",
+  "status": 400,
+  "url": "https://reopt.nlr.gov/tool/results"
+ }
+]

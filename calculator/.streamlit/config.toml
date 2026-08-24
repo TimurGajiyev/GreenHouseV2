@@ -1,0 +1,44 @@
+# Theme matched to reopt.nlr.gov, colours sampled from the live site:
+#   step headings / accents  rgb(224,119,0)  -> #E07700
+#   panel background         rgb(253,244,237) -> #FDF4ED
+#   primary button + links   rgb(0,121,194)  -> #0079C2
+#   body text                rgb(51,51,51)   -> #333333
+#   inputs                   1px #CCCCCC, radius 4px, white
+#   font                     Roboto, 16px base
+
+[theme]
+base = "light"
+
+primaryColor = "#0079C2"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#FDF4ED"
+textColor = "#333333"
+linkColor = "#0079C2"
+borderColor = "#CCCCCC"
+codeBackgroundColor = "#F5F5F5"
+codeTextColor = "#333333"
+
+# REopt uses orange for headings/accents and blue for actions
+orangeColor = "#E07700"
+blueColor = "#0079C2"
+grayColor = "#767676"
+greenColor = "#1A7F37"
+redColor = "#CF222E"
+
+chartCategoricalColors = ["#E07700", "#0079C2", "#767676", "#1A7F37", "#8250DF", "#CF222E", "#00A4E4"]
+
+dataframeBorderColor = "#E3D9CE"
+dataframeHeaderBackgroundColor = "#FDF4ED"
+
+font = "Roboto:https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap"
+baseFontSize = 16
+headingFontSizes = ["30px", "24px", "20px", "17px", "15px", "14px"]
+headingFontWeights = [300, 400, 500, 500, 500, 500]
+
+baseRadius = "4px"
+buttonRadius = "6px"
+showWidgetBorder = true
+linkUnderline = false
+
+[server]
+headless = true

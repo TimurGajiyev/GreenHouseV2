@@ -1,0 +1,587 @@
+{
+  "recip_engine": {
+    "installed_cost_per_kw": [
+      [
+        4510.0,
+        2120.0
+      ],
+      [
+        4510.0,
+        3920.0
+      ],
+      [
+        3920.0,
+        3660.0
+      ],
+      [
+        3660.0,
+        3340.0
+      ],
+      [
+        3340.0,
+        2970.0
+      ],
+      [
+        2970.0,
+        2700.0
+      ],
+      [
+        2700.0,
+        2490.0
+      ],
+      [
+        2490.0,
+        2120.0
+      ]
+    ],
+    "tech_sizes_for_cost_curve": [
+      [
+        35,
+        4500
+      ],
+      [
+        35,
+        100
+      ],
+      [
+        100,
+        250
+      ],
+      [
+        250,
+        500
+      ],
+      [
+        500,
+        1000
+      ],
+      [
+        1000,
+        2000
+      ],
+      [
+        2000,
+        3000
+      ],
+      [
+        3000,
+        4500
+      ]
+    ],
+    "om_cost_per_kwh": [
+      0.021,
+      0.032,
+      0.027,
+      0.023,
+      0.021,
+      0.018,
+      0.016,
+      0.015
+    ],
+    "electric_efficiency_full_load": [
+      0.3555,
+      0.2870,
+      0.3120,
+      0.3450,
+      0.3655,
+      0.3850,
+      0.4030,
+      0.4050
+    ],
+    "thermal_efficiency_full_load": {
+        "hot_water":
+            [
+            0.4376,
+            0.5200,
+            0.4850,
+            0.4445,
+            0.4190,
+            0.4015,
+            0.3840,
+            0.3840
+            ],
+        "steam":
+            [
+            0.1418,
+            0.0,
+            0.0,
+            0.0,
+            0.1690,
+            0.1420,
+            0.1295,
+            0.1210
+            ]
+    },
+    "min_allowable_kw": [
+      17.5,
+      17.5,
+      50.0,
+      125.0,
+      250.0,
+      500.0,
+      1000.0,
+      1500.0,
+      2250.0
+    ],
+    "cooling_thermal_factor": [
+      0.8375,
+      0.8,
+      0.825,
+      0.85,
+      0.85,
+      0.85,
+      0.85,
+      0.85
+    ],
+    "min_turn_down_fraction": [
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25,
+      0.25
+    ],
+    "unavailability_periods": [
+      {
+        "month": 1,
+        "start_week_of_month": 2,
+        "start_day_of_week": 6,
+        "start_hour": 1,
+        "duration_hours": 48
+      },
+      {
+        "month": 2,
+        "start_week_of_month": 2,
+        "start_day_of_week": 1,
+        "start_hour": 1,
+        "duration_hours": 48
+      },
+      {
+        "month": 3,
+        "start_week_of_month": 2,
+        "start_day_of_week": 6,
+        "start_hour": 1,
+        "duration_hours": 48
+      },
+      {
+        "month": 5,
+        "start_week_of_month": 2,
+        "start_day_of_week": 6,
+        "start_hour": 1,
+        "duration_hours": 48
+      },
+      {
+        "month": 6,
+        "start_week_of_month": 2,
+        "start_day_of_week": 1,
+        "start_hour": 1,
+        "duration_hours": 48
+      },
+      {
+        "month": 7,
+        "start_week_of_month": 2,
+        "start_day_of_week": 6,
+        "start_hour": 1,
+        "duration_hours": 48
+      },
+      {
+        "month": 9,
+        "start_week_of_month": 2,
+        "start_day_of_week": 6,
+        "start_hour": 1,
+        "duration_hours": 48
+      },
+      {
+        "month": 10,
+        "start_week_of_month": 2,
+        "start_day_of_week": 1,
+        "start_hour": 1,
+        "duration_hours": 48
+      },
+      {
+        "month": 11,
+        "start_week_of_month": 2,
+        "start_day_of_week": 6,
+        "start_hour": 1,
+        "duration_hours": 48
+      }
+    ]
+  },
+  "micro_turbine": {
+    "installed_cost_per_kw": [
+      [
+        4900.0,
+        3500.0
+      ],
+      [
+        5050.0,
+        4530.0
+      ],
+      [
+        4530.0,
+        3810.0
+      ],
+      [
+        3810.0,
+        3500.0
+      ]
+    ],
+    "tech_sizes_for_cost_curve": [
+      [
+        65,
+        1000
+      ],
+      [
+        65,
+        200
+      ],
+      [
+        200,
+        600
+      ],
+      [
+        600,
+        1000
+      ]
+    ],
+    "om_cost_per_kwh": [
+      0.015,
+      0.014,
+      0.018,
+      0.015
+    ],
+    "electric_efficiency_full_load": [
+      0.2390,
+      0.2840,
+      0.2840,
+      0.2831
+    ],
+    "thermal_efficiency_full_load": {
+        "hot_water": 
+            [
+            0.482,
+            0.395,
+            0.380,
+            0.3770
+            ],
+        "steam":
+            [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+            ]
+    },
+    "min_allowable_kw": [
+      45.5,
+      45.5,
+      140.0,
+      420.0
+    ],
+    "cooling_thermal_factor": [
+      0.94,
+      0.94,
+      0.94,
+      0.94,
+      0.94
+    ],
+    "min_turn_down_fraction": [
+      0.3,
+      0.3,
+      0.3,
+      0.3,
+      0.3
+    ],
+    "unavailability_periods": [
+      {
+        "month": 3,
+        "start_week_of_month": 2,
+        "start_day_of_week": 1,
+        "start_hour": 1,
+        "duration_hours": 60
+      },
+      {
+        "month": 4,
+        "start_week_of_month": 2,
+        "start_day_of_week": 5,
+        "start_hour": 1,
+        "duration_hours": 72
+      },
+      {
+        "month": 7,
+        "start_week_of_month": 2,
+        "start_day_of_week": 1,
+        "start_hour": 1,
+        "duration_hours": 60
+      },
+      {
+        "month": 10,
+        "start_week_of_month": 2,
+        "start_day_of_week": 5,
+        "start_hour": 1,
+        "duration_hours": 72
+      }
+    ]
+  },
+  "combustion_turbine": {
+    "installed_cost_per_kw": [
+      [
+        5360.0,
+        1750.0
+      ],
+      [
+        5360.0,
+        4330.0
+      ],
+      [
+        4330.0,
+        3500.0
+      ],
+      [
+        3500.0,
+        2940.0
+      ],
+      [
+        2940.0,
+        2580.0
+      ],
+      [
+        2580.0,
+        2210.0
+      ],
+      [
+        2210.0,
+        1750.0
+      ]
+    ],
+    "tech_sizes_for_cost_curve": [
+      [
+        2000,
+        25000
+      ],
+      [
+        2000,
+        3500
+      ],
+      [
+        3500,
+        5000
+      ],
+      [
+        5000,
+        8000
+      ],
+      [
+        8000,
+        10000
+      ],
+      [
+        10000,
+        15000
+      ],
+      [
+        15000,
+        25000
+      ]
+    ],
+    "om_cost_per_kwh": [
+      0.013,
+      0.015,
+      0.014,
+      0.014,
+      0.013,
+      0.013,
+      0.011
+    ],
+    "electric_efficiency_full_load": [
+      0.2854,
+      0.2360,
+      0.2555,
+      0.2840,
+      0.3000,
+      0.3055,
+      0.3320
+    ],
+    "thermal_efficiency_full_load": {
+        "hot_water":
+        [
+            0.4339,
+            0.4499,
+            0.4604,
+            0.4560,
+            0.4428,
+            0.4224,
+            0.3916
+        ],
+        "steam":
+        [
+            0.3944,
+            0.4090,
+            0.4185,
+            0.4145,
+            0.4025,
+            0.3840,
+            0.3560
+        ]
+    },
+    "min_allowable_kw": [
+      2000.0,
+      2000.0,
+      3500.0,
+      5000.0,
+      8000.0,
+      10000.0,
+      15000.0
+    ],
+    "cooling_thermal_factor": [
+      0.9,
+      0.9,
+      0.9,
+      0.9,
+      0.9,
+      0.9,
+      0.9
+    ],
+    "min_turn_down_fraction": [
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5,
+      0.5
+    ],
+    "unavailability_periods": [
+      {
+        "month": 2,
+        "start_week_of_month": 2,
+        "start_day_of_week": 1,
+        "start_hour": 1,
+        "duration_hours": 60
+      },
+      {
+        "month": 4,
+        "start_week_of_month": 2,
+        "start_day_of_week": 5,
+        "start_hour": 1,
+        "duration_hours": 72
+      },
+      {
+        "month": 8,
+        "start_week_of_month": 2,
+        "start_day_of_week": 1,
+        "start_hour": 1,
+        "duration_hours": 60
+      },
+      {
+        "month": 10,
+        "start_week_of_month": 2,
+        "start_day_of_week": 5,
+        "start_hour": 1,
+        "duration_hours": 72
+      }
+    ]
+  },
+  "fuel_cell": {
+    "installed_cost_per_kw": [
+      [
+        5000.0,
+        3680.0
+      ],
+      [
+        5000.0,
+        4600.0
+      ],
+      [
+        4600.0,
+        3680.0
+      ]
+    ],
+    "tech_sizes_for_cost_curve": [
+      [
+        440,
+        9300
+      ],
+      [
+        440,
+        1400
+      ],
+      [
+        1400,
+        9300
+      ]
+    ],
+    "om_cost_per_kwh": [
+      0.039,
+      0.038,
+      0.04
+    ],
+    "electric_efficiency_full_load": [
+      0.399,
+      0.386,
+      0.413
+    ],
+    "thermal_efficiency_full_load": {
+        "hot_water":
+        [
+            0.235,
+            0.206,
+            0.265
+        ],
+        "steam":
+        [
+            0.172,
+            0.146,
+            0.197
+        ]
+    },
+    "min_allowable_kw": [
+      440.0,
+      440.0,
+      1400.0
+    ],
+    "cooling_thermal_factor": [
+      0.85,
+      0.85,
+      0.85
+    ],
+    "min_turn_down_fraction": [
+      0.3,
+      0.3,
+      0.3
+    ],
+    "unavailability_periods": [
+      {
+        "month": 3,
+        "start_week_of_month": 2,
+        "start_day_of_week": 1,
+        "start_hour": 1,
+        "duration_hours": 60
+      },
+      {
+        "month": 4,
+        "start_week_of_month": 2,
+        "start_day_of_week": 5,
+        "start_hour": 1,
+        "duration_hours": 72
+      },
+      {
+        "month": 7,
+        "start_week_of_month": 2,
+        "start_day_of_week": 1,
+        "start_hour": 1,
+        "duration_hours": 60
+      },
+      {
+        "month": 10,
+        "start_week_of_month": 2,
+        "start_day_of_week": 5,
+        "start_hour": 1,
+        "duration_hours": 72
+      }
+    ]
+  }
+}
