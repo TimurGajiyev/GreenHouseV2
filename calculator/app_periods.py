@@ -35,6 +35,16 @@ def _m(x) -> str:
     return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
 
 
+def _daylabel(ts, weekday: bool = False) -> str:
+    """Portable "3 May" / "Wednesday, 3 May".
+
+    ``%-d`` is a glibc extension that Windows strftime rejects with
+    "Invalid format string", so the day number is formatted separately.
+    """
+    day = f"{ts.day} {ts.strftime('%B')}"
+    return f"{ts.strftime('%A')}, {day}" if weekday else day
+
+
 def _daily_totals(series: list[float]) -> list[float]:
     return [sum(series[d * 24:(d + 1) * 24]) for d in range(DAYS)]
 
@@ -226,7 +236,7 @@ def render_periods(state: dict) -> None:
     st.dataframe(period_frame(series, tariff, rep), hide_index=True, width="stretch")
     st.caption(
         f"The representative day is the one whose energy is closest to the median "
-        f"across the year — {idx[rep * 24]:%-d %B}. The week is the calendar week "
+        f"across the year — {_daylabel(idx[rep * 24])}. The week is the calendar week "
         f"containing it."
     )
 
@@ -236,7 +246,7 @@ def render_periods(state: dict) -> None:
         horizontal=True, key="period_day_choice", label_visibility="collapsed",
     )
     day = rep if choice == "Representative day" else pk
-    st.caption(f"{idx[day * 24]:%A, %-d %B} — hours 1 to 24.")
+    st.caption(f"{_daylabel(idx[day * 24], weekday=True)} — hours 1 to 24.")
 
     hf = hourly_frame(series, day)
     st.dataframe(hf, hide_index=True, width="stretch")
