@@ -15,7 +15,8 @@ from dataclasses import dataclass, field
 
 import pulp
 
-from .finance import annuity, effective_cost, levelization_factor, macrs_schedule_for
+from .finance import (annuity, effective_cost, fuel_slope_and_intercept,
+                      levelization_factor, macrs_schedule_for)
 from .proforma import build as proforma_build, depreciation_tax_shields, pv_lcoe
 from .tariff import Tariff
 
@@ -88,6 +89,8 @@ class StorageInputs:
     macrs_bonus_fraction: float = 1.0
     macrs_itc_reduction: float = 0.5
     total_itc_fraction: float = 0.3
+    # Free-text name, used only for labelling results.
+    name: str = ""
 
 
 @dataclass
@@ -115,6 +118,14 @@ class FuelTechInputs:
     only_runs_during_grid_outage: bool = False
     # chp.jl:45 -- 0 means the unit PROVIDES reserve rather than requiring it
     operating_reserve_required_fraction: float = 0.0
+    # Free-text name; REopt auto-names an array of CHP units CHP1, CHP2 ...
+    # (scenario.jl:496). Only used for labelling results.
+    name: str = ""
+    # generator.jl:15 / chp.jl:280 -- None means "same as full load", which is
+    # REopt's own default and makes the fuel curve exactly linear (intercept 0).
+    electric_efficiency_half_load: float | None = None
+    # generator_constraints.jl:26-36. 0 means no turndown floor and no binary.
+    min_turn_down_fraction: float = 0.0
 
 
 @dataclass
@@ -125,6 +136,19 @@ class ScenarioInputs:
     pv: PVInputs
     storage: StorageInputs
     fuel_tech: FuelTechInputs
+    # A fleet of distinct units. None keeps the single `fuel_tech` slot, which
+    # is the REopt web-form shape. A list is the REopt.jl shape (scenario.jl:19).
+    fuel_techs: list[FuelTechInputs] | None = None
+    # A bank of distinct batteries. None keeps the single `storage` slot, which
+    # is the REopt web-form shape. A list is the REopt.jl shape
+    # (StorageTypes.elec is a Vector, storage.jl:15).
+    storages: list[StorageInputs] | None = None
+    # How the fuel-curve intercept scales. "reopt" multiplies it by the on/off
+    # binary alone, exactly as generator_constraints.jl:11 does. "rated" also
+    # multiplies by the unit's rated kW, which is the physically consistent form
+    # for a fleet of fixed-size machines but is NOT what REopt computes.
+    # Irrelevant at REopt defaults, where the intercept is 0 either way.
+    fuel_intercept_basis: str = "reopt"
     off_grid_flag: bool = False
     land_acres: float | None = None
     roof_squarefeet: float | None = None
@@ -180,50 +204,83 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
             macrs_itc_reduction=inp.pv.macrs_itc_reduction if inp.pv.macrs_option_years else 0.0,
         )
 
-    ft = inp.fuel_tech
-    ft_slope = 0.0
-    if ft.enabled:
-        ft_slope = effective_cost(
-            itc_basis=ft.installed_cost_per_kw,
-            replacement_cost=(0.0 if ft.replacement_year >= f.analysis_years else ft.replace_cost_per_kw),
-            replacement_year=ft.replacement_year,
-            discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own,
-            itc=ft.federal_itc_fraction,
-            macrs_schedule=macrs_schedule_for(ft.macrs_option_years),
-            macrs_bonus_fraction=ft.macrs_bonus_fraction if ft.macrs_option_years else 0.0,
-            macrs_itc_reduction=ft.macrs_itc_reduction if ft.macrs_option_years else 0.0,
-        )
+    # A fleet of one is the single-slot case, so both shapes run one code path.
+    fts = list(inp.fuel_techs) if inp.fuel_techs else [inp.fuel_tech]
+    NG = range(len(fts))
+    ft = fts[0]                     # kept for the single-unit expressions below
 
-    s = inp.storage
-    npc_kw = npc_kwh = npc_const = 0.0
-    if s.enabled:
-        sched = macrs_schedule_for(s.macrs_option_years)
+    ft_slopes = {}
+    for g in NG:
+        u = fts[g]
+        ft_slopes[g] = effective_cost(
+            itc_basis=u.installed_cost_per_kw,
+            replacement_cost=(0.0 if u.replacement_year >= f.analysis_years else u.replace_cost_per_kw),
+            replacement_year=u.replacement_year,
+            discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own,
+            itc=u.federal_itc_fraction,
+            macrs_schedule=macrs_schedule_for(u.macrs_option_years),
+            macrs_bonus_fraction=u.macrs_bonus_fraction if u.macrs_option_years else 0.0,
+            macrs_itc_reduction=u.macrs_itc_reduction if u.macrs_option_years else 0.0,
+        ) if u.enabled else 0.0
+
+    # ---- affine fuel curve per unit, utils.jl:645 + generator_constraints.jl:8 ----
+    # CHP is priced per MMBtu, so its heating value is kWh per MMBtu.
+    ft_slope_fuel, ft_icept, ft_needs_bin = {}, {}, {}
+    for g in NG:
+        u = fts[g]
+        hhv = (293.07107 if u.kind == "CHP" else u.fuel_higher_heating_value_kwh_per_gal)
+        half = (u.electric_efficiency_half_load
+                if u.electric_efficiency_half_load is not None
+                else u.electric_efficiency_full_load)
+        sl, ic = fuel_slope_and_intercept(
+            electric_efficiency_full_load=u.electric_efficiency_full_load,
+            electric_efficiency_half_load=half,
+            fuel_higher_heating_value_kwh_per_unit=hhv,
+        )
+        ft_slope_fuel[g], ft_icept[g] = sl, ic
+        # A binary is only needed when something actually references on/off.
+        # At REopt defaults ic == 0.0 and turndown == 0, so none is created and
+        # the model stays a pure LP -- identical to the pre-curve formulation.
+        ft_needs_bin[g] = bool(u.enabled and (ic > 0.0 or u.min_turn_down_fraction > 0.0))
+
+    sts = list(inp.storages) if inp.storages else [inp.storage]
+    NB = range(len(sts))
+    s = sts[0]                      # kept for the single-unit expressions below
+    any_storage = any(b.enabled for b in sts)
+
+    b_npc_kw, b_npc_kwh, b_npc_const = {}, {}, {}
+    for b in NB:
+        st = sts[b]
+        if not st.enabled:
+            b_npc_kw[b] = b_npc_kwh[b] = b_npc_const[b] = 0.0
+            continue
+        sched = macrs_schedule_for(st.macrs_option_years)
         # electric_storage.jl:482-522
-        npc_kw = effective_cost(
-            itc_basis=s.installed_cost_per_kw,
-            replacement_cost=(0.0 if s.inverter_replacement_year >= f.analysis_years else s.replace_cost_per_kw),
-            replacement_year=s.inverter_replacement_year,
+        b_npc_kw[b] = effective_cost(
+            itc_basis=st.installed_cost_per_kw,
+            replacement_cost=(0.0 if st.inverter_replacement_year >= f.analysis_years else st.replace_cost_per_kw),
+            replacement_year=st.inverter_replacement_year,
             discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own,
-            itc=s.total_itc_fraction, macrs_schedule=sched,
-            macrs_bonus_fraction=s.macrs_bonus_fraction, macrs_itc_reduction=s.macrs_itc_reduction,
+            itc=st.total_itc_fraction, macrs_schedule=sched,
+            macrs_bonus_fraction=st.macrs_bonus_fraction, macrs_itc_reduction=st.macrs_itc_reduction,
         )
-        npc_kwh = effective_cost(
-            itc_basis=s.installed_cost_per_kwh,
-            replacement_cost=(0.0 if s.battery_replacement_year >= f.analysis_years else s.replace_cost_per_kwh),
-            replacement_year=s.battery_replacement_year,
+        b_npc_kwh[b] = effective_cost(
+            itc_basis=st.installed_cost_per_kwh,
+            replacement_cost=(0.0 if st.battery_replacement_year >= f.analysis_years else st.replace_cost_per_kwh),
+            replacement_year=st.battery_replacement_year,
             discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own,
-            itc=s.total_itc_fraction, macrs_schedule=sched,
-            macrs_bonus_fraction=s.macrs_bonus_fraction, macrs_itc_reduction=s.macrs_itc_reduction,
+            itc=st.total_itc_fraction, macrs_schedule=sched,
+            macrs_bonus_fraction=st.macrs_bonus_fraction, macrs_itc_reduction=st.macrs_itc_reduction,
         )
-        if s.installed_cost_constant:
-            npc_const = effective_cost(
-                itc_basis=s.installed_cost_constant, replacement_cost=0.0,
-                replacement_year=f.analysis_years,
-                discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own,
-                itc=s.total_itc_fraction, macrs_schedule=sched,
-                macrs_bonus_fraction=s.macrs_bonus_fraction,
-                macrs_itc_reduction=s.macrs_itc_reduction,
-            )
+        b_npc_const[b] = effective_cost(
+            itc_basis=st.installed_cost_constant, replacement_cost=0.0,
+            replacement_year=f.analysis_years,
+            discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own,
+            itc=st.total_itc_fraction, macrs_schedule=sched,
+            macrs_bonus_fraction=st.macrs_bonus_fraction,
+            macrs_itc_reduction=st.macrs_itc_reduction,
+        ) if st.installed_cost_constant else 0.0
+    npc_kw, npc_kwh, npc_const = b_npc_kw[0], b_npc_kwh[0], b_npc_const[0]
 
     # ------------------------------------------------------------- variables
     m = pulp.LpProblem("REopt", pulp.LpMinimize)
@@ -243,23 +300,42 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
 
     dvPVsize = pulp.LpVariable("dvSize_PV", lowBound=inp.pv.min_kw,
                                upBound=pv_space_max if inp.pv.enabled else 0.0)
-    dvFTsize = pulp.LpVariable("dvSize_FT", lowBound=ft.min_kw,
-                               upBound=ft.max_kw if ft.enabled else 0.0)
-    dvStoragePower = pulp.LpVariable("dvStoragePower", lowBound=s.min_kw,
-                                     upBound=s.max_kw if s.enabled else 0.0)
-    dvStorageEnergy = pulp.LpVariable("dvStorageEnergy", lowBound=s.min_kwh,
-                                      upBound=s.max_kwh if s.enabled else 0.0)
+    ftsize = {g: pulp.LpVariable(f"dvSize_FT_{g}", lowBound=fts[g].min_kw,
+                                 upBound=fts[g].max_kw if fts[g].enabled else 0.0)
+              for g in NG}
+    # Aggregate alias: every expression downstream is written against the fleet
+    # total, so the single-unit algebra is untouched when the fleet has one unit.
+    dvFTsize = pulp.lpSum(ftsize[g] for g in NG)
+    bpow = {b: pulp.LpVariable(f"dvStoragePower_{b}", lowBound=sts[b].min_kw,
+                               upBound=sts[b].max_kw if sts[b].enabled else 0.0)
+            for b in NB}
+    ben = {b: pulp.LpVariable(f"dvStorageEnergy_{b}", lowBound=sts[b].min_kwh,
+                              upBound=sts[b].max_kwh if sts[b].enabled else 0.0)
+           for b in NB}
     # REopt gates the storage cost constant behind a binary so it is only paid
     # when a battery is actually built -- reopt.jl:430, storage_constraints.jl:151
-    binStorageConst = pulp.LpVariable("binIncludeStorageCostConstant", cat="Binary")
+    bconst = {b: pulp.LpVariable(f"binIncludeStorageCostConstant_{b}", cat="Binary")
+              for b in NB}
+    # Aggregate aliases so the rest of the model is unchanged for a bank of one.
+    dvStoragePower = pulp.lpSum(bpow[b] for b in NB)
+    dvStorageEnergy = pulp.lpSum(ben[b] for b in NB)
+    binStorageConst = bconst[0]
 
     pvprod = {t: pulp.LpVariable(f"pvprod_{t}", lowBound=0) for t in T}      # PV -> load/storage
     pvcurt = {t: pulp.LpVariable(f"pvcurt_{t}", lowBound=0) for t in T}
-    ftprod = {t: pulp.LpVariable(f"ftprod_{t}", lowBound=0) for t in T}
-    chg = {t: pulp.LpVariable(f"chg_{t}", lowBound=0) for t in T}            # into storage (AC)
-    gridchg = {t: pulp.LpVariable(f"gridchg_{t}", lowBound=0) for t in T}
-    dis = {t: pulp.LpVariable(f"dis_{t}", lowBound=0) for t in T}            # out of storage (AC)
-    soc = {t: pulp.LpVariable(f"soc_{t}", lowBound=0) for t in T}
+    ftgen = {g: {t: pulp.LpVariable(f"ftprod_{g}_{t}", lowBound=0) for t in T}
+             for g in NG}
+    ftprod = {t: pulp.lpSum(ftgen[g][t] for g in NG) for t in T}
+    ftu = {g: ({t: pulp.LpVariable(f"ftON_{g}_{t}", cat="Binary") for t in T}
+               if ft_needs_bin[g] else None) for g in NG}
+    bchg = {b: {t: pulp.LpVariable(f"chg_{b}_{t}", lowBound=0) for t in T} for b in NB}
+    bgchg = {b: {t: pulp.LpVariable(f"gridchg_{b}_{t}", lowBound=0) for t in T} for b in NB}
+    bdis = {b: {t: pulp.LpVariable(f"dis_{b}_{t}", lowBound=0) for t in T} for b in NB}
+    bsoc = {b: {t: pulp.LpVariable(f"soc_{b}_{t}", lowBound=0) for t in T} for b in NB}
+    chg = {t: pulp.lpSum(bchg[b][t] for b in NB) for t in T}       # into storage (AC)
+    gridchg = {t: pulp.lpSum(bgchg[b][t] for b in NB) for t in T}
+    dis = {t: pulp.lpSum(bdis[b][t] for b in NB) for t in T}       # out of storage (AC)
+    soc = {t: pulp.lpSum(bsoc[b][t] for b in NB) for t in T}
     grid = {t: pulp.LpVariable(f"grid_{t}", lowBound=0) for t in T}
     unserved = {t: pulp.LpVariable(f"uns_{t}", lowBound=0) for t in T}
     export = {t: pulp.LpVariable(f"exp_{t}", lowBound=0) for t in T}
@@ -287,41 +363,53 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
         m += pvprod[t] + pvcurt[t] == pf[t] * dvPVsize * lvl_pv, f"pv_prod_{t}"
         if not inp.pv.can_curtail:
             m += pvcurt[t] == 0, f"pv_nocurt_{t}"
-        m += ftprod[t] <= dvFTsize, f"ft_cap_{t}"
+        for g in NG:
+            # Rated production never exceeds installed size (tech_constraints.jl)
+            m += ftgen[g][t] <= ftsize[g], f"ft_cap_{g}_{t}"
+            if ft_needs_bin[g]:
+                # generator_constraints.jl:22-24 -- off means exactly zero.
+                # The big-M is the unit's own upper bound, as REopt uses max_sizes.
+                m += ftgen[g][t] <= fts[g].max_kw * ftu[g][t], f"ft_on_{g}_{t}"
+                if fts[g].min_turn_down_fraction > 0:
+                    # generator_constraints.jl:32-35
+                    m += (fts[g].min_turn_down_fraction * ftsize[g] - ftgen[g][t]
+                          <= fts[g].max_kw * (1 - ftu[g][t])), f"ft_turndown_{g}_{t}"
 
     # Land use -- tech_constraints.jl:26-31
     if inp.land_acres is not None and inp.pv.enabled:
         m += inp.pv.acres_per_kw * dvPVsize <= inp.land_acres, "land"
 
-    # Storage sizing -- storage_constraints.jl:2-20
-    if s.enabled:
-        for t in T:
-            m += dis[t] <= dvStoragePower, f"dis_pow_{t}"
-            m += chg[t] + gridchg[t] <= dvStoragePower, f"chg_pow_{t}"
-            m += soc[t] >= s.soc_min_fraction * dvStorageEnergy, f"soc_min_{t}"
-            m += soc[t] <= dvStorageEnergy, f"soc_max_{t}"
-        if s.min_duration_hours > 0:
-            m += dvStorageEnergy >= s.min_duration_hours * dvStoragePower, "dur_min"
-        if s.max_duration_hours < 1e5:
-            m += dvStorageEnergy <= s.max_duration_hours * dvStoragePower, "dur_max"
-        if not s.can_grid_charge:
+    # Storage sizing -- storage_constraints.jl:2-20, per unit
+    for b in NB:
+        st = sts[b]
+        if st.enabled:
             for t in T:
-                m += gridchg[t] == 0, f"nogridchg_{t}"
-        # storage_constraints.jl:151 -- dvStorageEnergy <= max_kwh * bin
-        if npc_const:
-            m += dvStorageEnergy <= s.max_kwh * binStorageConst, "storage_const_bin"
-        # SOC dynamics -- storage_constraints.jl:39-73 (general dispatch)
-        for t in T:
-            prev = soc[T[-1]] if t == 0 else soc[t - 1]
-            m += soc[t] == prev + s.charge_efficiency * chg[t] \
-                 + s.grid_charge_efficiency * gridchg[t] \
-                 - dis[t] / s.discharge_efficiency, f"soc_bal_{t}"
-    else:
-        for t in T:
-            m += chg[t] == 0, f"nochg_{t}"
-            m += gridchg[t] == 0, f"nogchg_{t}"
-            m += dis[t] == 0, f"nodis_{t}"
-            m += soc[t] == 0, f"nosoc_{t}"
+                m += bdis[b][t] <= bpow[b], f"dis_pow_{b}_{t}"
+                m += bchg[b][t] + bgchg[b][t] <= bpow[b], f"chg_pow_{b}_{t}"
+                m += bsoc[b][t] >= st.soc_min_fraction * ben[b], f"soc_min_{b}_{t}"
+                m += bsoc[b][t] <= ben[b], f"soc_max_{b}_{t}"
+            if st.min_duration_hours > 0:
+                m += ben[b] >= st.min_duration_hours * bpow[b], f"dur_min_{b}"
+            if st.max_duration_hours < 1e5:
+                m += ben[b] <= st.max_duration_hours * bpow[b], f"dur_max_{b}"
+            if not st.can_grid_charge:
+                for t in T:
+                    m += bgchg[b][t] == 0, f"nogridchg_{b}_{t}"
+            # storage_constraints.jl:151 -- dvStorageEnergy <= max_kwh * bin
+            if b_npc_const[b]:
+                m += ben[b] <= st.max_kwh * bconst[b], f"storage_const_bin_{b}"
+            # SOC dynamics -- storage_constraints.jl:39-73 (general dispatch)
+            for t in T:
+                prev = bsoc[b][T[-1]] if t == 0 else bsoc[b][t - 1]
+                m += bsoc[b][t] == prev + st.charge_efficiency * bchg[b][t] \
+                     + st.grid_charge_efficiency * bgchg[b][t] \
+                     - bdis[b][t] / st.discharge_efficiency, f"soc_bal_{b}_{t}"
+        else:
+            for t in T:
+                m += bchg[b][t] == 0, f"nochg_{b}_{t}"
+                m += bgchg[b][t] == 0, f"nogchg_{b}_{t}"
+                m += bdis[b][t] == 0, f"nodis_{b}_{t}"
+                m += bsoc[b][t] == 0, f"nosoc_{b}_{t}"
 
     # Electric load balance -- load_balance.jl:3
     can_export = (not inp.off_grid_flag) and inp.compensation_type != "no_compensation"
@@ -350,7 +438,7 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
         # and the battery provide it.
         f_load = inp.operating_reserve_required_fraction
         f_pv = inp.pv.operating_reserve_required_fraction if inp.pv.enabled else 0.0
-        f_ft = ft.operating_reserve_required_fraction if ft.enabled else 0.0
+        f_ft = ft.operating_reserve_required_fraction if ft.enabled else 0.0  # noqa: F841
         if f_load > 0 or f_pv > 0:
             or_pv = {t: pulp.LpVariable(f"or_pv_{t}", lowBound=0) for t in T}
             or_ft = {t: pulp.LpVariable(f"or_ft_{t}", lowBound=0) for t in T}
@@ -366,16 +454,22 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
                     m += or_pv[t] <= (pf[t] * dvPVsize * lvl_pv - pv_to_load) * (1 - f_pv), f"or_pv_{t}"
                 else:
                     m += or_pv[t] == 0, f"or_pv_{t}"
-                if ft.enabled and f_ft == 0.0:
-                    m += or_ft[t] <= dvFTsize - ftprod[t], f"or_ft_{t}"
+                _prov = [g for g in NG if fts[g].enabled
+                         and fts[g].operating_reserve_required_fraction == 0.0]
+                if _prov:
+                    m += or_ft[t] <= pulp.lpSum(ftsize[g] - ftgen[g][t] for g in _prov), f"or_ft_{t}"
                 else:
                     m += or_ft[t] == 0, f"or_ft_{t}"
                 # 3. battery: bounded by usable stored energy and by its power rating
-                if s.enabled:
-                    prev = soc[T[-1]] if t == 0 else soc[t - 1]
-                    m += or_bat[t] <= prev - s.soc_min_fraction * dvStorageEnergy \
-                         - dis[t] / s.discharge_efficiency, f"or_bat_e_{t}"
-                    m += or_bat[t] <= dvStoragePower - dis[t] / s.discharge_efficiency, f"or_bat_p_{t}"
+                if any_storage:
+                    m += or_bat[t] <= pulp.lpSum(
+                        (bsoc[b][T[-1]] if t == 0 else bsoc[b][t - 1])
+                        - sts[b].soc_min_fraction * ben[b]
+                        - bdis[b][t] / sts[b].discharge_efficiency
+                        for b in NB if sts[b].enabled), f"or_bat_e_{t}"
+                    m += or_bat[t] <= pulp.lpSum(
+                        bpow[b] - bdis[b][t] / sts[b].discharge_efficiency
+                        for b in NB if sts[b].enabled), f"or_bat_p_{t}"
                 else:
                     m += or_bat[t] == 0, f"or_bat_{t}"
                 # 6. provided >= required
@@ -398,10 +492,14 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
     # Thermal balance: boiler covers whatever CHP does not.
     if thermal_load_mmbtu > 0:
         m += boiler_thermal + chp_thermal == thermal_load_mmbtu, "thermal_balance"
-        if ft.enabled and ft.kind == "CHP" and ft.thermal_efficiency_full_load > 0:
+        _heat_units = [g for g in NG if fts[g].enabled and fts[g].kind == "CHP"
+                       and fts[g].thermal_efficiency_full_load > 0]
+        if _heat_units:
             # recovered heat scales with electric output by the efficiency ratio
-            ratio = ft.thermal_efficiency_full_load / ft.electric_efficiency_full_load
-            m += chp_thermal <= (pulp.lpSum(ftprod[t] for t in T) * ratio / 293.07107), "chp_heat"
+            m += chp_thermal <= pulp.lpSum(
+                pulp.lpSum(ftgen[g][t] for t in T)
+                * (fts[g].thermal_efficiency_full_load / fts[g].electric_efficiency_full_load)
+                / 293.07107 for g in _heat_units), "chp_heat"
         else:
             m += chp_thermal == 0, "no_chp_heat"
     else:
@@ -410,34 +508,60 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
 
     # ------------------------------------------------------------- objective
     # reopt.jl:511 -- Costs
-    TotalTechCapCosts = pv_slope * dvPVsize + ft_slope * dvFTsize
-    TotalStorageCapCosts = (npc_kw * dvStoragePower + npc_kwh * dvStorageEnergy
-                            + npc_const * binStorageConst)
+    TotalTechCapCosts = pv_slope * dvPVsize + pulp.lpSum(
+        ft_slopes[g] * ftsize[g] for g in NG)
+    TotalStorageCapCosts = pulp.lpSum(
+        b_npc_kw[b] * bpow[b] + b_npc_kwh[b] * ben[b] + b_npc_const[b] * bconst[b]
+        for b in NB)
 
-    TotalPerUnitSizeOMCosts = pwf_om * (inp.pv.om_cost_per_kw * dvPVsize + ft.om_cost_per_kw * dvFTsize)
+    TotalPerUnitSizeOMCosts = pwf_om * (
+        inp.pv.om_cost_per_kw * dvPVsize
+        + pulp.lpSum(fts[g].om_cost_per_kw * ftsize[g] for g in NG))
     # reopt.jl:422-433 -- ElectricStorageCapCost is the FULL initial cost basis
     # (per-kW + per-kWh + the cost constant), and O&M is a fraction of that.
-    if s.enabled:
-        ElectricStorageCapCost = (s.installed_cost_per_kw * dvStoragePower
-                                  + s.installed_cost_per_kwh * dvStorageEnergy
-                                  + (s.installed_cost_constant * binStorageConst if npc_const else 0.0))
-        ElectricStorageOMCost = (pwf_om * s.om_cost_fraction_of_installed_cost
-                                 * ElectricStorageCapCost)
+    if any_storage:
+        ElectricStorageCapCost = pulp.lpSum(
+            sts[b].installed_cost_per_kw * bpow[b]
+            + sts[b].installed_cost_per_kwh * ben[b]
+            + (sts[b].installed_cost_constant * bconst[b] if b_npc_const[b] else 0.0)
+            for b in NB if sts[b].enabled)
+        # O&M is a per-unit fraction of that unit's own basis
+        ElectricStorageOMCost = pwf_om * pulp.lpSum(
+            sts[b].om_cost_fraction_of_installed_cost
+            * (sts[b].installed_cost_per_kw * bpow[b]
+               + sts[b].installed_cost_per_kwh * ben[b]
+               + (sts[b].installed_cost_constant * bconst[b] if b_npc_const[b] else 0.0))
+            for b in NB if sts[b].enabled)
     else:
         ElectricStorageCapCost = 0.0
         ElectricStorageOMCost = 0.0
-    TotalPerUnitProdOMCosts = pwf_om * ft.om_cost_per_kwh * pulp.lpSum(ftprod[t] for t in T)
+    TotalPerUnitProdOMCosts = pwf_om * pulp.lpSum(
+        fts[g].om_cost_per_kwh * pulp.lpSum(ftgen[g][t] for t in T) for g in NG)
 
-    # Fuel: kWh_elec / efficiency -> fuel kWh -> gallons or MMBtu
-    if ft.enabled and ft.kind == "Generator":
-        gal = pulp.lpSum(ftprod[t] for t in T) / (
-            ft.electric_efficiency_full_load * ft.fuel_higher_heating_value_kwh_per_gal)
-        TotalFuelCosts = pwf_fuel * ft.fuel_cost_per_gallon * gal
-    elif ft.enabled and ft.kind == "CHP":
-        mmbtu = pulp.lpSum(ftprod[t] for t in T) / ft.electric_efficiency_full_load / 293.07107
-        TotalFuelCosts = pwf_fuel * ft.fuel_cost_per_mmbtu * mmbtu
-    else:
-        TotalFuelCosts = 0.0
+    # Fuel, per unit: generator_constraints.jl:8-12
+    #     usage = slope * production + intercept * on
+    # At REopt's default (half == full load) intercept is 0 and slope is exactly
+    # 1/(eff*HHV), so this reduces to the previous linear term term-for-term.
+    ft_fuel_units = {}
+    TotalFuelCosts = 0.0
+    for g in NG:
+        u = fts[g]
+        if not u.enabled:
+            ft_fuel_units[g] = 0.0
+            continue
+        usage = ft_slope_fuel[g] * pulp.lpSum(ftgen[g][t] for t in T)
+        if ft_needs_bin[g] and ft_icept[g] > 0.0:
+            coef = ft_icept[g]
+            if inp.fuel_intercept_basis == "rated":
+                if u.min_kw != u.max_kw:
+                    raise ValueError(
+                        "fuel_intercept_basis='rated' needs a fixed-size unit "
+                        "(min_kw == max_kw); unit %d is sized by the optimizer." % g)
+                coef *= u.max_kw
+            usage = usage + coef * pulp.lpSum(ftu[g][t] for t in T)
+        ft_fuel_units[g] = usage
+        price = (u.fuel_cost_per_gallon if u.kind == "Generator" else u.fuel_cost_per_mmbtu)
+        TotalFuelCosts = TotalFuelCosts + pwf_fuel * price * usage
 
     if tar is not None:
         # Export credit: net metering pays the retail energy rate, net billing the
@@ -475,6 +599,46 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
 
     v = lambda x: float(pulp.value(x) or 0.0)
     pv_kw, ft_kw = v(dvPVsize), v(dvFTsize)
+    # per-unit storage basis, so a bank of several batteries is costed
+    # against each unit's own prices rather than the first unit's
+    def _bat_basis():
+        tot = 0.0
+        for b in NB:
+            if not sts[b].enabled:
+                continue
+            e = v(ben[b])
+            tot += (sts[b].installed_cost_per_kw * v(bpow[b])
+                    + sts[b].installed_cost_per_kwh * e
+                    + (sts[b].installed_cost_constant if e > 1e-6 else 0.0))
+        return tot
+    bat_basis = _bat_basis()
+    bat_om_y1 = sum(
+        sts[b].om_cost_fraction_of_installed_cost
+        * (sts[b].installed_cost_per_kw * v(bpow[b])
+           + sts[b].installed_cost_per_kwh * v(ben[b])
+           + (sts[b].installed_cost_constant if v(ben[b]) > 1e-6 else 0.0))
+        for b in NB if sts[b].enabled)
+    ft_unit_rows = []
+    for g in NG:
+        if not fts[g].enabled:
+            continue
+        kw = v(ftsize[g])
+        kwh = sum(v(ftgen[g][t]) for t in T)
+        hrs = sum(1 for t in T if v(ftgen[g][t]) > 1e-6)
+        ft_unit_rows.append({
+            "index": g,
+            "name": fts[g].name or fts[g].label or fts[g].kind,
+            "kind": fts[g].kind,
+            "size_kw": kw,
+            "energy_kwh": kwh,
+            "running_hours": hrs,
+            "capacity_factor": (kwh / (kw * HOURS)) if kw > 1e-9 else 0.0,
+            "fuel_units": float(pulp.value(ft_fuel_units[g]) or 0.0),
+            "fuel_unit_name": ("gallons" if fts[g].kind == "Generator" else "MMBtu"),
+            "starts": (sum(1 for t in T
+                           if v(ftu[g][t]) > 0.5 and v(ftu[g][t - 1]) < 0.5)
+                       if ft_needs_bin[g] else None),
+        })
     bat_kw, bat_kwh = v(dvStoragePower), v(dvStorageEnergy)
 
     series = {
@@ -488,6 +652,20 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
         "soc_kwh": [v(soc[t]) for t in T],
         "unserved_kw": [v(unserved[t]) for t in T],
         "export_kw": [v(export[t]) for t in T],
+        # one series per fuel-fired unit, so the hourly table can break the
+        # fleet out; empty when no unit is enabled
+        "fueltech_unit_kw": {
+            (fts[g].name or fts[g].label or f"Unit {g + 1}"): [v(ftgen[g][t]) for t in T]
+            for g in NG if fts[g].enabled
+        },
+        "storage_unit_soc_kwh": {
+            (sts[b].name or f"Battery {b + 1}"): [v(bsoc[b][t]) for t in T]
+            for b in NB if sts[b].enabled
+        },
+        "fueltech_unit_on": {
+            (fts[g].name or fts[g].label or f"Unit {g + 1}"): [v(ftu[g][t]) for t in T]
+            for g in NG if fts[g].enabled and ft_needs_bin[g]
+        },
     }
 
     pv_energy = sum(series["pv_to_load_kw"]) + sum(series["pv_curtailed_kw"])
@@ -503,6 +681,18 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
             "pv_kw": pv_kw, "battery_kw": bat_kw, "battery_kwh": bat_kwh,
             "fueltech_kw": ft_kw,
             "fueltech_kind": (ft.label or ft.kind) if ft.enabled else None,
+            "fueltech_units": ft_unit_rows,
+            "storage_units": [
+                {"index": b,
+                 "name": sts[b].name or f"Battery {b + 1}",
+                 "power_kw": v(bpow[b]),
+                 "energy_kwh": v(ben[b]),
+                 "duration_hours": (v(ben[b]) / v(bpow[b])) if v(bpow[b]) > 1e-9 else 0.0,
+                 "throughput_kwh": sum(v(bdis[b][t]) for t in T),
+                 "full_cycles": (sum(v(bdis[b][t]) for t in T) / v(ben[b]))
+                                if v(ben[b]) > 1e-9 else 0.0}
+                for b in NB if sts[b].enabled
+            ],
         },
         "energy": {
             "annual_load_kwh": sum(loads),
@@ -516,26 +706,25 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
         },
         "capital": {
             "pv_cap_cost_slope_per_kw": pv_slope,
-            "fueltech_cap_cost_slope_per_kw": ft_slope,
+            "fueltech_cap_cost_slope_per_kw": (
+                sum(ft_slopes[g] * v(ftsize[g]) for g in NG) / ft_kw
+                if ft_kw > 1e-9 else 0.0),
             "storage_npc_per_kw": npc_kw,
             "storage_npc_per_kwh": npc_kwh,
             "storage_npc_constant": npc_const,
             "upfront_before_incentives": (
                 inp.pv.installed_cost_per_kw * pv_kw
-                + ft.installed_cost_per_kw * ft_kw
-                + s.installed_cost_per_kw * bat_kw
-                + s.installed_cost_per_kwh * bat_kwh
-                + (s.installed_cost_constant if (s.enabled and bat_kwh > 1e-6) else 0.0)
+                + sum(fts[g].installed_cost_per_kw * v(ftsize[g]) for g in NG)
+                + bat_basis
             ),
         },
         "om": {
             "year1_pv": inp.pv.om_cost_per_kw * pv_kw,
-            "year1_fueltech": ft.om_cost_per_kw * ft_kw + ft.om_cost_per_kwh * ft_energy,
-            "year1_storage": (s.om_cost_fraction_of_installed_cost
-                              * (s.installed_cost_per_kw * bat_kw
-                                 + s.installed_cost_per_kwh * bat_kwh
-                                 + (s.installed_cost_constant if (s.enabled and bat_kwh > 1e-6) else 0.0))
-                              ) if s.enabled else 0.0,
+            "year1_fueltech": sum(
+                fts[g].om_cost_per_kw * v(ftsize[g])
+                + fts[g].om_cost_per_kwh * sum(v(ftgen[g][t]) for t in T)
+                for g in NG),
+            "year1_storage": bat_om_y1,
         },
         "thermal": {
             "heating_fuel_mmbtu": _heat_fuel or 0.0,
@@ -602,9 +791,8 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
                            for mo in range(12))
                      + tar.fixed_monthly_charge * 12)
         pv_capex = inp.pv.installed_cost_per_kw * pv_kw
-        bat_capex = (s.installed_cost_per_kw * bat_kw + s.installed_cost_per_kwh * bat_kwh
-                     + (s.installed_cost_constant if (s.enabled and bat_kwh > 1e-6) else 0.0))
-        ft_capex = ft.installed_cost_per_kw * ft_kw
+        bat_capex = bat_basis
+        ft_capex = sum(fts[g].installed_cost_per_kw * v(ftsize[g]) for g in NG)
         initial_capital = pv_capex + bat_capex + ft_capex
         y1_om_total = (out["om"]["year1_pv"] + out["om"]["year1_storage"]
                        + out["om"]["year1_fueltech"])
@@ -613,9 +801,13 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
                                          inp.pv.macrs_itc_reduction, tax_own, f.analysis_years)
         sh_bat = depreciation_tax_shields(bat_capex, s.total_itc_fraction, s.macrs_option_years,
                                           s.macrs_bonus_fraction, s.macrs_itc_reduction,
-                                          tax_own, f.analysis_years) if s.enabled else [0.0] * (f.analysis_years + 1)
+                                          tax_own, f.analysis_years) if any_storage else [0.0] * (f.analysis_years + 1)
         shields = [a + b for a, b in zip(sh_pv, sh_bat)]
-        itc_amt = pv_capex * inp.pv.federal_itc_fraction + (bat_capex * s.total_itc_fraction if s.enabled else 0.0)
+        itc_amt = pv_capex * inp.pv.federal_itc_fraction + sum(
+            (sts[b].installed_cost_per_kw * v(bpow[b])
+             + sts[b].installed_cost_per_kwh * v(ben[b])
+             + (sts[b].installed_cost_constant if v(ben[b]) > 1e-6 else 0.0))
+            * sts[b].total_itc_fraction for b in NB if sts[b].enabled)
         pf = proforma_build(
             years=f.analysis_years, initial_capital=initial_capital,
             bau_year1_bill=bau_year1,

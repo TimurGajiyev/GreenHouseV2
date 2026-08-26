@@ -131,3 +131,32 @@ def macrs_schedule_for(option_years: int) -> list[float]:
     if option_years == 0:
         return [0.0]
     raise ValueError("macrs_option_years must be 0, 5, or 7.")
+
+
+def fuel_slope_and_intercept(
+    *,
+    electric_efficiency_full_load: float,
+    electric_efficiency_half_load: float,
+    fuel_higher_heating_value_kwh_per_unit: float,
+) -> tuple[float, float]:
+    """REopt/src/core/utils.jl:645-657 -- verbatim port.
+
+    Turns two part-load efficiency points into the affine fuel curve REopt uses:
+
+        fuel(P) = intercept * u + slope * P            [fuel unit / hr]
+
+    Returns (slope [fuel unit per kWhe], intercept [fuel unit per hr]).
+
+    When ``electric_efficiency_half_load == electric_efficiency_full_load`` --
+    which is REopt's own default for both Generator (generator.jl:15,112) and
+    CHP (chp.jl:280-281), and what chp_defaults.json ships since it carries no
+    half-load entry -- the intercept is exactly 0 and the slope is exactly
+    ``1 / (eff * HHV)``. That is bit-for-bit the linear fuel term this model
+    used before the curve existed, so the default path cannot deviate.
+    """
+    full = 1.0 / electric_efficiency_full_load          # kWht per kWhe at 100%
+    half = 0.5 / electric_efficiency_half_load          # kWht per kWhe at 50%
+    slope_kwht_per_kwhe = (full - half) / (1.0 - 0.5)
+    intercept_kwht_per_hr = full - slope_kwht_per_kwhe * 1.0
+    hhv = fuel_higher_heating_value_kwh_per_unit
+    return slope_kwht_per_kwhe / hhv, intercept_kwht_per_hr / hhv
