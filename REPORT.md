@@ -1,4 +1,4 @@
-# GreenHouseV2 — REopt replication, validation and field use
+# GreenHouse — REopt replication, validation and field use
 
 One document covering the whole project: what was built, how it was verified against
 the live REopt web tool and the REopt.jl source, what was found in both, and where
@@ -24,7 +24,8 @@ the limits are.
 - [Part 10 — Known gaps](#part-10--known-gaps)
 - [Part 11 — The profiling view](#part-11--the-profiling-view)
 - [Part 12 — CHP and Battery, field for field with the web tool](#part-12--chp-and-battery-field-for-field-with-the-web-tool)
-- [Part 13 — Repository layout and how to reproduce](#part-13--repository-layout-and-how-to-reproduce)
+- [Part 13 — Custom dispatch study (not REopt)](#part-13--custom-dispatch-study-not-reopt)
+- [Part 14 — Repository layout and how to reproduce](#part-14--repository-layout-and-how-to-reproduce)
 
 ---
 
@@ -1057,9 +1058,24 @@ this calculator sizes CHP at 197.7 kW on the 100–250 kW segment, running 7,974
 432 maintenance hours and serving 6,447 of 7,925 MMBtu of heat, with a 726 kW / 2,404 kWh
 battery; life cycle cost $8,770,975 against $9,525,566 BAU (MIP gap 0.6% at 900 s). The same
 case on the site ran past the tool's default 600-second optimisation timeout and failed, and
-after that the site's firewall rejected further automated submissions (see Part 10), so the
-REopt side of this case is still to be taken by hand: `tools/chp_bess_reopt_case.py
---case=2` lists the inputs.
+after that the site's firewall rejected further automated submissions (see Part 10).
+
+The local REopt.jl (below) solved it: optimal at its 1 % gap after 2,081 s, CHP 208.4 kW,
+battery 753 kW / 2,592 kWh, LCC $8,726,006 — ours was 0.52 % above that, inside the 0.62 %
+gap our 900-second run still had. To separate the model from the solver, REopt's sizes were
+fixed in this calculator and the dispatch solved to a proven optimum:
+
+| Case 2, REopt's sizes | REopt.jl | This calculator |
+| --- | ---: | ---: |
+| Initial capital (cost curve) | $1,460,253 | $1,460,254 |
+| LCC, BAU | $9,525,566 | $9,525,566 |
+| LCC, optimal | $8,726,006 | $8,718,424 (−0.087 %) |
+| Simple payback / IRR | 7.16 y / 13.1 % | 7.13 y / 13.2 % |
+
+On the same equipment this model finds a dispatch $7,582 cheaper, well inside the 1 %
+REopt's run was allowed to stop short by; capital, BAU and the pro-forma agree. The
+REopt.jl result is cached, so `tools/chp_bess_reopt_case.py --case=2 --jl` reprints it
+without re-solving.
 
 ## REopt.jl's own test suite
 
@@ -1166,7 +1182,50 @@ Fixed along the way:
 
 ---
 
-# Part 13 — Repository layout and how to reproduce
+# Part 13 — Custom dispatch study (not REopt)
+
+The REopt panels copy reopt.nlr.gov field for field and carry nothing else. Studies like
+`bess_profile_v2.jsx` need inputs the web tool does not have, so they have their own
+section: the switch at the top of the app reads **REopt tool | Custom dispatch study (not
+REopt)**, and the second opens `calculator/app_dispatch.py` behind a banner that says it
+is not REopt and cannot be checked against the site.
+
+| Input | What it carries |
+| --- | --- |
+| Hourly load | CSV / text upload of any length from 24 to 8,760 h (Excel `;` exports with decimal commas, a leading hour column, timestamps are all read), or the JSX's own day and week; a window (start hour, length) |
+| Grid price | flat, or an hourly series; any currency label (₸ by default) |
+| Fuel-fired units | one row per unit: rated kW, energy cost per kWh (on rated output, spill included), start cost, minimum load %, minimum up / down hours, spill allowed; presets for the JSX's 2- and 3-unit fleets |
+| Battery | power, energy, round-trip efficiency, minimum SoC, wear cost per kWh discharged, grid charging, cyclic or fixed starting SoC |
+| Scenarios | any number of rows, each solved separately: minimum-load override, battery on / off, **load scale %** — the variability axis; the JSX's A / B / C are filled in |
+
+The engine is the same MILP with the finance switched off (one period, no discounting,
+tax or capital cost), so the objective is the plain operating cost of the horizon — the
+figure the JSX reports. Results come as a side-by-side comparison (energy, cost by line,
+difference against the first scenario, solver status) and then the same **Dispatch by
+period** view as the REopt results, for whichever scenario is picked, priced in the
+study's currency.
+
+**Verified.** `tools/test_dispatch_study.py` poses the JSX's day through the section's own
+builder and through the runner `jsx_case.py` was validated with; the operating cost agrees
+exactly in all six cases, and the section's line-by-line accounting reproduces the solver's
+objective:
+
+| Fleet · rule | Operating cost, ₸ | Grid purchase, kWh |
+| --- | ---: | ---: |
+| 2 units · A free from 50 % | 1,492,498 | 6,850 |
+| 2 units · B 90 % rule | 1,563,237 | 6,850 |
+| 2 units · C 90 % + battery | 1,367,502 | 3,227 |
+| 3 units · A free from 50 % | 1,275,280 | 739 |
+| 3 units · B 90 % rule | 1,418,074 | 2,180 |
+| 3 units · C 90 % + battery | 1,259,645 | 0 |
+
+In the browser the default A / B / C day solves in under a minute; beyond a week, on/off
+units add one binary per unit per hour and a run may stop at its time limit with a small
+remaining gap, which the comparison table shows.
+
+---
+
+# Part 14 — Repository layout and how to reproduce
 
 ```
 GreenHouseV2/
@@ -1182,6 +1241,7 @@ GreenHouseV2/
     ui_theme.py                REopt-matched styling
     profile_ui.py              profiling palette, tables and dispatch chart
     app_chp_bess.py            REopt's CHP, Battery, fuel and heating inputs, field for field
+    app_dispatch.py            custom dispatch study (not REopt): any load, units, rules
     reopt_core/
       finance.py               verbatim ports of the REopt.jl financial formulas
       defaults.py              defaults from REopt.jl structs
@@ -1216,6 +1276,7 @@ python calculator/tools/test_chp_bess_fields.py # CHP + Battery vs the live tool
 python calculator/tools/chp_bess_reopt_case.py  # CHP + Battery cases posed as on the site
 python calculator/tools/test_reopt_jl_suite.py  # REopt.jl's own tests, 9 groups
 python calculator/tools/check_reopt_jl.py      # local REopt.jl vs runtests vs this calculator
+python calculator/tools/test_dispatch_study.py # custom dispatch study vs the validated JSX runner
 python calculator/tools/reopt_jl.py <scenario.json>  # any REopt JSON through the local REopt.jl
 ```
 

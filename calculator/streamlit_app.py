@@ -1,4 +1,4 @@
-"""REopt-style calculator — steps 1-5, four technologies.
+"""GreenHouse — the REopt tool (steps 1-5, four technologies) and a custom dispatch study.
 
 Field labels, option values/order, defaults and help text are generated from a
 live extraction of https://reopt.nlr.gov/tool (see reopt_core/ui_fields.py).
@@ -21,7 +21,7 @@ from reopt_core import data_sources as ds
 from reopt_core import defaults as D
 from reopt_core import ui_fields as U
 
-st.set_page_config(page_title="REopt calculator", page_icon=":material/bolt:", layout="wide")
+st.set_page_config(page_title="GreenHouse", page_icon=":material/bolt:", layout="wide")
 
 F = U.FIELDS
 
@@ -107,7 +107,19 @@ ss.setdefault("results", None)
 
 T.inject()
 P.inject()          # profiling palette + table hierarchy (results page)
-st.title(":material/bolt: REopt calculator")
+st.title(":material/bolt: GreenHouse")
+
+# Two studies. The REopt tool mirrors reopt.nlr.gov field for field; the custom
+# dispatch study is GreenHouse's own and carries inputs REopt does not have.
+study = st.segmented_control(
+    "Study", ["REopt tool", "Custom dispatch study (not REopt)"], default="REopt tool",
+    key="study", label_visibility="collapsed",
+)
+if study == "Custom dispatch study (not REopt)":
+    import app_dispatch
+    app_dispatch.render()
+    st.stop()
+
 st.caption(
     "Steps 1–5 of the REopt web tool, limited to Prime Generator / Generator, CHP, PV "
     "and Battery. Inputs mirror reopt.nlr.gov; formulas come from REopt.jl v0.61.1."

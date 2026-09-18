@@ -44,10 +44,15 @@ def _idx(n: int = HOURS) -> pd.DatetimeIndex:
     return pd.date_range("2017-01-01", periods=n, freq="h")
 
 
+_CUR = "$"          # set per render; a custom study may price in any currency
+
+
 def _m(x) -> str:
     if x is None:
         return "N/A"
-    return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
+    if _CUR == "$":
+        return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
+    return f"{'-' if x < 0 else ''}{abs(x):,.0f} {_CUR}"
 
 
 def _n(x) -> str:
@@ -483,6 +488,8 @@ def _summary_table(series: dict, tariff, rep_day: int, sh: dict,
 
 # ----------------------------------------------------------------- render
 def render_periods(state: dict) -> None:
+    global _CUR
+    _CUR = state.get("currency") or "$"
     res = state["res"]
     series = res.get("series") or {}
     if not series:

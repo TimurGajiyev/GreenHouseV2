@@ -1,4 +1,7 @@
-# GreenHouseV2
+# GreenHouse
+
+The project is named **GreenHouse** (the folder is still `D:\GreenHouseV2`; `D:\Greenhouse`
+is a separate, older folder, so the directory was not renamed).
 
 ## Browser automation
 
