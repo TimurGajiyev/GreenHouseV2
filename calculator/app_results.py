@@ -26,15 +26,17 @@ def _m(x) -> str:
     """Money, with the sign outside the $ as REopt writes it (-$15,263)."""
     if x is None:
         return "N/A"
+    if round(x) == 0:
+        return "$0"                                 # never "-$0"
     return f"-${abs(x):,.0f}" if x < 0 else f"${x:,.0f}"
 
 
 def _kw(x) -> str:
-    return f"{x:,.0f} kW"
+    return f"{x + 0.0 if round(x) else 0.0:,.0f} kW"      # solver -0.0 prints as 0
 
 
 def _kwh(x) -> str:
-    return f"{x:,.0f} kWh"
+    return f"{x + 0.0 if round(x) else 0.0:,.0f} kWh"
 
 
 def _tonnes(em, key, digits):
@@ -260,12 +262,35 @@ def render_results(state: dict) -> None:
                        "the optimal case.")
             y1om = sum(om.values()) if om else 0.0
             f = res["factors"]
-            tech_cap_after = (cap["pv_cap_cost_slope_per_kw"] * sz["pv_kw"]
-                              + cap["storage_npc_per_kw"] * sz["battery_kw"]
-                              + cap["storage_npc_per_kwh"] * sz["battery_kwh"]
-                              + cap["fueltech_cap_cost_slope_per_kw"] * sz["fueltech_kw"])
+            # REopt's lifecycle capital costs: the capital terms of the objective,
+            # after ITC, MACRS and rebates, cost-curve segments included
+            tech_cap_after = cap.get("lifecycle_capex", (
+                cap["pv_cap_cost_slope_per_kw"] * sz["pv_kw"]
+                + cap["storage_npc_per_kw"] * sz["battery_kw"]
+                + cap["storage_npc_per_kwh"] * sz["battery_kwh"]
+                + cap["fueltech_cap_cost_slope_per_kw"] * sz["fueltech_kw"]))
             om_lcc = y1om * f["pwf_om"] * (1 - state["tax_rate"])
             savings = bau["lifecycle_cost"] - res["objective_lifecycle_cost"]
+            th = res.get("thermal") or {}
+            heat = (th.get("thermal_load_mmbtu") or 0) > 0 or bool(bau.get("boiler_fuel_mmbtu"))
+            is_chp = sz.get("fueltech_kind") == "CHP"
+
+            def na(s_):
+                return "N/A" if is_chp else s_      # CHP rows read N/A under BAU
+
+            boil_lcc_b = bau.get("boiler_lifecycle_cost", 0.0)
+            boil_lcc = th.get("boiler_fuel_cost_lifecycle", 0.0)
+            chp_lcc = th.get("chp_fuel_cost_lifecycle", 0.0)
+            sb_lcc = th.get("standby_lifecycle", 0.0)
+            # Total Utility Electricity Cost carries no fuel stream and no standby charge
+            elec_lcc_b = bau["lifecycle_cost"] - boil_lcc_b
+            elec_lcc = (res["objective_lifecycle_cost"] - tech_cap_after - om_lcc
+                        - boil_lcc - chp_lcc - sb_lcc)
+
+            def mm(x):
+                return f"{x:,.0f} MMBtu"
+
+            eff = state.get("boiler_efficiency") or 0.8
 
             def d(a, b, fmt):
                 return fmt(b - a)
@@ -277,17 +302,42 @@ def render_results(state: dict) -> None:
                 ("Battery Capacity", _kwh(0), _kwh(sz["battery_kwh"]), _kwh(sz["battery_kwh"])),
             ]
             if sz["fueltech_kind"]:
-                rows.append((f"{sz['fueltech_kind']} Size", _kw(0), _kw(sz["fueltech_kw"]),
+                rows.append((f"{sz['fueltech_kind']} Size", na(_kw(0)), _kw(sz["fueltech_kw"]),
                              _kw(sz["fueltech_kw"])))
+            if heat:
+                cap_b = th.get("boiler_capacity_mmbtu_per_hour", 0.0)
+                rows.append(("Existing Boiler Capacity", f"{cap_b:.1f} MMBtu/hr",
+                             f"{cap_b:.1f} MMBtu/hr", "0.0 MMBtu/hr"))
             em = state.get("emissions")
             ren_opt = (en["pv_kwh"] / en["annual_load_kwh"] * 100) if en["annual_load_kwh"] else 0.0
             rows += [
                 ("— Energy Production and Fuel Use —", "", "", ""),
                 ("Average Annual PV Energy Production", _kwh(0), _kwh(en["pv_kwh"]),
                  _kwh(en["pv_kwh"])),
+            ]
+            if is_chp:
+                rows += [
+                    ("CHP Electric Production", "N/A", _kwh(en.get("fueltech_kwh", 0)),
+                     _kwh(en.get("fueltech_kwh", 0))),
+                    ("CHP Thermal Production", "N/A", mm(th.get("chp_thermal_production_mmbtu", 0)),
+                     mm(th.get("chp_thermal_production_mmbtu", 0))),
+                    ("CHP Fuel Used", "N/A", mm(th.get("chp_fuel_mmbtu", 0)),
+                     mm(th.get("chp_fuel_mmbtu", 0))),
+                ]
+            rows += [
                 ("Average Annual Energy Supplied from Grid", _kwh(en["annual_load_kwh"]),
                  _kwh(bd.get("grid_total", 0)),
                  _kwh(bd.get("grid_total", 0) - en["annual_load_kwh"])),
+            ]
+            if heat:
+                bf_b, bf = bau.get("boiler_fuel_mmbtu", 0.0), th.get("boiler_fuel_mmbtu", 0.0)
+                rows += [
+                    ("Heating System Thermal Production", mm(bf_b * eff),
+                     mm(th.get("boiler_thermal_mmbtu", 0)),
+                     mm(th.get("boiler_thermal_mmbtu", 0) - bf_b * eff)),
+                    ("Heating System Fuel Used", mm(bf_b), mm(bf), mm(bf - bf_b)),
+                ]
+            rows += [
                 ("— Renewable Energy Metrics —", "", "", ""),
                 ("Annual Renewable Electricity (% of electricity consumption)",
                  "0%", f"{ren_opt:.0f}%", f"{ren_opt:.0f}%"),
@@ -314,17 +364,44 @@ def render_results(state: dict) -> None:
                 ("Utility Fixed Cost", _m(bau["year1_fixed_cost"]),
                  _m(u.get("year1_fixed_cost", 0)), _m(0)),
                 ("Utility Minimum Cost Adder", _m(0), _m(0), _m(0)),
+            ]
+            if is_chp:
+                rows.append(("Standby Charges", "N/A", _m(th.get("standby_year1", 0)),
+                             _m(th.get("standby_year1", 0))))
+            rows += [
                 ("Total Year 1 Utility Cost - Before Tax", _m(bau["year1_total"]),
                  _m(u.get("year1_total", 0)), _m(u.get("year1_total", 0) - bau["year1_total"])),
+            ]
+            if heat:
+                by_b = bau.get("year1_boiler_fuel_cost", 0.0)
+                by = th.get("boiler_fuel_cost_year1", 0.0)
+                cy = th.get("chp_fuel_cost_year1", 0.0)
+                rows += [("— Year 1 Utility Fuel Cost — Before Tax —", "", "", ""),
+                         ("Heating System Fuel Cost", _m(by_b), _m(by), _m(by - by_b))]
+                if is_chp:
+                    rows.append(("CHP Fuel Cost", "N/A", _m(cy), _m(cy)))
+                rows += [("— Life Cycle Utility Fuel Cost — After Tax —", "", "", ""),
+                         ("Heating System Fuel Cost", _m(boil_lcc_b), _m(boil_lcc),
+                          _m(boil_lcc - boil_lcc_b))]
+                if is_chp:
+                    rows.append(("CHP Fuel Cost", "N/A", _m(chp_lcc), _m(chp_lcc)))
+            rows += [
                 ("— Life Cycle Cost Breakdown —", "", "", ""),
                 ("Technology Capital Costs + Replacements, After Incentives", _m(0),
                  _m(tech_cap_after), _m(tech_cap_after)),
                 ("O&M Costs", _m(0), _m(om_lcc), _m(om_lcc)),
-                ("Total Utility Electricity Cost", _m(bau["lifecycle_cost"]),
-                 _m(res["objective_lifecycle_cost"] - tech_cap_after - om_lcc),
-                 _m(res["objective_lifecycle_cost"] - tech_cap_after - om_lcc
-                    - bau["lifecycle_cost"])),
+            ]
+            if is_chp:
+                rows.append(("Standby Charges", _m(0), _m(sb_lcc), _m(sb_lcc)))
+            rows += [
+                ("Total Utility Electricity Cost", _m(elec_lcc_b), _m(elec_lcc),
+                 _m(elec_lcc - elec_lcc_b)),
                 ("Total Production-Based Incentive", _m(0), _m(0), _m(0)),
+            ]
+            if heat:
+                rows.append(("Non-Outage Fuel Costs", _m(boil_lcc_b), _m(boil_lcc + chp_lcc),
+                             _m(boil_lcc + chp_lcc - boil_lcc_b)))
+            rows += [
                 ("Cost of Climate Emissions throughout Analysis Period (If Included in Objective)",
                  _m(0), _m(0), _m(0)),
                 ("Cost of Health Emissions throughout Analysis Period (If Included in Objective)",

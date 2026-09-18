@@ -22,7 +22,9 @@ the limits are.
 - [Part 8 — Field use: the Sana'a vendor proposal](#part-8--field-use-the-sanaa-vendor-proposal)
 - [Part 9 — Bugs found and fixed](#part-9--bugs-found-and-fixed)
 - [Part 10 — Known gaps](#part-10--known-gaps)
-- [Part 11 — Repository layout and how to reproduce](#part-11--repository-layout-and-how-to-reproduce)
+- [Part 11 — The profiling view](#part-11--the-profiling-view)
+- [Part 12 — CHP and Battery, field for field with the web tool](#part-12--chp-and-battery-field-for-field-with-the-web-tool)
+- [Part 13 — Repository layout and how to reproduce](#part-13--repository-layout-and-how-to-reproduce)
 
 ---
 
@@ -81,9 +83,9 @@ row-by-row against the same scenario in our calculator.
 
 | Suite | Scope | Result | Script |
 |---|---|---|---|
-| **TC1** | Golden CO · Large Office 5 GWh · PV + Battery · 25 yr | **21/21** | `tools/validate2.py` |
+| **TC1** | Golden CO · Large Office 5 GWh · PV + Battery · 25 yr | **23/23** (incl. payback, IRR) | `tools/validate2.py` |
 | **TC2** | Phoenix AZ · Supermarket 3 GWh · emissions, health & climate costs · 20 yr | **15/15** | `tools/validate_tc2.py` |
-| **G1/G2** | CHP and Prime Generator + PV + Battery | **20/20** | `tools/validate_gen.py` |
+| **G1/G2** | CHP and Prime Generator + PV + Battery | **24/24** (incl. payback, IRR) | `tools/validate_gen.py` |
 | **V1–V4** | Variability — four sites, buildings, tariffs, horizons | **27/29** | `tools/vary_ours.py` |
 | **OG1** | Off-grid, generator pinned as the tool submits it | **LCC −0.08%** | `tools/validate_offgrid.py` |
 | **PT2** | Live head-to-head on a scenario neither had seen | **22/24** | `tools/validate_parity.py` |
@@ -97,7 +99,9 @@ V1–V4 and PT2.
 
 # Part 3 — Test cases in detail
 
-## TC1 — Golden CO (21/21)
+> Figures in this part were refreshed on 2026-09-18 after the battery's initial state of charge was ported (Part 12): with SoC starting at 50% instead of closing in a loop, TC1 and G1/G2 now match REopt's life cycle cost to the dollar.
+
+## TC1 — Golden CO (23/23)
 
 > Large Office 5,000,000 kWh · 5 acres · Intermountain REA B-TOU ·
 > PV $1,600/kW max 2,000 · Battery $300/kWh $800/kW const $0 max 4,000 ·
@@ -107,8 +111,8 @@ V1–V4 and PT2.
 |---|---:|---:|
 | PV | 165 kW | **165 kW** |
 | Battery | 78 kW / 171 kWh | **78 kW / 171 kWh** |
-| Life cycle cost, BAU / optimized | $4,624,883 / $4,601,676 | $4,624,883 / $4,601,707 |
-| Net present value | $23,207 | $23,176 |
+| Life cycle cost, BAU / optimized | $4,624,883 / $4,601,676 | $4,624,883 / **$4,601,676** |
+| Net present value | $23,207 | **$23,207** |
 | CO₂e over the period | 18,664 t | 18,664 t |
 | Cost of climate / health emissions | $600,023 / $427,092 | $600,195 / $427,108 |
 
@@ -169,7 +173,7 @@ life cycle cost $2,570,463.
 | Average Annual PV Energy Production | 36,747 kWh | 36,747 kWh | **0.00%** |
 | Year 1 Utility Cost — Before Tax | $276,050 | $276,109 | +0.02% |
 | Upfront Capital Before Incentives | $80,081 | $79,366 | −0.89% |
-| **Total Life Cycle Costs** | **$2,559,868** | **$2,559,873** | **+0.000%** |
+| **Total Life Cycle Costs** | **$2,559,868** | **$2,559,867** | **−0.000%** |
 | Net Present Value | $10,595 | $10,590 | −0.05% |
 
 Life cycle cost lands **$5 apart on $2.56 million**.
@@ -390,8 +394,8 @@ REopt runs: **G1 CHP** `7afae73e-2c85-40d3-aa77-2036a4cbaa78` ·
 | CHP / Prime Generator Size | **0 kW** | **0 kW** | **0 kW** | **0 kW** |
 | Heating System Fuel Used | 5,266 MMBtu | 5,266 | — | — |
 | Heating System Fuel Cost (lifecycle) | $454,883 | $454,883 | — | — |
-| Total Life Cycle Costs | $5,056,559 | $5,056,590 | $4,601,676 | $4,601,707 |
-| Net Present Value | $23,207 | $23,176 | $23,207 | $23,176 |
+| Total Life Cycle Costs | $5,056,559 | $5,056,559 | $4,601,676 | $4,601,676 |
+| Net Present Value | $23,207 | $23,207 | $23,207 | $23,207 |
 
 **20/20 rows match** (G1 11/11, G2 9/9). Largest deviation is NPV at −0.13%, the difference
 of two ~$5 M numbers that each agree to better than 0.001%.
@@ -664,18 +668,520 @@ Stated plainly, without softening:
 
 ---
 
-# Part 11 — Repository layout and how to reproduce
+# Part 11 — The profiling view
+
+The results page ends in a dispatch profiling block: a stacked supply chart, a statistics
+strip, and a set of tables at three time scales. It is the same visual language as the
+reference profiling artifact (`bess_profile_v2.jsx`), rebuilt in Streamlit so the two read
+as one product.
+
+## The design, as measured
+
+Every value below was taken from the reference and verified in the browser with
+`getComputedStyle` after the page rendered, not merely written into a stylesheet:
+
+| Element | Specification | Measured |
+| --- | --- | --- |
+| palette | paper `#EEF1F4`, panel `#FFFFFF`, ink `#17242F`, muted `#5C6B79`, rule `#CBD5DC` | same |
+| charge / discharge | `#1F7A8C` / `#C2571A` | same |
+| ceiling / saving | `#8A97A3` / `#3F8F5C` | same |
+| unit colours | `#46617F`, `#7C6E9B`, `#A8845C`, then three harmonised hues before wrapping | same |
+| table header | mono 10.5px, muted, uppercase, letter-spacing .06em, padding 7px 9px, right-aligned except the first column, 1px rule under | 10.5px, `rgb(92,107,121)`, uppercase, 0.63px, `7px 9px` |
+| table body | mono 12px, ink, padding 5px 9px, tabular figures, first column muted | 12px, `5px 9px`, `tabular-nums` |
+| row wash | every second row `rgba(23,36,47,0.022)` | `rgba(23,36,47,0.024)` (browser rounding) |
+| total row | 1px solid ink above, weight 600 | `1px` `rgb(23,36,47)`, `600` |
+| section row | ink, weight 600, uppercase, letter-spacing .06em | same |
+| panel title | Inter 19px, weight 650, letter-spacing -0.015em | same |
+| stat cell | label mono 10.5px uppercase .07em muted; value mono 15px ink | same |
+| switch | mono 12px, letter-spacing .04em, padding 9px 18px, square, active = ink fill | `12px`, `9px 18px`, `0px` radius |
+
+The switch styling is scoped with a marker span and an adjacent-sibling rule, so steps 1–5
+keep the REopt-orange Streamlit styling and only the profiling switches change: measured on
+the live page, the four form controls still read Roboto 14px with 6px/9999px radii while the
+two profiling switches read mono 12px with square corners.
+
+Vega draws its tooltip outside the chart DOM, so it is reached through `#vg-tooltip-element`
+in the same stylesheet — otherwise the one element a reader hovers would be the only one not
+wearing the design.
+
+## Dynamic asset variability
+
+Nothing in the block is written for a fixed number of machines. `_shape()` reads the solved
+result once and everything else loops over what it found:
+
+```python
+units  = [u for u in sizes["fueltech_units"]  if u["size_kw"]    > 1e-6]
+banks  = [b for b in sizes["storage_units"]   if b["energy_kwh"] > 1e-6]
+series = [series["fueltech_unit_kw"][u["name"]] for u in units]
+```
+
+- **Columns** — the hourly header is `HOUR · LOAD · ⟨one column per unit⟩ · PV · CHARGE + ·
+  DISCHARGE − · GRID · SOC %`, plus `SPILL`, `EXPORT` and `UNSERVED` only when the run has
+  them. Three engines give three columns; six give six.
+- **Chart series** — one stacked bar series per unit, colour by index through the palette,
+  then PV and grid; the battery is a signed bar offset beside the stack, as the reference
+  groups them.
+- **Headline** — `3 × CHP` with `Engine 1 300 + Engine 2 300 + Engine 3 300 = 900 kW`, built
+  from the fleet, and the dashed ceiling line is the sum of the nameplates.
+- **Per-unit tables** — one row per generator and one per battery, each with a fleet/bank
+  total row.
+- **Stat strip** — battery cells appear only with a battery, the fuel cell only with a
+  fuel-fired unit; the strip stays six wide.
+
+## Field-by-field against the reference
+
+The reference's per-hour row is `[load, chp, ch, dis, soc%, grid, starts, uon, spill]`.
+Each field was checked against what this block renders, and the gaps closed:
+
+| Reference field | Here | Note |
+| --- | --- | --- |
+| `load` | `LOAD` | same |
+| `chp` | one column per unit, plus `fleet kW` in the tooltip | finer than the reference, which prints the fleet total |
+| `ch` / `dis` | `CHARGE +` / `DISCHARGE −` | prints a figure, and `−` on discharge, as the reference does |
+| `soc` | `SOC %` | stored as kWh, shown as a share of installed capacity |
+| `grid` | `GRID` | same |
+| `starts` | `STARTS` on the weekly table, `starts this hour` in the tooltip | same |
+| `uon` | `ON` | added; was missing |
+| `spill` | `SPILL`, per unit in the result | same |
+| — | `PV`, `EXPORT`, `UNSERVED` | this model has them, the reference has no PV and no unserved load |
+
+Tables:
+
+| Reference | Here |
+| --- | --- |
+| `dayTable` — `Час, Нагрузка, …names, Заряд +, Разряд −, Сеть, SoC %` | same order, plus `PV`, `ON` and the optional columns |
+| `weekTable` — same, then `Пик, Пусков` | same, plus end-of-day `SOC %` |
+| `hourWeekTable` — `День, Час, …` | same; `DAY` and `HOUR` are separate columns, as there |
+| `summaryTable` | transposed, see below |
+| `Profiles` — eight load archetypes | not carried; it is a property of that study, not of one REopt run |
+
+The summary is the one table that could not be copied. The reference puts the three
+*scenarios* (A/B/C) in the columns and the three time scales in section rows; this
+calculator solves one scenario, so the time scales take the columns and the metrics are
+sectioned instead. Its metric list was then brought up to the reference's:
+
+| Reference metric | Here |
+| --- | --- |
+| Нагрузка завода / Выработка КГУ / Заряд / Разряд / Закуп | already present |
+| Пик закупа | already present |
+| Пусков | `Starts` — added |
+| Сброс | `Spill (kWh)` — added |
+| Моточасы парка | `Fleet running hours` — added |
+| Доля сети, % | `Grid share of load (%)` — added |
+| Полных циклов BESS | `Battery full cycles` — added |
+| Поправка на SoC | `Battery SOC carried (kWh)` — added, see below |
+| Топливо и O&M / Пуски / Износ ячеек, ₸ | not carried: those are the reference's flat tenge tariff model. The cost row here is the tariff energy charge this calculator actually computes |
+| Экономия и окупаемость к A / к B | not carried: they are differences between that study's three scenarios |
+
+### The SoC correction is structurally zero over a year
+
+The reference carries a `поправка на SoC` because a window that ends fuller than it started
+has been subsidised by stored energy — in its own annual figures that correction is
+183,939 ₸, so its battery does not close the loop.
+
+Here the storage balance wraps:
+
+```python
+# reopt_core/model.py:472
+prev = bsoc[b][T[-1]] if t == 0 else bsoc[b][t - 1]
+m += bsoc[b][t] == prev + charge_efficiency * bchg[b][t] - ...
+```
+
+so over the full horizon the battery must return to where it began. Measured on the
+rendered summary:
+
+```
+  day   SOC carried    +264.1 kWh
+  week  SOC carried    −258.1 kWh
+  year  SOC carried       0.0 kWh
+```
+
+The row is worth showing anyway: inside a day or a week the drift is real, and it says how
+much that window is flattered or penalised by stored energy crossing its edges.
+
+### Counters agree with the solver
+
+`test_profile_render.py` asserts that the summary's year column is not an independent
+opinion: fleet running hours and starts re-derived from the hourly series must equal what
+the model reported in `sizes["fueltech_units"]`, and battery cycles must equal
+throughput ÷ installed capacity. All three shapes pass.
+
+## Isolation from the core
+
+`reopt_core/model.py` was not opened for this work. The block reads `res["series"]` and
+`res["sizes"]` and sums them; it computes no cost and no energy of its own. The two files
+added or changed are `profile_ui.py` (palette, stylesheet, table renderer, chart) and
+`app_periods.py` (aggregation and layout); `streamlit_app.py` gained one import and one
+`P.inject()` call.
+
+Proof rather than assertion — after the change, unchanged to the dollar:
+
+```
+TC1              21/21 checks within tolerance
+PT2              22/24 rows; life cycle cost $2,559,867 vs REopt $2,559,868  (−0.000%)
+test_periods     all period-view checks passed, single and fleet
+```
+
+## Running the reference's own example
+
+`bess_profile_v2.jsx` ships its results inline — a 24-hour day and a 168-hour week for two
+fleets under three operating rules — produced by a causal rule-based controller.
+`tools/jsx_case.py` reads those rows, poses the identical problem to this MILP at the
+artifact's own prices (22 ₸/kWh own generation, 60 ₸/kWh import, 15,000 ₸ per start,
+0.5 ₸/kWh cell wear), and puts the two answers side by side.
+
+First, the artifact reconciles with itself. Over all 1,152 published hours the per-unit
+columns sum to the fleet column, `generation − spill + discharge + grid = load + charge`
+holds to 1 kW, and no hour charges and discharges at once.
+
+| Case | Artifact, ₸ | This MILP, ₸ | Δ |
+| --- | ---: | ---: | ---: |
+| day, 2 engines, free 50% | 1,492,498 | **1,492,498** | **+0.00%** |
+| day, 2 engines, 90% rule | 1,580,284 | 1,563,237 | −1.08% |
+| day, 2 engines, 90% + BESS | 1,377,366 | 1,367,502 | −0.72% |
+| day, 3 engines, free 50% | 1,348,610 | 1,275,280 | −5.44% |
+| day, 3 engines, 90% rule | 1,459,074 | 1,418,074 | −2.81% |
+| day, 3 engines, 90% + BESS | 1,315,706 | 1,259,645 | −4.26% |
+| week, 2 engines, free 50% | 9,400,780 | 9,346,281 | −0.58% |
+| week, 2 engines, 90% rule | 9,952,586 | 9,831,623 | −1.22% |
+| week, 2 engines, 90% + BESS | 8,754,845 | 8,655,505 | −1.13% |
+| week, 3 engines, free 50% | 8,625,984 | 8,246,715 | −4.40% |
+| week, 3 engines, 90% rule | 9,367,890 | 9,157,859 | −2.24% |
+| week, 3 engines, 90% + BESS | 8,761,464 | 8,278,228 | −5.52% (MIP gap 0.35%) |
+
+Same constraints and perfect foresight, so each of our costs is a lower bound on theirs; the
+difference is what the controller leaves on the table, not a disagreement about physics.
+
+### The one exact match is the useful one
+
+Two engines under free modulation with no battery and no starts: **1,492,498 ₸ on both
+sides, and every line item identical to the kilowatt-hour** — generation 49,159, import
+6,850, peak 1,839, zero starts, zero spill. When the constraint set leaves no slack, their
+controller is already optimal and this engine reproduces it exactly. That is a check on the
+whole encoding — fuel cost, turndown, power balance — not just on the total.
+
+### Where the gaps come from
+
+**The 90% rule (two engines, day).** We burn 4,202 kWh *more* and spill 2,627 kWh *more*,
+yet pay 17,047 ₸ less:
+
+```
+  +4,202 kWh own generation @ 22 ₸   =  +92,453 ₸
+  −1,575 kWh import        @ 60 ₸   =  −94,500 ₸
+  −1 start                 @ 15,000  =  −15,000 ₸
+                                        −17,047 ₸   (matches the reported delta)
+```
+
+At a 38 ₸/kWh spread, holding an engine on its 90% shelf and dumping the surplus is cheaper
+than topping up from the grid. The causal controller cannot see that trade.
+
+**Three engines.** The peak load is 4,106 kW against 3,367 kW of nameplate, so at least
+739 kW must be imported in that hour. We import exactly 739 kW; the artifact imports
+1,806 kW — **2.44× the physical minimum** — in both mode A and mode B, because its rule did
+not commit the third engine in time. That single hour is most of the 5.4% day gap.
+
+### The same case drawn in our own view
+
+`tools/jsx_render_check.py` solves the artifact's case and renders it through this
+calculator's profiling block, then compares the two tables. Structure and values are kept
+apart, because our dispatch is deliberately not theirs.
+
+The block had to learn horizons other than a year first: it hard-coded 8,760 hours in the
+index, the day scan, the window slice and the summary. `horizon(series)` now drives all of
+them, the third summary column becomes `HORIZON, n H` when the run is shorter, the
+monthly-peak section is skipped when there are not twelve months to bill, and the battery
+table's `/YR` suffix follows the actual horizon. Both year-path validators still pass.
+
+**Structure — every reference column present, in order, in all four checked cases:**
+
+| Reference column set | Ours |
+| --- | --- |
+| `Час, Нагрузка, Jenbacher, TEDOM, Заряд +, Разряд −, Сеть, SoC %` | `HOUR, LOAD, JENBACHER, TEDOM, CHARGE +, DISCHARGE −, GRID, SOC %, ON` |
+| same with `КГУ-3` inserted | same, `КГУ-3` in the same position |
+| 24 rows plus a total row | 24 rows plus a total row |
+
+Two deliberate differences. We add `ON`, the reference's `uon` field, which its tables carry
+only in the tooltip. And in a scenario with no battery — modes A and B — we do not draw the
+three battery columns at all, where the reference prints them as zeros; the artifact always
+has a BESS configured even in the runs that do not use it.
+
+**Values — the exact-match case, hour by hour.** Two engines, free modulation, no battery:
+
+```
+  load                0.0 kW max difference, 0 of 24 hours differ
+  fleet generation    0.0 kW                 0 of 24
+  grid purchase       0.0 kW                 0 of 24
+  charge / discharge  0.0 kW                 0 of 24
+  per-unit split    243.0 kW                 degenerate: the two units are priced alike,
+                                             so only their sum is pinned
+```
+
+The total row agrees too: load 56,009 kWh and import 6,850 kWh on both sides, and the
+per-unit columns differ only in how the identical sum 49,159 kWh is split between two
+equally-priced machines.
+
+**Where the schedules differ, the difference is legible.** Three engines, free modulation:
+generation and import differ in exactly 3 of 24 hours, by exactly 1,067 kW each time — one
+Jenbacher, not committed. That is the whole 5.4% cost gap, visible as three cells.
+
+### The artifact's negative verdict on the battery, re-examined
+
+For three engines the artifact reports that the battery never pays back (`payA: null`). Its
+evidence is that mode C costs more than mode A — but that comparison changes two things at
+once, the battery *and* the 90% rule. Isolating the battery with mode D (free 50% **with**
+the battery):
+
+| Week, 3 engines | ₸ | vs free 50% |
+| --- | ---: | ---: |
+| A free 50%, no battery | 8,246,715 | — |
+| C 90% rule + battery (artifact's comparison) | 8,278,228 | +31,513 |
+| D free 50% + battery | **8,137,084** | **−109,631** |
+
+The battery does save money; the 90% rule is what destroys its value. But the saving is
+small — extrapolating this week gives about 5.7 M ₸/year against a 391 M ₸ capex, roughly
+70 years — because three engines already cover the load with almost no import left to
+displace (739 kWh in the whole week). **So the artifact's conclusion for three engines is
+right, and its reasoning is not.** For two engines the same isolation gives 727,600 ₸/week,
+about 38 M ₸/year and a ten-year payback, consistent with the 9.5 years the twelve-month
+decomposition in the CHP+BESS work produced.
+
+```bash
+python calculator/tools/jsx_case.py check   # the artifact's own arithmetic
+python calculator/tools/jsx_case.py day     # 24-hour case, both fleets
+python calculator/tools/jsx_case.py week    # 168-hour case
+```
+
+## What is deliberately not carried over
+
+The reference's savings veil and its A/B/C mode comparison need an hour-by-hour baseline to
+subtract. This calculator has a business-as-usual case but not an hourly BAU dispatch, so the
+veil would have to be invented. It is left out rather than faked. The eight-archetype profile
+sweep is likewise a property of that study, not of a single REopt run.
+
+## Render tests
+
+`tools/test_profile_render.py` stubs Streamlit, calls `render_periods` for every switch
+position on three solved shapes — one generator, three generators with two batteries, and two
+fixed-nameplate engines with turndown, start costs and curtailment — and checks the emitted
+HTML: every row as wide as its header, no empty header cell, no cell rendering as `nan` or
+`None`, balanced tags, and a chart specification that compiles.
+
+This exists because the `%-d` crash in Part 9 reached the page: the data functions had been
+validated and the render path never had been.
+
+---
+
+# Part 12 — CHP and Battery, field for field with the web tool
+
+The earlier CHP and Battery panels were ours, not REopt's. They carried inputs the tool does
+not have — a "Part-load behaviour" expander, an "Existing Heating System" panel, editors for
+several generators and batteries — and they lacked or mis-modelled a long list of inputs it
+does have. Both panels were rebuilt from a live capture, and every input was ported from
+REopt.jl so it acts in the model the way it acts in REopt.
+
+## The capture
+
+`reopt_test_data/chp-bess-panels.json` is a Playwright walk of reopt.nlr.gov/tool on
+2026-09-18 (grid-tied, CHP + Battery, Golden CO, Hospital electric and heating load,
+$8/MMBtu): every visible heading and control of each panel in DOM order, once collapsed
+and once with "Advanced inputs" open, plus every field a checkbox reveals.
+
+| Panel | Visible | Under "Advanced inputs" | Revealed by a checkbox |
+| --- | ---: | ---: | --- |
+| Battery | 8 | 19 | hourly SoC upload (Custom hourly state of charge) |
+| CHP | 13 | 31 | existing size + net/gross load; single $/kW; custom schedule / generation profile |
+| Utilities | Fuel Costs: 6 | CHP standby charge | 12 monthly prices, twice |
+| Load Profiles | heating load: 10 | — | space heating / hot water split; process heat |
+| Financial | 2 escalation rates | — | — |
+
+REopt does not keep these inputs together, and neither does the calculator any more: fuel
+prices sit under **Utilities**, the heating load under **Load Profiles**, fuel escalation
+under **Financial**, and only the equipment under **Battery** and **Combined Heat & Power** —
+in that order, as on the site. Every input starts blank with the tool's default as its
+placeholder; blank means "use the default", exactly as on the site.
+
+## What was wrong, and what REopt actually does
+
+| Input | Before | REopt (and now here) |
+| --- | --- | --- |
+| CHP size class, costs, efficiencies, min size, turndown, max size | size class 0 always: $4,510/kW, 35.55% | chosen from the average boiler fuel load (chp.jl:479). Hospital, Golden: 170 kW heuristic → reciprocating engine, class 2, 100 kW → $3,920/kW and 250 kW → $3,660/kW, 31.2% / 48.5%, 50 kW minimum, 25% turndown, 341 kW maximum — the tool's own placeholders, reproduced |
+| Size-cost pairs and incentives | one $/kW slope, federal ITC only | cost_curve.jl, ported verbatim: piecewise curve with REopt's whole-dollar slope rounding, utility → state → federal incentives with caps, one segment chosen by binaries (cost_curve_constraints.jl 7f–7h) |
+| Minimum new non-zero size | missing | zero or at least that size — folded into the segments, as REopt does |
+| Existing CHP | missing | existing kW sits under the new capacity with no capital cost; a net load is grossed up by its output (reopt_inputs.jl:1258) |
+| Heat recovery | **annual** credit: July CHP heat paid down January boiler fuel | **hourly** balance: CHP heat serves that hour's load or is wasted, the boiler makes up the rest, capped at 1.25 × peak |
+| Heating load | annual MMBtu only | hourly space heating + hot water from the CRB profiles, addressable share, monthly entry, separate SH/DHW, process heat |
+| Thermal efficiency at 50% | missing | affine thermal curve with its own intercept binary (chp_constraints.jl 2a–2c) |
+| Maintenance schedule | missing | the prime mover's default periods → 432 unavailable hours in 2017 (utils.jl:349), or an uploaded schedule |
+| Custom maximum generation profile | missing | availability = profile × (1 − maintenance) |
+| Electrical / heating load-following | missing | ported with their binaries and big-M from chp_constraints.jl |
+| Production-based incentive | missing | production_incentive_constraints.jl |
+| CHP standby charge | missing | pwf × 12 × rate × size, after tax (reopt.jl:295) |
+| CHP fuel escalation | the generic 3.4% | its own 3.48% |
+| Fuel prices by month | missing | each hour priced at its month |
+| Battery initial state of charge | **ignored** — SoC closed in a loop | SoC before hour 1 = 50% of energy, final SoC free (storage_constraints.jl:48); the loop remains available as REopt's `optimize_soc_init_fraction` |
+| Battery rebates, constant replacement | missing | $/kW rebate in the kW cost; constant replaced in its year |
+| Battery dispatch strategy | missing | Backup mode → 80% minimum SoC; custom hourly SoC ± 2% |
+
+## Verification
+
+**Fields.** A Playwright walk of the rebuilt panels returns the tool's labels, order,
+sections and placeholders: all 27 Battery inputs and all 44 CHP inputs, including both
+incentive grids and the maintenance-schedule controls. `tools/test_chp_bess_fields.py`
+asserts it against the capture, and asserts every derived default against the site.
+
+**Numbers — REopt run ee53addc (Hospital, Golden, $8/MMBtu, CHP + Battery).** Both sides
+build nothing, and the accounting agrees to the dollar:
+
+| | REopt | This calculator |
+| --- | ---: | ---: |
+| Total life cycle cost | $9,525,566 | $9,525,566 |
+| Utility electricity, lifecycle | $8,465,392 | $8,465,392 |
+| Heating fuel, lifecycle | $1,060,174 | $1,060,174 |
+| Heating fuel, year 1 | $79,254 | $79,254 |
+| Heating system fuel / thermal | 9,907 / 7,925 MMBtu | 9,907 / 7,925 MMBtu |
+| Existing boiler capacity | 4.7 MMBtu/h | 4.7 MMBtu/h |
+
+**No regression, two improvements.** The initial-SoC fix moved the existing live
+comparisons *closer* to REopt:
+
+| Validator | Before | After |
+| --- | --- | --- |
+| TC1 | 21/21, LCC +$31 | 21/21, **LCC exact**, $4,601,676 |
+| TC2 | 15/15 | 15/15 |
+| G1 / G2 | 20/20 | 20/20, G2 LCC exact |
+| PT2 | 22/24, +$5 | 22/24, −$1 |
+| OG1, V1–V4 | −0.08% matched, 27/29 | unchanged |
+
+**A case where CHP is built** (CHP gas $3/MMBtu, battery $150/kWh, $400/kW, no constant):
+this calculator sizes CHP at 197.7 kW on the 100–250 kW segment, running 7,974 h around
+432 maintenance hours and serving 6,447 of 7,925 MMBtu of heat, with a 726 kW / 2,404 kWh
+battery; life cycle cost $8,770,975 against $9,525,566 BAU (MIP gap 0.6% at 900 s). The same
+case on the site ran past the tool's default 600-second optimisation timeout and failed, and
+after that the site's firewall rejected further automated submissions (see Part 10), so the
+REopt side of this case is still to be taken by hand: `tools/chp_bess_reopt_case.py
+--case=2` lists the inputs.
+
+## REopt.jl's own test suite
+
+The site can be checked only one submission at a time, and it rate-limits automated use.
+REopt.jl ships its own tests: scenario files in `REopt/test/scenarios` and assertions in
+`REopt/test/runtests.jl`, each with the tolerance REopt allows itself.
+`tools/test_reopt_jl_suite.py` poses every CHP and Battery test that stays inside this
+calculator's technologies (no absorption chiller, cooling or outages) and checks our
+result against REopt's expected value at REopt's tolerance. All nine groups pass:
+
+| Group (runtests.jl) | Checked | REopt | This calculator |
+| --- | --- | ---: | ---: |
+| CHP Sizing Heuristic (217) | heuristic / max kW, two cases | 100 / 200, 65 / 130 | same |
+| Heating inputs + CHP defaults (2315) | thermal MMBtu, class-based min size and O&M | 50 kW, $0.027; 125 kW, $0.023; CT 2,000 kW, $0.015 | same |
+| Solar and Storage (394) | PV kW, battery kW / kWh, LCC to 1e-5 | 216.67, 49.0 / 83.3, $12,391,786 | 216.67, 49.05 / 83.32, $12,391,786 |
+| Storage Duration (4124) | kW × 8 = kWh | 0 | 0 |
+| Battery O&M Cost Fraction (4523) | O&M / capital | 0.025 | 0.025 |
+| CHP Sizing (1146) | size, LCC | 263 ± 50 kW, $11.1M ± 5% | 264 kW, $11,112,924 |
+| CHP Cost Curve and Min Allowable Size (1172) | capex, capex after incentives, size | $3,295,875, $2,636,976, 555.5 | $3,295,912, $2,637,087, 555.5 |
+| **CHP Proforma Metrics (1501)** | simple payback | **8.31 ± 0.02 y** | **8.31 y** (IRR 10.5%) |
+| CHP Supplementary firing and standby, part 1 (1293) | electric kWh, thermal MMBtu (1e-5), demand cost, heating load | 7,008,000; 29,567.45; 0; 99,864 | same |
+
+Three model corrections came out of it:
+
+* **Land.** A PV size limit from land area was applied on its own; REopt only has a
+  `LandConstraint` with concentrating solar. The limit now comes through the PV maximum size
+  (roof + land for "both"), and Solar and Storage went from PV 166.67 kW to REopt's 216.67.
+* **Climate zone.** The CRB load city is now looked up in `REopt/data/climate_cities.shp`
+  first, as REopt does, with the nearest-city rule only as its fallback (outside the US, and
+  for Los Angeles, as in REopt). The shapefile is read in pure Python — no GIS package.
+* **Payback and IRR.** REopt's pro-forma (`results/proforma.jl`, host-owned) is now ported
+  line for line and drives the results page. The previous one priced only the electricity
+  bill and O&M; REopt's also carries every fuel stream with its own escalation (CHP fuel,
+  existing boiler in both cases), the CHP standby charge, utility → state → federal cash
+  incentives, production incentives and battery replacement in its year, and escalates
+  year-one values from year 1 onward. The CHP payback test only passes with all of these.
+  Against the live tool it now matches too: TC1 and G1/G2 print **9.15 yrs** and **9.5 %**
+  on reopt.nlr.gov and here; `validate2.py` and `validate_gen.py` check both rows
+  (±0.02 y, REopt's own payback tolerance; ±0.05 % on IRR, which the tool prints to 0.1 %).
+
+## A local REopt.jl as the reference engine
+
+The site rate-limits automated runs and times out at 600 s, so REopt.jl itself now runs
+on this machine: Julia 1.10 LTS, the repository's own `REopt/` source (v0.61.1, the code
+every port here cites) and HiGHS, in `reopt_jl/`. `tools/reopt_jl.py` takes REopt's own
+JSON and returns REopt's results dict, cached per scenario; setup and gotchas are in
+CLAUDE.md.
+
+**The install is REopt as its authors test it.** `tools/check_reopt_jl.py` runs REopt's
+test scenarios through it and asserts what runtests.jl asserts — all pass — then poses the
+same scenarios to this calculator:
+
+| | runtests.jl | REopt.jl (local) | This calculator |
+| --- | ---: | ---: | ---: |
+| Solar and Storage — PV kW | 216.6667 | 216.6667 | 216.6667 |
+| Solar and Storage — battery kW / kWh | 49.0 / 83.3 | 49.05 / 83.32 | 49.05 / 83.32 |
+| Solar and Storage — LCC | $12,391,786 | $12,391,786.16 | $12,391,786.16 |
+| CHP Proforma — simple payback | 8.31 ± 0.02 | 8.31 | 8.31 |
+| CHP Proforma — IRR | — | 10.5 % | 10.5 % |
+| Supplementary firing, part 1 — CHP thermal MMBtu | 29,567.45 | 29,567.45 | 29,567.45 |
+
+**The case posed as the site poses it.** `tools/chp_bess_reopt_case.py --jl` writes the
+Golden Hospital case as REopt JSON using only what the site's form sends (REopt.jl's
+defaults are the web tool's: CHP ITC 0 %, MACRS 5 yr / 100 % bonus, escalations
+1.66 % / 3.48 %). Case 1 agrees three ways — site, local REopt.jl and this calculator all
+give LCC **$9,525,566** with 9,906.75 MMBtu of boiler fuel — which confirms the JSON
+matches the site's inputs.
+
+Fixed along the way:
+
+* **Pro-forma rounding.** REopt rounds the year-one values its pro-forma reads (energy and
+  demand to cents, fixed charge and export to dollars, boiler and CHP fuel to 3 decimals,
+  generator fuel to cents — results/electric_tariff.jl, existing_boiler.jl, chp.jl). Without
+  that, a run that builds nothing carried solver round-off into the cash flows and printed a
+  15.3-year payback where REopt prints 0. Now 0 / 0 %, as REopt.
+* **Annual electric kWh.** The field was pre-filled with 5,000,000; on the site it is blank,
+  and blank means the CRB default for the building in the site's climate zone
+  (electric_load.jl:260) — 8,281,865 kWh for a Golden hospital. Now blank with that
+  placeholder, as on the site.
+* **Size class box.** The disabled prime mover / size class boxes kept the value of their
+  first render (class 0) instead of following the heating load; they now show the derived
+  class, as the site does.
+* **Results Comparison.** The table lumped boiler fuel into "Total Utility Electricity
+  Cost". It now carries the site's rows for a heating case — existing boiler capacity, CHP
+  production and fuel, heating system production and fuel, year-one and lifecycle fuel
+  costs, standby charges, non-outage fuel costs — and case 1 reads exactly as on the site:
+  electricity **$8,465,392**, heating fuel **$1,060,174** lifecycle / **$79,254** year one,
+  boiler **4.7 MMBtu/hr**. "-$0" and "-0 kWh" no longer print.
+
+## Still open
+
+* PV-only result elements (the PV levelized cost tile, the "PV Serving Load" legend entry)
+  still show when PV is not evaluated; the site's behaviour there has not been captured.
+* The tool prints the default maximum CHP size as 341 kW in the form and 342 kW in the
+  results echo; REopt.jl's arithmetic gives 341.14. It only matters when the optimum sits
+  on the maximum.
+* Under load-following, REopt charges per-kWh O&M on *rated* production even in maintenance
+  hours; here a unit in maintenance is simply off.
+* The Emissions panel's CHP fuel factors and on-site fuel-burn costs are not yet on the
+  page (they do not enter the objective at the tool's defaults).
+* Prime Generator and Generator panels were outside this change and keep their previous
+  fields; the multi-unit fleet editors now appear only there. The engine still supports a
+  fleet of CHP units and a bank of batteries.
+
+---
+
+# Part 13 — Repository layout and how to reproduce
 
 ```
 GreenHouseV2/
   REPORT.md                    this document
   CLAUDE.md                    project instructions
   REopt/                       REopt.jl v0.61.1 source + data
+  reopt_jl/                    local Julia env running that source (setup.jl, run.jl)
   docs/reopt-jl/               offline docs capture (14 pages, INDEX.md is the map)
   calculator/
     streamlit_app.py           steps 1-5 UI
     app_results.py             results drawers + charts
+    app_periods.py             day / week / year profiling block
     ui_theme.py                REopt-matched styling
+    profile_ui.py              profiling palette, tables and dispatch chart
+    app_chp_bess.py            REopt's CHP, Battery, fuel and heating inputs, field for field
     reopt_core/
       finance.py               verbatim ports of the REopt.jl financial formulas
       defaults.py              defaults from REopt.jl structs
@@ -684,6 +1190,9 @@ GreenHouseV2/
       tariff.py                URDB -> hourly prices + demand ratchets
       emissions.py             Cambium, AVERT, EASIUR
       model.py                 the MILP (HiGHS via PuLP)
+      cost_curve.py            cost_curve.jl: size-cost pairs and incentives
+      chp_defaults.py          chp.jl: CHP defaults from the heating load, maintenance
+      proforma.py              proforma.jl: cash flows, simple payback, IRR
     tools/                     generators, patches and validators
   reopt_test_data/             captured REopt specs, payloads and reference runs
   reopt_test_screenshots/      evidence, one folder per test series
@@ -694,13 +1203,20 @@ GreenHouseV2/
 ## Validators
 
 ```bash
-python calculator/tools/validate2.py         # TC1   21/21
+python calculator/tools/validate2.py         # TC1   23/23
 python calculator/tools/validate_tc2.py      # TC2   15/15
-python calculator/tools/validate_gen.py      # G1/G2 20/20
+python calculator/tools/validate_gen.py      # G1/G2 24/24
 python calculator/tools/vary_ours.py         # V1-V4 27/29
 python calculator/tools/validate_offgrid.py  # OG1   LCC -0.08%
 python calculator/tools/validate_parity.py   # PT2   22/24
 python calculator/tools/yemen_case.py        # Sana'a vendor case
+python calculator/tools/test_periods.py         # period-view data functions
+python calculator/tools/test_profile_render.py  # profiling render path + HTML
+python calculator/tools/test_chp_bess_fields.py # CHP + Battery vs the live tool
+python calculator/tools/chp_bess_reopt_case.py  # CHP + Battery cases posed as on the site
+python calculator/tools/test_reopt_jl_suite.py  # REopt.jl's own tests, 9 groups
+python calculator/tools/check_reopt_jl.py      # local REopt.jl vs runtests vs this calculator
+python calculator/tools/reopt_jl.py <scenario.json>  # any REopt JSON through the local REopt.jl
 ```
 
 ## Regenerating the UI spec after the real tool changes

@@ -45,6 +45,16 @@ def num(s):
     return float(m.group(1).replace(",", "")) if m else None
 
 
+def row_abs(name, got, want, unit, atol):
+    """Payback and IRR: an absolute tolerance, printed to two decimals."""
+    if want is None:
+        print(f"   --  {name:<44} {got:>14,.2f} {unit}   (row absent)")
+        return None
+    ok = abs(got - want) <= atol + 1e-9
+    print(f"   {'OK ' if ok else 'XX '} {name:<44} {got:>14,.2f} {unit:<5} vs {want:>14,.2f}  (+/-{atol})")
+    return ok
+
+
 def row(name, got, want, unit="", tol=0.02):
     if want is None:
         print(f"   --  {name:<44} {got:>14,.0f} {unit}   (row absent)")
@@ -135,6 +145,13 @@ def main() -> None:
                        money((rows.get("Total Life Cycle Costs") or [None, None])[1]), "$", 0.01))
         res.append(row("Net present value", b["lifecycle_cost"] - r["objective_lifecycle_cost"],
                        money((rows.get("Net Present Value") or [None, None])[1]), "$", 0.05))
+
+        # proforma.jl: REopt's own payback test allows 0.02 y; the tool prints IRR to 0.1 %
+        pro = r.get("proforma") or {}
+        res.append(row_abs("Simple payback period", pro.get("simple_payback_years", 0.0),
+                           num((rows.get("Payback Period") or [None, None])[1]), "yrs", 0.02))
+        res.append(row_abs("Internal rate of return", 100 * pro.get("internal_rate_of_return", 0.0),
+                           num((rows.get("Internal Rate of Return") or [None, None])[1]), "%", 0.05))
 
         good = [x for x in res if x is not None]
         print(f"   -> {sum(good)}/{len(good)} match\n")

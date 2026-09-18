@@ -1,0 +1,253 @@
+<!doctype html><meta charset='utf-8'><body style='margin:0;padding:24px;background:#EEF1F4'>
+<style>
+/* =============================================================== profiling
+   Scoped to .ghp-* so the REopt-orange styling of steps 1-5 is untouched. */
+
+.ghp-panel-head {
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+    border-bottom: none;
+    padding: 16px 20px 12px;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.ghp-title {
+    font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    color: #17242F;
+    margin: 0;
+}
+.ghp-sub {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: #5C6B79;
+    letter-spacing: 0.02em;
+}
+
+/* ---- the chart sits between the header and the stat strip; the two
+   adjacent-sibling rules close the panel around it. Each block is also
+   styled to stand on its own if the sibling match ever fails. ---- */
+.stElementContainer:has(.ghp-panel-head) + .stElementContainer,
+[data-testid="element-container"]:has(.ghp-panel-head) + [data-testid="element-container"] {
+    background: #FFFFFF;
+    border-left: 1px solid #CBD5DC;
+    border-right: 1px solid #CBD5DC;
+    padding: 14px 10px 2px 2px;
+}
+
+.ghp-strip {
+    display: flex;
+    flex-wrap: wrap;
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+}
+.ghp-cell {
+    flex: 1 1 130px;
+    padding: 12px 16px;
+    border-left: 1px solid #CBD5DC;
+}
+.ghp-cell:first-child { border-left: none; }
+.ghp-cell-k {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: #5C6B79;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+.ghp-cell-v {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 15px;
+    color: #17242F;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+.ghp-note {
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+    border-top: none;
+    padding: 10px 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: #5C6B79;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+}
+.ghp-note b { font-weight: 500; }
+
+.ghp-h3 {
+    margin: 26px 0 10px;
+    font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 14.5px;
+    font-weight: 620;
+    letter-spacing: -0.01em;
+    color: #17242F;
+}
+
+/* ---------------------------------------------------------------- tables */
+.ghp-wrap {
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+    overflow-x: auto;
+}
+.ghp-wrap.ghp-tall { max-height: 560px; overflow-y: auto; }
+
+.ghp-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 560px;
+}
+.ghp-table th {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: #5C6B79;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 7px 9px;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid #CBD5DC;
+    background: #FFFFFF;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+.ghp-table td {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #17242F;
+    padding: 5px 9px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.ghp-table th:first-child,
+.ghp-table td:first-child { text-align: left; }
+/* the label column absorbs the slack so the figures stay packed to the
+   right, the way they read when the table is full of unit columns */
+.ghp-table th:first-child { width: 100%; }
+.ghp-table td:first-child { color: #5C6B79; }
+
+.ghp-table tbody tr:nth-child(even) { background: rgba(23, 36, 47, 0.022); }
+
+.ghp-table tr.ghp-foot td {
+    border-top: 1px solid #17242F;
+    font-weight: 600;
+    color: #17242F;
+}
+.ghp-table tr.ghp-sect td {
+    background: transparent;
+    color: #17242F;
+    font-weight: 600;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 15px 9px 5px;
+    border-bottom: 1px solid #CBD5DC;
+}
+.ghp-table tr.ghp-sect td:first-child { color: #17242F; }
+
+.ghp-pos { color: #3F8F5C; }
+.ghp-neg { color: #C2571A; }
+.ghp-dim { color: #5C6B79; }
+.ghp-key { color: #17242F; font-weight: 600; }
+
+/* ---- legend chips under the chart ---- */
+.ghp-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 2px 2px 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: #5C6B79;
+}
+.ghp-swatch {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin-right: 6px;
+    vertical-align: baseline;
+}
+.ghp-sw-0 { background: #46617F; }
+.ghp-sw-1 { background: #7C6E9B; }
+.ghp-sw-2 { background: #A8845C; }
+.ghp-sw-3 { background: #5F8A7A; }
+.ghp-sw-4 { background: #8C5F6E; }
+.ghp-sw-5 { background: #6E7C93; }
+.ghp-sw-pv { background: #C08A2E; }
+.ghp-sw-grid { background: #9BA8B4; }
+.ghp-sw-charge { background: #1F7A8C; }
+.ghp-sw-discharge { background: #C2571A; }
+.ghp-sw-load { background: #17242F; }
+
+/* ---- Vega's tooltip is created outside the chart, so only CSS can reach it.
+   Same box as the reference: white panel, 1px rule, mono 12px, muted keys. */
+#vg-tooltip-element {
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #17242F;
+}
+#vg-tooltip-element table td.key {
+    color: #5C6B79;
+    font-weight: 400;
+    text-align: left;
+    padding-right: 16px;
+}
+#vg-tooltip-element table td.value {
+    color: #17242F;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+#vg-tooltip-element h2 {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #17242F;
+    margin: 0 0 6px;
+}
+
+/* ---- segmented switches in the profiling block only ----
+   The marker span is emitted immediately before the widget, so the widget is
+   its next element sibling. Steps 1-5 keep Streamlit's own styling. */
+.ghp-switch-scope { display: none; }
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] {
+    gap: 0;
+    border: 1px solid #CBD5DC;
+    width: fit-content;
+    border-radius: 0;
+    background: #FFFFFF;
+}
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] button {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 9px 18px;
+    border: none;
+    border-left: 1px solid #CBD5DC;
+    border-radius: 0;
+    background: #FFFFFF;
+    color: #5C6B79;
+}
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] button:first-child {
+    border-left: none;
+}
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] button[aria-checked="true"],
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] button[aria-pressed="true"] {
+    background: #17242F;
+    color: #EEF1F4;
+}
+</style>
+<div class="reopt-panel-head"><span>Dispatch by period</span></div><span class="ghp-switch-scope"></span><span class="ghp-switch-scope"></span><div class="ghp-panel-head"><h2 class="ghp-title">2 × CHP</h2><span class="ghp-sub">Jenbacher 1,067 + TEDOM 1,200 = 2,267 kW · BESS 2,500 kW / 5,500 kWh</span></div><div class="ghp-strip"><div class="ghp-cell"><div class="ghp-cell-k">Battery charged</div><div class="ghp-cell-v">4,117 kWh</div></div><div class="ghp-cell"><div class="ghp-cell-k">Battery discharged</div><div class="ghp-cell-v">3,623 kWh</div></div><div class="ghp-cell"><div class="ghp-cell-k">Grid purchase</div><div class="ghp-cell-v">3,227 kWh</div></div><div class="ghp-cell"><div class="ghp-cell-k">Peak grid purchase</div><div class="ghp-cell-v">1,839 kW</div></div><div class="ghp-cell"><div class="ghp-cell-k">Battery idle</div><div class="ghp-cell-v">4 of 24 h</div></div><div class="ghp-cell"><div class="ghp-cell-k">Energy charge</div><div class="ghp-cell-v ghp-key">—</div></div></div><div class="ghp-note"><span>Sunday, 1 January</span><span>unit-hours <b>48</b> of 48</span><span>starts in window <b>0</b></span></div><div class="ghp-legend"><span><span class="ghp-swatch ghp-sw-0"></span>Jenbacher</span><span><span class="ghp-swatch ghp-sw-1"></span>TEDOM</span><span><span class="ghp-swatch ghp-sw-grid"></span>Grid</span><span><span class="ghp-swatch ghp-sw-charge"></span>Battery charge</span><span><span class="ghp-swatch ghp-sw-discharge"></span>Battery discharge</span><span><span class="ghp-swatch ghp-sw-load"></span>Site load</span></div><div class="ghp-h3">Hour by hour · Sunday, 1 January</div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>HOUR</th><th>LOAD</th><th>JENBACHER</th><th>TEDOM</th><th>CHARGE +</th><th>DISCHARGE −</th><th>GRID</th><th>SOC %</th><th>ON</th></tr></thead><tbody><tr><td>1</td><td>1,342</td><td>960</td><td>1,080</td><td>698</td><td>0</td><td>0</td><td>48.3</td><td>2</td></tr><tr><td>2</td><td>1,389</td><td>960</td><td>1,080</td><td>651</td><td>0</td><td>0</td><td>59.4</td><td>2</td></tr><tr><td>3</td><td>1,408</td><td>1,067</td><td>1,200</td><td>859</td><td>0</td><td>0</td><td>74.1</td><td>2</td></tr><tr><td>4</td><td>1,628</td><td>1,067</td><td>1,200</td><td>639</td><td>0</td><td>0</td><td>85.0</td><td>2</td></tr><tr><td>5</td><td>1,808</td><td>1,067</td><td>1,200</td><td>459</td><td>0</td><td>0</td><td>92.8</td><td>2</td></tr><tr><td>6</td><td>1,768</td><td>960</td><td>1,080</td><td>272</td><td>0</td><td>0</td><td>97.4</td><td>2</td></tr><tr><td>7</td><td>1,999</td><td>960</td><td>1,188</td><td>150</td><td>0</td><td>0</td><td>100.0</td><td>2</td></tr><tr><td>8</td><td>2,384</td><td>1,067</td><td>1,200</td><td>0</td><td>0</td><td>117</td><td>100.0</td><td>2</td></tr><tr><td>9</td><td>2,932</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−665</td><td>0</td><td>87.1</td><td>2</td></tr><tr><td>10</td><td>2,893</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−626</td><td>0</td><td>75.0</td><td>2</td></tr><tr><td>11</td><td>2,960</td><td>1,067</td><td>1,200</td><td>0</td><td>0</td><td>693</td><td>75.0</td><td>2</td></tr><tr><td>12</td><td>3,051</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−784</td><td>0</td><td>59.8</td><td>2</td></tr><tr><td>13</td><td>2,758</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−491</td><td>0</td><td>50.3</td><td>2</td></tr><tr><td>14</td><td>2,523</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−120</td><td>136</td><td>47.9</td><td>2</td></tr><tr><td>15</td><td>2,277</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−10</td><td>0</td><td>47.7</td><td>2</td></tr><tr><td>16</td><td>2,268</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−1</td><td>0</td><td>47.7</td><td>2</td></tr><tr><td>17</td><td>2,254</td><td>1,067</td><td>1,200</td><td>13</td><td>0</td><td>0</td><td>47.9</td><td>2</td></tr><tr><td>18</td><td>4,106</td><td>1,067</td><td>1,200</td><td>0</td><td>0</td><td>1,839</td><td>47.9</td><td>2</td></tr><tr><td>19</td><td>2,551</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−284</td><td>0</td><td>42.4</td><td>2</td></tr><tr><td>20</td><td>2,772</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−505</td><td>0</td><td>32.7</td><td>2</td></tr><tr><td>21</td><td>2,709</td><td>1,067</td><td>1,200</td><td>0</td><td>0</td><td>442</td><td>32.7</td><td>2</td></tr><tr><td>22</td><td>2,404</td><td>1,067</td><td>1,200</td><td>0</td><td class="ghp-neg">−137</td><td>0</td><td>30.0</td><td>2</td></tr><tr><td>23</td><td>2,060</td><td>960</td><td>1,200</td><td>100</td><td>0</td><td>0</td><td>31.7</td><td>2</td></tr><tr><td>24</td><td>1,765</td><td>960</td><td>1,080</td><td>275</td><td>0</td><td>0</td><td>36.4</td><td>2</td></tr><tr class="ghp-foot"><td>Total</td><td>56,009</td><td>24,968</td><td>28,308</td><td>4,117</td><td>−3,623</td><td>3,227</td><td>36.4</td><td>48</td></tr></tbody></table></div><div class="ghp-h3">Summary</div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>METRIC</th><th>REPRESENTATIVE DAY</th><th>HORIZON, 24 H</th></tr></thead><tbody><tr class="ghp-sect"><td colspan="3">Energy</td></tr><tr><td>Site load (kWh)</td><td class="ghp-key">56,009</td><td class="ghp-key">56,009</td></tr><tr><td>PV production (kWh)</td><td>0</td><td>0</td></tr><tr><td>Fuel-fired production (kWh)</td><td>53,276</td><td>53,276</td></tr><tr><td>Battery charged (kWh)</td><td>4,117</td><td>4,117</td></tr><tr><td>Battery discharged (kWh)</td><td>3,623</td><td>3,623</td></tr><tr><td>Grid purchase (kWh)</td><td>3,227</td><td>3,227</td></tr><tr class="ghp-sect"><td colspan="3">Power and operation</td></tr><tr><td>Peak grid purchase (kW)</td><td>1,839</td><td>1,839</td></tr><tr><td>Grid share of load (%)</td><td>5.8</td><td>5.8</td></tr><tr><td>Fleet running hours</td><td>48</td><td>48</td></tr><tr><td>Starts</td><td>0</td><td>0</td></tr><tr><td>Battery full cycles</td><td>0.7</td><td>0.7</td></tr><tr><td>Battery SOC carried (kWh)</td><td>0</td><td>0</td></tr></tbody></table></div><div class="ghp-h3">Fuel-fired units</div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>UNIT</th><th>TYPE</th><th>SIZE kW</th><th>PRODUCTION kWh</th><th>CAPACITY FACTOR</th><th>RUNNING HOURS</th><th>FUEL MMBTU</th><th>STARTS</th></tr></thead><tbody><tr><td>Jenbacher</td><td>CHP</td><td>1,067</td><td>24,968</td><td>97.5%</td><td>24</td><td>243</td><td>0</td></tr><tr><td>TEDOM</td><td>CHP</td><td>1,200</td><td>28,308</td><td>98.3%</td><td>24</td><td>276</td><td>0</td></tr><tr class="ghp-foot"><td>Fleet</td><td></td><td>2,267</td><td>53,276</td><td></td><td>48</td><td>519</td><td>0</td></tr></tbody></table></div><div class="ghp-h3">Battery units</div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>UNIT</th><th>POWER kW</th><th>ENERGY kWh</th><th>DURATION H</th><th>DISCHARGED kWh/24H</th><th>FULL CYCLES/24H</th></tr></thead><tbody><tr><td>BESS</td><td>2,500</td><td>5,500</td><td>2.20</td><td>3,623</td><td>1</td></tr><tr class="ghp-foot"><td>Bank</td><td>2,500</td><td>5,500</td><td></td><td>3,623</td><td></td></tr></tbody></table></div></body>

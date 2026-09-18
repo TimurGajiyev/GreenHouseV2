@@ -25,12 +25,103 @@ LOAD_PROFILE_DIR = os.path.join(REOPT_DIR, "data", "load_profiles")
 
 
 # ------------------------------------------------------------------ helpers
-def find_ashrae_zone_city(lat: float, lon: float) -> tuple[str, str]:
-    """REopt/src/core/doe_commercial_reference_building_loads.jl:79-93
+_ZONE_SHAPES = None
 
-    REopt first tries a shapefile lookup (ArchGDAL) and falls back to nearest
-    city by Euclidean distance in degrees. We implement the documented fallback.
+
+def _load_zone_shapes():
+    """Parse REopt/data/climate_cities.shp/.dbf once (15 polygons, NAD83 degrees).
+
+    A minimal ESRI shapefile reader -- polygon type 5 only, which is all this file
+    holds -- so the lookup needs no GIS package.
     """
+    global _ZONE_SHAPES
+    if _ZONE_SHAPES is not None:
+        return _ZONE_SHAPES
+    import struct
+    import numpy as np
+    base = os.path.join(REOPT_DIR, "data", "climate_cities")
+    with open(base + ".dbf", "rb") as fh:
+        dbf = fh.read()
+    nrec, hlen, rlen = struct.unpack("<IHH", dbf[4:12])
+    fields, off = [], 32
+    while dbf[off] != 0x0D:
+        fields.append((dbf[off:off + 11].split(b"\x00")[0].decode(), dbf[off + 16]))
+        off += 32
+    cities = []
+    for r in range(nrec):
+        rec = dbf[hlen + r * rlen + 1: hlen + (r + 1) * rlen]   # skip the deletion flag
+        pos, row = 0, {}
+        for name, flen in fields:
+            row[name] = rec[pos:pos + flen].decode("latin-1").strip()
+            pos += flen
+        cities.append(row.get("city", ""))
+    with open(base + ".shp", "rb") as fh:
+        shp = fh.read()
+    shapes, off = [], 100
+    while off < len(shp):
+        _, clen = struct.unpack(">ii", shp[off:off + 8])
+        body = off + 8
+        stype, = struct.unpack("<i", shp[body:body + 4])
+        if stype == 5:
+            xmin, ymin, xmax, ymax = struct.unpack("<4d", shp[body + 4:body + 36])
+            nparts, npts = struct.unpack("<ii", shp[body + 36:body + 44])
+            parts = list(struct.unpack(f"<{nparts}i", shp[body + 44:body + 44 + 4 * nparts]))
+            pstart = body + 44 + 4 * nparts
+            pts = np.frombuffer(shp, dtype="<f8", count=2 * npts, offset=pstart).reshape(npts, 2)
+            rings = []
+            for k, a in enumerate(parts):
+                b = parts[k + 1] if k + 1 < nparts else npts
+                ring = pts[a:b]
+                rings.append((ring[:, 0].copy(), ring[:, 1].copy(),
+                              ring[:, 0].min(), ring[:, 0].max(), ring[:, 1].min(), ring[:, 1].max()))
+            shapes.append(((xmin, ymin, xmax, ymax), rings))
+        else:
+            shapes.append(None)
+        off = body + clen * 2
+    _ZONE_SHAPES = list(zip(cities, shapes))
+    return _ZONE_SHAPES
+
+
+def _shapefile_city(lat: float, lon: float) -> str | None:
+    """ArchGDAL.contains(polygon, POINT(lon lat)) -- even-odd rule over all rings."""
+    import numpy as np
+    for city, shape in _load_zone_shapes():
+        if shape is None:
+            continue
+        (xmin, ymin, xmax, ymax), rings = shape
+        if not (xmin <= lon <= xmax and ymin <= lat <= ymax):
+            continue
+        inside = False
+        for xs, ys, rx0, rx1, ry0, ry1 in rings:
+            if not (rx0 <= lon <= rx1 and ry0 <= lat <= ry1):
+                continue
+            x1, y1 = xs[:-1], ys[:-1]
+            x2, y2 = xs[1:], ys[1:]
+            cross = (y1 > lat) != (y2 > lat)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                xint = x1 + (lat - y1) * (x2 - x1) / (y2 - y1)
+            if int(np.count_nonzero(cross & (lon < xint))) % 2 == 1:
+                inside = not inside
+        if inside:
+            return city
+    return None
+
+
+def find_ashrae_zone_city(lat: float, lon: float) -> tuple[str, str]:
+    """REopt/src/core/doe_commercial_reference_building_loads.jl:79-121
+
+    REopt looks the point up in REopt/data/climate_cities.shp first and returns
+    that zone's city -- except LosAngeles, which (like a point outside the US)
+    falls through to the nearest city by Euclidean distance in degrees. Both
+    steps are reproduced here.
+    """
+    zones = {c: z for c, _, _, z in CRB_CITIES}
+    try:
+        sc = _shapefile_city(float(lat), float(lon))
+    except Exception:          # a damaged or missing shapefile: REopt would error; fall back
+        sc = None
+    if sc is not None and sc != "LosAngeles" and sc in zones:
+        return sc, zones[sc]
     best_city, best_zone, best_d = "", "", None
     for city, clat, clon, zone in CRB_CITIES:
         d = math.sqrt((lat - clat) ** 2 + (lon - clon) ** 2)
@@ -146,6 +237,99 @@ def heating_load_mmbtu(building_type: str, city: str) -> dict:
         out[key] = float((table.get(city) or {}).get(building_type) or 0.0)
     out["fuel_mmbtu"] = out["space_heating"] + out["domestic_hot_water"]
     return out
+
+
+def default_annual_kwh(building_type: str, lat: float, lon: float) -> float | None:
+    """REopt/src/core/electric_load.jl:250-267 -- what a blank annual kWh means.
+
+    The CRB table value for the building in the site's ASHRAE zone city; every
+    FlatLoad variant uses the FlatLoad row.
+    """
+    if not building_type:
+        return None
+    city, _ = find_ashrae_zone_city(lat, lon)
+    with io.open(os.path.join(LOAD_PROFILE_DIR, "total_electric_annual_kwh.json"), encoding="utf-8") as fh:
+        table = json.load(fh)
+    key = "flatload" if "FlatLoad" in building_type else building_type.lower()
+    val = (table.get(city) or {}).get(key)
+    return float(val) if val is not None else None
+
+
+def _month_hours_2017() -> list[range]:
+    """Hour ranges of each calendar month in the 8,760-hour CRB year (2017)."""
+    out, h = [], 0
+    for mo in range(1, 13):
+        n = (datetime.date(2017 + (mo == 12), mo % 12 + 1, 1) - datetime.date(2017, mo, 1)).days * 24
+        out.append(range(h, h + n))
+        h += n
+    return out
+
+
+def build_heating_load(building_type: str, lat: float, lon: float, *,
+                       annual_mmbtu: float | None = None,
+                       monthly_mmbtu: list[float] | None = None,
+                       addressable_load_fraction: float = 1.0,
+                       boiler_efficiency: float = 0.8) -> dict:
+    """Hourly heating THERMAL load, space heating + domestic hot water.
+
+    REopt/src/core/heating_cooling_loads.jl:142 BuiltInHeatingLoad and
+    doe_commercial_reference_building_loads.jl:121 built_in_load, for the two
+    CRB heating loads REopt builds for an existing boiler:
+
+      * the CRB profiles are boiler FUEL, so thermal kW =
+        normalised profile x annual fuel MMBtu x boiler efficiency x 293.07107
+      * with no annual input the CRB default MMBtu is used as is --
+        ``addressable_load_fraction`` is only applied to a user-supplied total
+        ("cannot use addressable_load_fraction with default CRB loads", :240)
+      * a monthly input rescales each month of the normalised shape
+
+    The web form takes ONE total for both loads. REopt.jl needs one per load,
+    so the total is split by the CRB default space-heating / hot-water ratio for
+    this building and climate zone -- the split the CRB data itself carries.
+    """
+    city, zone = find_ashrae_zone_city(lat, lon)
+    defaults = heating_load_mmbtu(building_type, city)
+    kinds = (("space_heating", defaults["space_heating"]),
+             ("domestic_hot_water", defaults["domestic_hot_water"]))
+    total_default = defaults["fuel_mmbtu"] or 1.0
+    months = _month_hours_2017()
+    per_kind = {}
+    for kind, default_mmbtu in kinds:
+        norm = load_crb_profile(building_type, city, kind=kind)
+        share = default_mmbtu / total_default
+        scale = [1.0] * 12
+        if monthly_mmbtu and len(monthly_mmbtu) == 12:
+            energy = 1.0
+            for mo, hrs in enumerate(months):
+                tot = sum(norm[h] for h in hrs)
+                scale[mo] = 0.0 if tot == 0 else (monthly_mmbtu[mo] * share * addressable_load_fraction) / tot
+        elif annual_mmbtu is not None:
+            energy = annual_mmbtu * share * addressable_load_fraction
+        else:
+            energy = default_mmbtu
+        kw = []
+        for mo, hrs in enumerate(months):
+            for h in hrs:
+                kw.append(norm[h] * energy * scale[mo] * boiler_efficiency * 293.07107)
+        per_kind[kind] = kw
+    loads_kw = [a + b for a, b in zip(per_kind["space_heating"], per_kind["domestic_hot_water"])]
+    fuel = sum(loads_kw) / (boiler_efficiency * 293.07107)
+    if monthly_mmbtu and len(monthly_mmbtu) == 12:
+        unaddressable = sum(monthly_mmbtu) * (1 - addressable_load_fraction)
+    elif annual_mmbtu is not None:
+        unaddressable = annual_mmbtu * (1 - addressable_load_fraction)
+    else:
+        unaddressable = 0.0
+    return {
+        "city": city, "ashrae_zone": zone,
+        "loads_kw": loads_kw,                                   # thermal kW, 8,760
+        "space_heating_kw": per_kind["space_heating"],
+        "dhw_kw": per_kind["domestic_hot_water"],
+        "annual_fuel_mmbtu": fuel,                              # addressable boiler fuel
+        "unaddressable_fuel_mmbtu": unaddressable,
+        "peak_kw": max(loads_kw) if loads_kw else 0.0,
+        "avg_fuel_mmbtu_per_hour": fuel / 8760.0,
+    }
 
 
 # ----------------------------------------------------------------- PVWatts

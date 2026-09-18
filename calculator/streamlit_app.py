@@ -14,7 +14,10 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent))
 
+import app_chp_bess as CB
+import profile_ui as P
 import ui_theme as T
+from reopt_core import data_sources as ds
 from reopt_core import defaults as D
 from reopt_core import ui_fields as U
 
@@ -103,6 +106,7 @@ ss = st.session_state
 ss.setdefault("results", None)
 
 T.inject()
+P.inject()          # profiling palette + table hierarchy (results page)
 st.title(":material/bolt: REopt calculator")
 st.caption(
     "Steps 1–5 of the REopt web tool, limited to Prime Generator / Generator, CHP, PV "
@@ -260,6 +264,9 @@ urdb_label = ""
 compensation = "no_compensation"
 wholesale_rate = 0.0
 nem_limit = None
+fuel_costs = None          # Utilities > Fuel Costs (CHP)
+chp_standby = 0.0          # Utilities > Advanced inputs > Electricity Standby Charges
+chp_grid = use_chp and not off_grid
 if not off_grid:
     T.panel_head("Utilities", icon="bolt", required=True)
     with st.expander("Utility inputs", expanded=True):
@@ -324,6 +331,11 @@ if not off_grid:
                 "Wholesale export rate ($/kWh)", min_value=0.0, value=0.03,
                 step=0.005, format="%.4f", key="wholesale",
             )
+        if chp_grid:
+            # REopt puts both fuel prices here, not in the CHP panel
+            fuel_costs = CB.render_fuel_costs()
+            if st.toggle("Advanced inputs", key="ut_adv"):
+                chp_standby = CB.render_standby_charge()
 
 # ------------------------------------------------------------ Load profiles
 T.panel_head("Load Profiles", icon="bar_chart", required=True)
@@ -336,13 +348,19 @@ with st.expander("Load profile inputs", expanded=True):
         load_entry = st.radio("Energy consumption entry", ["Annual", "Monthly"],
                               horizontal=True, key="load_entry")
     if load_entry == "Annual":
+        # blank = REopt's CRB default for the building in the site's climate zone
+        # (electric_load.jl:260), shown as the placeholder, as on the site
+        _kwh_default = ds.default_annual_kwh(bldg, float(lat), float(lon)) if bldg else None
         annual_kwh = st.number_input(
             label_of("run_site_attributes_load_profile_attributes_annual_kwh",
                      "Annual energy consumption (kWh)"),
-            min_value=0.0, value=5_000_000.0, step=100_000.0, format="%.0f",
+            min_value=0.0, value=None, step=100_000.0, format="%.0f",
+            placeholder=(f"{_kwh_default:,.0f}" if _kwh_default else ""),
             key="annual_kwh",
             help=help_of("run_site_attributes_load_profile_attributes_annual_kwh"),
         )
+        if annual_kwh is None:
+            annual_kwh = _kwh_default
     else:
         st.caption("Monthly totals (kWh) — the annual sum scales the CRB profile.")
         mcols = st.columns(6)
@@ -354,6 +372,10 @@ with st.expander("Load profile inputs", expanded=True):
                                                step=1000.0, format="%.0f", key=f"m_{i}"))
         annual_kwh = sum(monthly)
         st.caption(f"Annual total: {annual_kwh:,.0f} kWh")
+
+    heat_in = None
+    if chp_grid:
+        heat_in = CB.render_heating_load(lat, lon)
 
     if off_grid:
         c3, c4 = st.columns(2)
@@ -375,47 +397,11 @@ with st.expander("Load profile inputs", expanded=True):
         min_load_met = 100.0
         load_opres = 0.0
 
-# --------------------------------------------- Existing heating system (CHP)
+# Heating inputs live where REopt puts them: fuel prices under Utilities, the
+# heating load under Load Profiles, escalation under Financial.
 heating_fuel_mmbtu = None
 boiler_fuel_cost = 8.0
-# Off-grid has no boiler: scenario.jl:85 rejects the heating keys outright.
-if use_chp and not off_grid:
-    T.panel_head("Existing Heating System", icon="local_fire_department", required=True)
-    with st.expander("Heating system inputs", expanded=False):
-        st.caption(
-            "Selecting CHP makes REopt model the existing boiler too: its fuel cost "
-            "enters both the business-as-usual and optimized life cycle cost, and CHP "
-            "heat recovery displaces boiler fuel."
-        )
-        c1, c2 = st.columns(2)
-        with c1:
-            boiler_fuel_cost = st.number_input(
-                "Annual existing heating system fuel cost ($/MMBtu) *",
-                min_value=0.0, value=8.0, step=0.5, key="boiler_fuel",
-            )
-        with c2:
-            boiler_eff = st.number_input(
-                "Existing heating system efficiency (% HHV-basis)",
-                min_value=1.0, max_value=100.0, value=80.0, step=1.0, key="boiler_eff",
-            ) / 100.0
-        try:
-            from reopt_core import data_sources as _ds
-            _city, _ = _ds.find_ashrae_zone_city(float(lat), float(lon))
-            _h = _ds.heating_load_mmbtu(bldg, _city) if bldg else None
-            if _h and _h["fuel_mmbtu"] > 0:
-                heating_fuel_mmbtu = _h["fuel_mmbtu"]
-                st.caption(
-                    f"Heating load for {bldg} in {_city}: "
-                    f"space heating {_h['space_heating']:,.0f} + domestic hot water "
-                    f"{_h['domestic_hot_water']:,.0f} = **{_h['fuel_mmbtu']:,.0f} MMBtu** of "
-                    f"boiler fuel per year, from the tables REopt ships."
-                )
-            elif bldg:
-                st.warning(f"No bundled heating load for {bldg} in {_city}.")
-        except Exception as _exc:
-            st.warning(f"Heating load lookup failed: {_exc}")
-else:
-    boiler_eff = 0.8
+boiler_eff = heat_in["boiler_efficiency"] if heat_in else 0.8
 
 # ---------------------------------------------------------------- Financial
 T.panel_head("Financial", icon="attach_money")
@@ -453,6 +439,7 @@ with st.expander("Financial inputs", expanded=False):
             value=D.FINANCIAL["elec_cost_escalation_rate_fraction"] * 100, step=0.01,
             key="elec_esc",
         )
+    fin_fuel = CB.render_financial_fuel() if chp_grid else None
 
 # ---------------------------------------------------------------- Emissions
 T.panel_head("Emissions", icon="eco")
@@ -515,88 +502,24 @@ if use_pv:
                          "capacity elsewhere. Off-grid only (pv.jl:46).",
                 ) / 100.0
 
-bat_cfg: dict = {}
+bat_panel = None
 if use_bat:
     T.panel_head("Battery", icon="battery_charging_full")
     with st.expander("Battery inputs", expanded=False):
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            bat_cfg["installed_cost_per_kwh"] = st.number_input(
-                label_of("run_site_attributes_storage_attributes_installed_cost_per_kwh",
-                         "Energy capacity cost ($/kWh)"),
-                min_value=0.0, value=float(D.ELECTRIC_STORAGE["installed_cost_per_kwh"]),
-                step=5.0, key="bat_kwh_cost",
-            )
-            bat_cfg["min_kwh"] = st.number_input("Minimum energy capacity (kWh)", min_value=0.0,
-                                                 value=0.0, step=10.0, key="bat_min_kwh")
-        with c2:
-            bat_cfg["installed_cost_per_kw"] = st.number_input(
-                label_of("run_site_attributes_storage_attributes_installed_cost_per_kw",
-                         "Power capacity cost ($/kW)"),
-                min_value=0.0, value=float(D.ELECTRIC_STORAGE["installed_cost_per_kw"]),
-                step=5.0, key="bat_kw_cost",
-            )
-            bat_cfg["max_kwh"] = st.number_input("Maximum energy capacity (kWh)", min_value=0.0,
-                                                 value=1_000_000.0, step=100.0, key="bat_max_kwh")
-        with c3:
-            bat_cfg["installed_cost_constant"] = st.number_input(
-                label_of("run_site_attributes_storage_attributes_installed_cost_constant",
-                         "Constant cost ($)"),
-                min_value=0.0, value=float(D.ELECTRIC_STORAGE["installed_cost_constant"]),
-                step=1000.0, key="bat_const",
-                help="REopt.jl default is $222,115 — a fixed cost added whenever a battery "
-                     "is included. It is blank in the real tool's form.",
-            )
-            bat_cfg["can_grid_charge"] = st.selectbox(
-                "Allow grid to charge battery", [True, False],
-                format_func=lambda b: "Yes" if b else "No", key="bat_gridchg",
-            ) is True
-
-    # ---- optional bank of several batteries -------------------------------
-    # REopt.jl indexes storage by name (StorageTypes.elec is a Vector,
-    # storage.jl:15); the web form exposes one. At 1 unit nothing changes.
-    n_bat = int(st.number_input(
-        "Number of battery units", min_value=1, max_value=6, value=1, step=1,
-        key="n_bat",
-        help="Each unit is sized and dispatched separately with its own prices, "
-             "duration limits and round-trip efficiency. Leave at 1 to match the "
-             "REopt web form exactly.",
-    ))
-    if n_bat > 1:
-        with st.expander(f"Battery bank — {n_bat} units", expanded=True):
-            st.caption(
-                "Unit 1 uses the values above. Set each further unit here; the "
-                "optimizer sizes every unit independently within its own bounds."
-            )
-            for _b in range(1, n_bat):
-                st.markdown(f"**Battery {_b + 1}**")
-                q1, q2, q3, q4 = st.columns(4)
-                with q1:
-                    st.text_input("Name", value=f"Battery {_b + 1}", key=f"bat{_b}_name")
-                    st.number_input("Energy capacity cost ($/kWh)", min_value=0.0,
-                                    value=float(bat_cfg["installed_cost_per_kwh"]),
-                                    step=5.0, key=f"bat{_b}_kwh_cost")
-                with q2:
-                    st.number_input("Power capacity cost ($/kW)", min_value=0.0,
-                                    value=float(bat_cfg["installed_cost_per_kw"]),
-                                    step=5.0, key=f"bat{_b}_kw_cost")
-                    st.number_input("Constant cost ($)", min_value=0.0, value=0.0,
-                                    step=1000.0, key=f"bat{_b}_const")
-                with q3:
-                    st.number_input("Minimum energy capacity (kWh)", min_value=0.0,
-                                    value=0.0, step=10.0, key=f"bat{_b}_min_kwh")
-                    st.number_input("Maximum energy capacity (kWh)", min_value=0.0,
-                                    value=1_000_000.0, step=100.0, key=f"bat{_b}_max_kwh")
-                with q4:
-                    st.number_input("Minimum duration (hours)", min_value=0.0,
-                                    value=0.0, step=0.5, key=f"bat{_b}_min_dur")
-                    st.number_input("Maximum duration (hours)", min_value=0.0,
-                                    value=100000.0, step=0.5, key=f"bat{_b}_max_dur")
-else:
-    n_bat = 1
+        bat_panel = CB.render_battery(off_grid=off_grid)
+bat_cfg: dict = dict(bat_panel["inputs"]) if bat_panel else {}
+n_bat = 1
 
 gen_cfg: dict = {}
-if use_gen or use_chp:
+chp_panel = None
+if chp_grid:
+    # The REopt CHP panel, derived from the heating load like the tool derives it
+    T.panel_head("Combined Heat & Power", icon="local_fire_department")
+    with st.expander("CHP inputs", expanded=False):
+        chp_panel = CB.render_chp(CB.avg_fuel_from_inputs(heat_in, lat, lon) if heat_in else None,
+                                  boiler_eff)
+    n_gen = 1
+elif use_gen or use_chp:
     title = ("Combined Heat & Power" if use_chp
              else "Prime Generator" if use_prime else "Generator")
     with st.expander(title, expanded=False):
@@ -746,6 +669,13 @@ st.divider()
 _missing = []
 if not bldg:
     _missing.append("Type of building")
+elif not annual_kwh:
+    _missing.append("Annual energy consumption (kWh)")
+if chp_grid:
+    _missing += CB.fuel_costs_missing(fuel_costs or {})
+    _missing += CB.heating_load_missing(heat_in or {})
+    if chp_panel and chp_panel["single_cost_missing"]:
+        _missing.append("Total installed cost ($/kW)")
 if _missing:
     st.warning("Required, not yet chosen: " + ", ".join(_missing))
 run = st.button("Get results", type="primary", width="stretch",
@@ -827,6 +757,105 @@ def _rows(cfg, spec):
     return out
 
 
+def _money(v, d=0):
+    return f"${float(v):,.{d}f}"
+
+
+def _pc(v, d=1):
+    s_ = f"{float(v) * 100:.{d}f}".rstrip("0").rstrip(".")
+    return f"{s_}%"
+
+
+def _unl(v, big=1.0e9, fmt=lambda x: f"{x:,.0f}"):
+    return "Unlimited" if v is None or float(v) >= big else fmt(float(v))
+
+
+def _battery_echo(b: dict, strategy: str) -> dict:
+    """Battery rows exactly as REopt's results "Inputs" lists them."""
+    eff = b.get("_eff", {})
+    return {
+        "Energy capacity cost ($/kWh)": _money(b["installed_cost_per_kwh"]),
+        "Power capacity cost ($/kW)": _money(b["installed_cost_per_kw"]),
+        "Constant cost ($)": _money(b["installed_cost_constant"]),
+        "Annual O&M cost as a percent of upfront cost (%)": _pc(b["om_cost_fraction_of_installed_cost"]),
+        "Allow grid to charge battery": "Yes" if b.get("can_grid_charge", True) else "No",
+        "Battery dispatch strategy": dict(CB.DISPATCH_STRATEGY).get(strategy, strategy),
+        "Energy capacity replacement cost ($/kWh)": _money(b["replace_cost_per_kwh"]),
+        "Energy capacity replacement year": f"{int(b['battery_replacement_year'])}",
+        "Power capacity replacement cost ($/kW)": _money(b["replace_cost_per_kw"]),
+        "Power capacity replacement year": f"{int(b['inverter_replacement_year'])}",
+        "Constant replacement cost ($)": _money(b["replace_cost_constant"]),
+        "Constant replacement year": f"{int(b['cost_constant_replacement_year'])}",
+        "Minimum energy capacity (kWh)": f"{b['min_kwh']:,.0f}",
+        "Maximum energy capacity (kWh)": _unl(b["max_kwh"], 1.0e6),
+        "Minimum power capacity (kW)": f"{b['min_kw']:,.0f}",
+        "Maximum power capacity (kW)": _unl(b["max_kw"], 1.0e4),
+        "Minimum battery duration (hours)": f"{b['min_duration_hours']:g}",
+        "Maximum battery duration (hours)": _unl(b["max_duration_hours"], 1.0e5, lambda x: f"{x:g}"),
+        "Rectifier efficiency (%)": _pc(eff.get("rectifier", 0.96)),
+        "Round trip efficiency (%)": _pc(eff.get("internal", 0.975)),
+        "Inverter efficiency (%)": _pc(eff.get("inverter", 0.96)),
+        "Minimum state of charge (%)": _pc(b["soc_min_fraction"]),
+        "Initial state of charge (%)": _pc(b["soc_init_fraction"]),
+        "Total percentage-based incentive (%)": _pc(b["total_itc_fraction"]),
+        "Total power capacity rebate ($/kW)": _money(b["total_rebate_per_kw"]),
+        "MACRS bonus depreciation": _pc(b["macrs_bonus_fraction"], 0),
+        "MACRS schedule": dict(CB.MACRS_YEARS).get(int(b["macrs_option_years"]), ""),
+    }
+
+
+def _chp_echo(c: dict, d: dict, dispatch: str, custom_schedule: bool) -> dict:
+    """CHP rows exactly as REopt's results "Inputs" lists them."""
+    di = d["default_inputs"]
+    rows = {
+        "Prime mover type": dict(CB.PRIME_MOVERS).get(d["prime_mover"], d["prime_mover"]),
+        "Size class": f"{d['size_class']}",
+        "Minimum new electric power capacity (kW)": f"{c['min_kw']:,.0f}",
+        "Minimum new non-zero power capacity (kW)": f"{c['min_allowable_kw']:,.0f}",
+        "Maximum new electric power capacity (kW)": f"{c['max_kw']:,.0f}",
+    }
+    if c["tech_sizes_for_cost_curve"]:
+        for i, (sz, cost) in enumerate(zip(c["tech_sizes_for_cost_curve"],
+                                           c["installed_cost_curve_per_kw"]), start=1):
+            rows[f"Size-cost pair {i} x-value (Elec. power capacity, kW)"] = f"{sz:.1f}"
+            rows[f"Size-cost pair {i} y-value (Total installed cost, $/kW)"] = _money(cost, 2)
+    else:
+        rows["Total installed cost ($/kW)"] = _money(c["installed_cost_per_kw"], 2)
+    half_e = c["electric_efficiency_half_load"] or c["electric_efficiency_full_load"]
+    half_t = c["thermal_efficiency_half_load"] or c["thermal_efficiency_full_load"]
+    rows.update({
+        "Fixed O&M Cost ($/kW/yr)": _money(c["om_cost_per_kw"], 2),
+        "Variable O&M Cost ($/kWh)": f"${c['om_cost_per_kwh']:.3f}",
+        "Dispatch options": dict(CB.CHP_DISPATCH).get(dispatch, dispatch).replace(" (beta)", ""),
+        "Custom downtime schedule file": "custom" if custom_schedule else "default",
+        "Electric efficiency at 100% load (% HHV-basis)": _pc(c["electric_efficiency_full_load"]),
+        "Electric efficiency at 50% load (% HHV-basis)": _pc(half_e),
+        "Thermal efficiency at 100% load (% HHV-basis)": _pc(c["thermal_efficiency_full_load"]),
+        "Thermal efficiency at 50% load (% HHV-basis)": _pc(half_t),
+        "Min. electric loading of prime mover (% of rated electric capacity)": _pc(c["min_turn_down_fraction"]),
+        "Knockdown factor for CHP-supplied thermal to Absorption Chiller (%)": _pc(c["cooling_thermal_factor"]),
+        "Federal maximum incentive (%)": "Unlimited",
+        "Federal maximum rebate ($)": "Unlimited",
+        "Federal percentage-based incentive (%)": _pc(c["federal_itc_fraction"], 0),
+        "Federal rebate ($/kW)": f"{c['federal_rebate_per_kw']:.1f}",
+    })
+    for reg in ("State", "Utility"):
+        k_ = reg.lower()
+        rows[f"{reg} percentage-based incentive (%)"] = f"{c[k_ + '_ibi_fraction'] * 100:.1f}"
+        rows[f"{reg} maximum incentive ($)"] = _unl(c[k_ + "_ibi_max"], 1.0e10)
+        rows[f"{reg} rebate ($/kW)"] = f"{c[k_ + '_rebate_per_kw']:.1f}"
+        rows[f"{reg} maximum rebate ($)"] = _unl(c[k_ + "_rebate_max"], 1.0e10)
+    rows.update({
+        "Production incentive ($/kWh)": f"{c['production_incentive_per_kwh']:.1f}",
+        "Incentive duration (years)": f"{int(c['production_incentive_years'])}",
+        "Maximum incentive ($)": _unl(c["production_incentive_max_benefit"]),
+        "System size limit (kW)": _unl(c["production_incentive_max_kw"]),
+        "MACRS schedule": dict(CB.MACRS_YEARS).get(int(c["macrs_option_years"]), ""),
+        "MACRS bonus depreciation": _pc(c["macrs_bonus_fraction"], 0),
+    })
+    return rows
+
+
 def _inputs_echo(**k):
     site = {
         "Evaluation name": k["description"] or "—",
@@ -887,9 +916,18 @@ def _inputs_echo(**k):
     }
     if k["use_pv"]:
         echo["PV"] = _rows(k["pv_cfg"], _PV_ROWS)
-    if k["use_bat"]:
+    if k.get("heat_rows"):
+        for grp, rows_ in k["heat_rows"].items():
+            echo.setdefault(grp, {}).update(rows_)
+    if k["use_bat"] and k.get("bat_panel"):
+        echo["Battery"] = _battery_echo(k["bat_panel"]["inputs"] | {"_eff": k["bat_panel"]["efficiencies"]},
+                                        k["bat_panel"]["dispatch_strategy"])
+    elif k["use_bat"]:
         echo["Battery"] = _rows(k["bat_cfg"], _BAT_ROWS)
-    if k["use_gen"] and k["gen_cfg"]:
+    if k.get("chp_panel"):
+        echo["CHP"] = _chp_echo(k["chp_panel"]["inputs"], k["chp_panel"]["defaults"],
+                                k["chp_panel"]["dispatch"], k.get("custom_schedule", False))
+    if k["use_gen"] and k["gen_cfg"] and not k.get("chp_panel"):
         echo[k["gen_kind"]] = {
             _GEN_LABELS.get(key, key): (f"{v:,.4g}" if isinstance(v, (int, float)) else str(v))
             for key, v in k["gen_cfg"].items()
@@ -934,6 +972,7 @@ if run:
             om_cost_escalation_rate_fraction=float(om_esc) / 100,
             offtaker_discount_rate_fraction=float(discount) / 100,
             offtaker_tax_rate_fraction=float(tax_rate) / 100,
+            chp_fuel_cost_escalation_rate_fraction=(fin_fuel["chp_escalation"] if fin_fuel else None),
         )
         # Streamlit reloads this script but keeps imported modules cached, so an
         # old reopt_core.model can linger after an edit. Filter to the fields the
@@ -952,8 +991,23 @@ if run:
 
         # ---- assemble the fleets. At one unit each list is None, so the
         # scenario is byte-for-byte the single-slot shape it has always been.
-        _ft0 = M.FuelTechInputs(enabled=(use_gen or use_chp), kind=gen_kind,
-                                label=gen_label, name=gen_label, **gen_cfg)
+        heat_prof = None
+        if chp_panel is not None:
+            # CHP exactly as the REopt form carries it; fuel from Utilities
+            _fc = fuel_costs or {}
+            _chp_monthly = _fc.get("chp_fuel_monthly")
+            _ft0 = M.FuelTechInputs(
+                enabled=True, kind="CHP", label="CHP", name="CHP",
+                fuel_cost_per_mmbtu=(float(_fc["chp_fuel_cost"]) if _fc.get("chp_fuel_cost") is not None
+                                     else sum(_chp_monthly) / 12.0),
+                fuel_cost_per_mmbtu_monthly=([float(x) for x in _chp_monthly] if _chp_monthly else None),
+                fuel_type=_fc.get("chp_fuel_type", "natural_gas"),
+                standby_rate_per_kw_per_month=float(chp_standby),
+                **chp_panel["inputs"])
+            heat_prof = CB.build_heating_profile(heat_in, float(lat), float(lon))
+        else:
+            _ft0 = M.FuelTechInputs(enabled=(use_gen or use_chp), kind=gen_kind,
+                                    label=gen_label, name=gen_label, **gen_cfg)
         _fleet = None
         if (use_gen or use_chp) and n_gen > 1:
             _fleet = [_ft0]
@@ -1009,8 +1063,24 @@ if run:
             min_load_met_annual_fraction=float(min_load_met) / 100,
             operating_reserve_required_fraction=float(load_opres) / 100,
             heating_fuel_mmbtu=heating_fuel_mmbtu,
-            existing_boiler_fuel_cost_per_mmbtu=float(boiler_fuel_cost),
+            existing_boiler_fuel_cost_per_mmbtu=float(
+                (fuel_costs or {}).get("boiler_fuel_cost")
+                if (fuel_costs or {}).get("boiler_fuel_cost") is not None
+                else (sum((fuel_costs or {}).get("boiler_fuel_monthly") or [boiler_fuel_cost * 12]) / 12.0)),
             boiler_efficiency=float(boiler_eff),
+            **({} if heat_prof is None else dict(
+                heating_loads_kw=heat_prof["loads_kw"],
+                heating_unaddressable_fuel_mmbtu=heat_prof["unaddressable_fuel_mmbtu"],
+                boiler_fuel_cost_per_mmbtu_monthly=(
+                    [float(x) for x in fuel_costs["boiler_fuel_monthly"]]
+                    if (fuel_costs or {}).get("boiler_fuel_monthly") else None),
+                boiler_fuel_type=(fuel_costs or {}).get("boiler_fuel_type", "natural_gas"),
+                boiler_fuel_escalation=fin_fuel["boiler_escalation"] if fin_fuel else 0.0348,
+                boiler_max_thermal_factor_on_peak_load=heat_in["max_thermal_factor"],
+                boiler_installed_cost_per_mmbtu_per_hour=heat_in["boiler_cost_per_mmbtu_hr"],
+                boiler_installed_cost_dollars=heat_in["boiler_cost_dollars"],
+                loads_kw_is_net=chp_panel["loads_kw_is_net"],
+            )),
         )
         res = M.solve(inp, time_limit=600)
         bau = M.business_as_usual(inp)
@@ -1049,6 +1119,7 @@ if run:
             "res": res, "bau": bau, "load": load, "tariff": tar, "emissions": emis,
             "off_grid": off_grid, "inp_years": int(analysis_years),
             "tax_rate": float(tax_rate) / 100,
+            "boiler_efficiency": boiler_eff,
             "om_esc": float(om_esc),
             "compensation": _opt_label(
                 "run_site_attributes_electric_tariff_attributes_compensation_type",
@@ -1066,7 +1137,35 @@ if run:
                 elec_esc=elec_esc, om_esc=om_esc, tax_rate=tax_rate,
                 use_pv=use_pv, pv_cfg=pv_cfg, use_bat=use_bat, bat_cfg=bat_cfg,
                 use_gen=(use_gen or use_chp), gen_cfg=gen_cfg, gen_kind=gen_kind,
-                emissions=emis,
+                emissions=emis, bat_panel=bat_panel, chp_panel=chp_panel,
+                custom_schedule=(ss.get("cp_maint") == "Upload"),
+                heat_rows=(None if heat_prof is None else {
+                    "Utilities": {
+                        "Annual existing heating system fuel cost ($/MMBtu)": (
+                            _money(fuel_costs["boiler_fuel_cost"], 2)
+                            if fuel_costs.get("boiler_fuel_cost") is not None else "monthly"),
+                        "Annual CHP fuel cost ($/MMBtu)": (
+                            _money(fuel_costs["chp_fuel_cost"], 2)
+                            if fuel_costs.get("chp_fuel_cost") is not None else "monthly"),
+                        "CHP standby charge ($/kW/month)": f"{chp_standby:g}",
+                        "Existing heating system fuel type": dict(CB.FUEL_TYPES)[fuel_costs["boiler_fuel_type"]],
+                        "CHP fuel type": dict(CB.FUEL_TYPES)[fuel_costs["chp_fuel_type"]],
+                    },
+                    "Load Profile": {
+                        "Annual heating system fuel consumption (MMBtu)": f"{heat_prof['annual_fuel_mmbtu']:,.0f}",
+                        "Addressable heating fuel percent (%)": _pc(
+                            (heat_in.get("total") or {}).get("addressable", 1.0), 0),
+                        "Existing heating system efficiency (% HHV-basis)": _pc(heat_in["boiler_efficiency"], 0),
+                        "Total installed cost for existing boiler ($/MMBtu/hr)": _money(heat_in["boiler_cost_per_mmbtu_hr"]),
+                        "Total installed cost for existing boiler ($)": _money(heat_in["boiler_cost_dollars"]),
+                        "Max. boiler thermal capacity as factor of peak heating load": f"{heat_in['max_thermal_factor']:g}",
+                    },
+                    "Financial": {
+                        "CHP fuel cost escalation rate, nominal (%/year)": _pc(fin_fuel["chp_escalation"], 2),
+                        "Existing heating system fuel cost escalation rate, nominal (%/year)":
+                            _pc(fin_fuel["boiler_escalation"], 2),
+                    },
+                }),
             ),
         }
     except Exception as exc:  # surface the real reason, do not swallow it

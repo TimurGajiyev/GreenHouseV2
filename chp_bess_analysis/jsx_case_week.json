@@ -1,0 +1,335 @@
+[
+ {
+  "fleet": "chp2",
+  "period": "week",
+  "mode": "A",
+  "theirs": {
+   "load": 368663,
+   "chp": 335500,
+   "ch": 0,
+   "dis": 0,
+   "grid": 33163,
+   "starts": 2,
+   "spill": 0,
+   "peak": 1839,
+   "cost": 9400780.0
+  },
+  "ours": {
+   "cost": 9346281.0,
+   "objective": 9346281.0,
+   "status": "Optimal",
+   "model_status": "Optimal",
+   "mip_gap": 0.0,
+   "dual_bound": 9346281.0,
+   "chp_kwh": 336175.5,
+   "spill_kwh": 19.5,
+   "grid_kwh": 32507.0,
+   "charge_kwh": 0.0,
+   "discharge_kwh": 0.0,
+   "starts": 0,
+   "unit_hours": 336,
+   "balance_residual_kw": 0.0,
+   "simultaneous_hours": 0,
+   "units": [
+    {
+     "name": "Jenbacher",
+     "kwh": 152061.5,
+     "hours": 168,
+     "starts": 0,
+     "spill": 19.5
+    },
+    {
+     "name": "TEDOM",
+     "kwh": 184114.0,
+     "hours": 168,
+     "starts": 0,
+     "spill": 0.0
+    }
+   ],
+   "seconds": 0.3000948429107666,
+   "peak": 1839.0
+  },
+  "delta": -0.005797284906146086
+ },
+ {
+  "fleet": "chp2",
+  "period": "week",
+  "mode": "B",
+  "theirs": {
+   "load": 368663,
+   "chp": 330743,
+   "ch": 0,
+   "dis": 0,
+   "grid": 42854,
+   "starts": 7,
+   "spill": 4939,
+   "peak": 1839,
+   "cost": 9952586.0
+  },
+  "ours": {
+   "cost": 9831623.2,
+   "objective": 9831623.200000007,
+   "status": "Optimal",
+   "model_status": "Optimal",
+   "mip_gap": 0.0,
+   "dual_bound": 9831623.2,
+   "chp_kwh": 354505.6,
+   "spill_kwh": 19217.600000000002,
+   "grid_kwh": 33375.0,
+   "charge_kwh": 0.0,
+   "discharge_kwh": 0.0,
+   "starts": 2,
+   "unit_hours": 325,
+   "balance_residual_kw": 2.2737367544323206e-13,
+   "simultaneous_hours": 0,
+   "units": [
+    {
+     "name": "Jenbacher",
+     "kwh": 160181.3,
+     "hours": 157,
+     "starts": 2,
+     "spill": 9887.800000000001
+    },
+    {
+     "name": "TEDOM",
+     "kwh": 194324.3,
+     "hours": 168,
+     "starts": 0,
+     "spill": 9329.800000000001
+    }
+   ],
+   "seconds": 0.4136064052581787,
+   "peak": 1839.0
+  },
+  "delta": -0.012153906532432953
+ },
+ {
+  "fleet": "chp2",
+  "period": "week",
+  "mode": "C",
+  "theirs": {
+   "load": 368663,
+   "chp": 360981,
+   "ch": 27870,
+   "dis": 24766,
+   "grid": 12598,
+   "starts": 3,
+   "spill": 1815,
+   "peak": 1827,
+   "cost": 8754845.0
+  },
+  "ours": {
+   "cost": 8655504.633324852,
+   "objective": 8655504.633324852,
+   "status": "Optimal",
+   "model_status": "Optimal",
+   "mip_gap": 0.00047506837695692334,
+   "dual_bound": 8651392.676786955,
+   "chp_kwh": 360394.93697756383,
+   "spill_kwh": 150.26348288177294,
+   "grid_kwh": 11429.579324679797,
+   "charge_kwh": 25093.77349468205,
+   "discharge_kwh": 22082.520675320204,
+   "starts": 2,
+   "unit_hours": 326,
+   "balance_residual_kw": 4.547473508864641e-13,
+   "simultaneous_hours": 0,
+   "units": [
+    {
+     "name": "Jenbacher",
+     "kwh": 164135.70030696373,
+     "hours": 158,
+     "starts": 2,
+     "spill": 150.26348288177294
+    },
+    {
+     "name": "TEDOM",
+     "kwh": 196259.2366706001,
+     "hours": 168,
+     "starts": 0,
+     "spill": 0.0
+    }
+   ],
+   "seconds": 6.684415578842163,
+   "peak": 954.3798649359593
+  },
+  "delta": -0.011346901821237017
+ },
+ {
+  "fleet": "chp3",
+  "period": "week",
+  "mode": "A",
+  "theirs": {
+   "load": 368663,
+   "chp": 359442,
+   "ch": 0,
+   "dis": 0,
+   "grid": 9221,
+   "starts": 11,
+   "spill": 0,
+   "peak": 1806,
+   "cost": 8625984.0
+  },
+  "ours": {
+   "cost": 8246715.0,
+   "objective": 8246715.0,
+   "status": "Optimal",
+   "model_status": "Optimal",
+   "mip_gap": 0.0,
+   "dual_bound": 8246715.0,
+   "chp_kwh": 368062.5,
+   "spill_kwh": 138.5,
+   "grid_kwh": 739.0,
+   "charge_kwh": 0.0,
+   "discharge_kwh": 0.0,
+   "starts": 7,
+   "unit_hours": 448,
+   "balance_residual_kw": 0.0,
+   "simultaneous_hours": 0,
+   "units": [
+    {
+     "name": "Jenbacher",
+     "kwh": 131534.0,
+     "hours": 168,
+     "starts": 0,
+     "spill": 0.0
+    },
+    {
+     "name": "TEDOM",
+     "kwh": 104948.5,
+     "hours": 117,
+     "starts": 6,
+     "spill": 0.0
+    },
+    {
+     "name": "КГУ-3",
+     "kwh": 131580.0,
+     "hours": 163,
+     "starts": 1,
+     "spill": 138.5
+    }
+   ],
+   "seconds": 0.501237154006958,
+   "peak": 739.0
+  },
+  "delta": -0.0439682011930465
+ },
+ {
+  "fleet": "chp3",
+  "period": "week",
+  "mode": "B",
+  "theirs": {
+   "load": 368663,
+   "chp": 356235,
+   "ch": 0,
+   "dis": 0,
+   "grid": 22012,
+   "starts": 14,
+   "spill": 9596,
+   "peak": 1806,
+   "cost": 9367890.0
+  },
+  "ours": {
+   "cost": 9157858.799999999,
+   "objective": 9157858.8,
+   "status": "Optimal",
+   "model_status": "Optimal",
+   "mip_gap": 0.0,
+   "dual_bound": 9157858.8,
+   "chp_kwh": 382985.4,
+   "spill_kwh": 23025.40000000003,
+   "grid_kwh": 8702.99999999998,
+   "charge_kwh": 0.0,
+   "discharge_kwh": 0.0,
+   "starts": 14,
+   "unit_hours": 364,
+   "balance_residual_kw": 2.2737367544323206e-13,
+   "simultaneous_hours": 0,
+   "units": [
+    {
+     "name": "Jenbacher",
+     "kwh": 95332.59999999987,
+     "hours": 97,
+     "starts": 7,
+     "spill": 8438.000000000016
+    },
+    {
+     "name": "TEDOM",
+     "kwh": 135065.69999999992,
+     "hours": 119,
+     "starts": 4,
+     "spill": 4300.600000000005
+    },
+    {
+     "name": "КГУ-3",
+     "kwh": 152587.10000000024,
+     "hours": 148,
+     "starts": 3,
+     "spill": 10286.80000000001
+    }
+   ],
+   "seconds": 1.5509493350982666,
+   "peak": 739.0
+  },
+  "delta": -0.022420331579469988
+ },
+ {
+  "fleet": "chp3",
+  "period": "week",
+  "mode": "C",
+  "theirs": {
+   "load": 368663,
+   "chp": 385059,
+   "ch": 11818,
+   "dis": 10331,
+   "grid": 0,
+   "starts": 19,
+   "spill": 14925,
+   "peak": 0,
+   "cost": 8761463.5
+  },
+  "ours": {
+   "cost": 8278227.616623396,
+   "objective": 8278227.616623401,
+   "status": "Optimal",
+   "model_status": "Time limit reached",
+   "mip_gap": 0.003465726718731321,
+   "dual_bound": 8249537.541988726,
+   "chp_kwh": 371720.0389374271,
+   "spill_kwh": 224.28621015449863,
+   "grid_kwh": 0.0,
+   "charge_kwh": 23606.272727272764,
+   "discharge_kwh": 20773.520000000142,
+   "starts": 6,
+   "unit_hours": 355,
+   "balance_residual_kw": 5.4569682106375694e-12,
+   "simultaneous_hours": 0,
+   "units": [
+    {
+     "name": "Jenbacher",
+     "kwh": 125247.9438649359,
+     "hours": 124,
+     "starts": 3,
+     "spill": 224.28621015449863
+    },
+    {
+     "name": "TEDOM",
+     "kwh": 71082.00000000003,
+     "hours": 63,
+     "starts": 3,
+     "spill": 0.0
+    },
+    {
+     "name": "КГУ-3",
+     "kwh": 175390.09507249118,
+     "hours": 168,
+     "starts": 0,
+     "spill": 0.0
+    }
+   ],
+   "seconds": 600.3026399612427,
+   "peak": 0.0
+  },
+  "delta": -0.055154699140914525
+ }
+]

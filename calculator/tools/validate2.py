@@ -33,7 +33,14 @@ TARGET = {
     "utility_lifecycle_bau": 4_624_884, "utility_lifecycle_opt": 4_344_872,
     "lcc_bau": 4_624_883, "lcc_opt": 4_601_676,
     "npv": 23_207, "upfront": 378_800,
+    "payback": 9.15, "irr_pct": 9.5,
 }
+
+
+def row_abs(name, got, want, unit, atol):
+    ok = abs(got - want) <= atol + 1e-9
+    print(f"  {'OK ' if ok else 'XX '} {name:<44} {got:>14,.2f} {unit:<5} vs {want:>14,.2f}  (+/-{atol})")
+    return ok
 
 
 def row(name, got, want, unit="", tol=0.01):
@@ -115,6 +122,11 @@ def main() -> None:
     ok.append(row("LCC optimized", r["objective_lifecycle_cost"], TARGET["lcc_opt"], "$", 0.02))
     ok.append(row("NPV (savings)", b["lifecycle_cost"] - r["objective_lifecycle_cost"],
                   TARGET["npv"], "$", 0.05))
+    # proforma.jl: REopt's own payback test allows 0.02 y; the tool prints IRR to 0.1 %
+    ok.append(row_abs("Simple payback period", r["proforma"]["simple_payback_years"],
+                      TARGET["payback"], "yrs", 0.02))
+    ok.append(row_abs("Internal rate of return", 100 * r["proforma"]["internal_rate_of_return"],
+                      TARGET["irr_pct"], "%", 0.05))
 
     print(f"\n{sum(ok)}/{len(ok)} checks within tolerance")
 

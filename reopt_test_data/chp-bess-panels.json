@@ -1,0 +1,134 @@
+{
+  "captured": "2026-09-18T07:01:51Z",
+  "site": "https://reopt.nlr.gov/tool",
+  "setup": "grid-tied, cost savings, CHP + Battery; Golden CO 39.74437,-105.15199; Hospital electric and heating load; $8/MMBtu boiler and CHP fuel",
+  "method": "Playwright walk of #battery and #chp in DOM order, visible elements only, once collapsed ('basic') and once after clicking 'Advanced inputs' ('advanced'). Placeholders are the tool's defaults for this site: the CHP ones are computed by the tool from the heating load.",
+  "panels": {
+    "utility_fuel": {
+      "title": "Utilities",
+      "section": "Fuel Costs",
+      "shown_when": "CHP selected",
+      "fields": [
+        {"id": "boiler_fuel_type", "label": "Existing heating system fuel type", "type": "select", "default": "natural_gas"},
+        {"id": "monthly_boiler_cost", "label": "Heating system fuel cost varies by month?", "type": "checkbox", "default": false},
+        {"id": "boiler_fuel_blended_annual_rates_per_mmbtu", "label": "* Annual existing heating system fuel cost ($/MMBtu)", "type": "text", "required": true},
+        {"id": "chp_fuel_type", "label": "CHP fuel type", "type": "select", "default": "natural_gas"},
+        {"id": "monthly_chp_cost", "label": "CHP fuel cost varies by month?", "type": "checkbox", "default": false},
+        {"id": "chp_fuel_blended_annual_rates_per_mmbtu", "label": "* Annual CHP fuel cost ($/MMBtu)", "type": "text", "required": true}
+      ]
+    },
+    "load_heating": {
+      "title": "Load Profiles",
+      "section": "* Typical heating system fuel load",
+      "shown_when": "CHP selected",
+      "fields": [
+        {"id": "split_heating_loads", "label": "Separately input space heating and domestic hot water loads", "type": "checkbox", "default": false},
+        {"id": "add_process_heat_load", "label": "Add separate higher temperature process heat load", "type": "checkbox", "default": false},
+        {"id": "boiler_doe_reference_name", "label": "* Type of building", "type": "select", "required": true},
+        {"id": "boiler_simulated_load_type", "label": "Annual | Monthly", "type": "radio", "default": "annual"},
+        {"id": "boiler_annual_mmbtu", "label": "Annual heating system fuel consumption (MMBtu)", "type": "text"},
+        {"id": "addressable_load_fraction", "label": "Addressable load percent (%)", "type": "text", "placeholder": "100%"},
+        {"id": "boiler_efficiency", "label": "Existing heating system efficiency (% HHV-basis)", "type": "text", "placeholder": "80%"},
+        {"id": "max_thermal_factor_on_peak_load", "label": "Max. boiler thermal capacity as factor of peak heating load", "type": "text", "placeholder": "1.25"},
+        {"id": "boiler_installed_cost_per_mmbtu_per_hour", "label": "Total installed cost for existing boiler ($/MMBtu/hr)", "type": "text", "placeholder": "$0"},
+        {"id": "boiler_installed_cost_dollars", "label": "Total installed cost for existing boiler ($)", "type": "text", "placeholder": "$0"}
+      ]
+    },
+    "financial_fuel": {
+      "title": "Financial",
+      "fields": [
+        {"id": "existing_boiler_fuel_cost_escalation_rate_fraction", "label": "Existing heating system fuel cost escalation rate, nominal (%/year)"},
+        {"id": "chp_fuel_cost_escalation_rate_fraction", "label": "CHP fuel cost escalation rate, nominal (%/year)"}
+      ]
+    },
+    "battery": {
+      "title": "Battery",
+      "basic": [
+        {"id": "installed_cost_per_kwh", "label": "Energy capacity cost ($/kWh)", "type": "text", "placeholder": "$253"},
+        {"id": "installed_cost_per_kw", "label": "Power capacity cost ($/kW)", "type": "text", "placeholder": "$968"},
+        {"id": "installed_cost_constant", "label": "Constant cost ($)", "type": "text", "placeholder": "$222,115"},
+        {"id": "om_cost_fraction_of_installed_cost", "label": "Annual O&M cost as a percent of upfront cost (%)", "type": "text", "placeholder": "2.5%"},
+        {"id": "can_grid_charge", "label": "Allow grid to charge battery", "type": "select", "default": "true", "options": [["true", "Yes"], ["false", "No"]]},
+        {"id": "dispatch_strategy", "label": "Battery dispatch strategy", "type": "select", "default": "cost_optimal", "options": [["cost_optimal", "Cost Optimal (perfect foresight)"], ["backup", "Backup mode"], ["custom_soc", "Custom hourly state of charge"]]},
+        {"id": "min_kwh", "label": "Minimum energy capacity (kWh)", "type": "text", "placeholder": "0"},
+        {"id": "max_kwh", "label": "Maximum energy capacity (kWh)", "type": "text", "placeholder": "Unlimited"}
+      ],
+      "advanced": [
+        {"section": "Battery Replacement Costs"},
+        {"id": "replace_cost_per_kwh", "label": "Energy capacity replacement cost ($/kWh)", "type": "text", "placeholder": "$0"},
+        {"id": "battery_replacement_year", "label": "Energy capacity replacement year", "type": "text", "placeholder": "10"},
+        {"id": "replace_cost_per_kw", "label": "Power capacity replacement cost ($/kW)", "type": "text", "placeholder": "$0"},
+        {"id": "inverter_replacement_year", "label": "Power capacity replacement year", "type": "text", "placeholder": "10"},
+        {"id": "replace_cost_constant", "label": "Constant replacement cost ($)", "type": "text", "placeholder": "$0"},
+        {"id": "cost_constant_replacement_year", "label": "Constant replacement year", "type": "text", "placeholder": "10"},
+        {"section": "Battery Characteristics"},
+        {"id": "min_kw", "label": "Minimum power capacity (kW)", "type": "text", "placeholder": "0"},
+        {"id": "max_kw", "label": "Maximum power capacity (kW)", "type": "text", "placeholder": "Unlimited"},
+        {"id": "min_duration_hours", "label": "Minimum battery duration (hours)", "type": "text", "placeholder": "0"},
+        {"id": "max_duration_hours", "label": "Maximum battery duration (hours)", "type": "text", "placeholder": "Unlimited"},
+        {"id": "rectifier_efficiency_fraction", "label": "Rectifier efficiency (%)", "type": "text", "placeholder": "96%"},
+        {"id": "internal_efficiency_fraction", "label": "Round trip efficiency (%)", "type": "text", "placeholder": "97.5%"},
+        {"id": "inverter_efficiency_fraction", "label": "Inverter efficiency (%)", "type": "text", "placeholder": "96%"},
+        {"id": "soc_min_fraction", "label": "Minimum state of charge (%)", "type": "text", "placeholder": "20%"},
+        {"id": "soc_init_fraction", "label": "Initial state of charge (%)", "type": "text", "placeholder": "50%"},
+        {"section": "Battery Incentives and Tax Treatment"},
+        {"subsection": "Capital Cost Based Incentives"},
+        {"id": "total_itc_fraction", "label": "Total percentage-based incentive (%)", "type": "text", "placeholder": "30%"},
+        {"id": "total_rebate_per_kw", "label": "Total power capacity rebate ($/kW)", "type": "text", "placeholder": "$0"},
+        {"subsection": "Tax Treatment"},
+        {"id": "macrs_option_years", "label": "MACRS schedule", "type": "select", "default": "5", "options": [["0", "No MACRS"], ["5", "5 years"], ["7", "7 years"]]},
+        {"id": "macrs_bonus_fraction", "label": "MACRS bonus depreciation", "type": "select", "default": "1", "options": [["0", "0%"], ["0.2", "20%"], ["0.4", "40%"], ["0.6", "60%"], ["0.8", "80%"], ["1", "100%"]]}
+      ],
+      "toggles": ["Advanced inputs / Show fewer inputs", "Reset to default values"]
+    },
+    "chp": {
+      "title": "Combined Heat & Power",
+      "basic": [
+        {"id": "prime_mover_type", "label": "Prime mover type", "type": "select", "default": "recip_engine", "disabled_unless": "custom_prime_mover", "options": [["recip_engine", "Reciprocating engine"], ["micro_turbine", "Microturbine"], ["combustion_turbine", "Combustion turbine"], ["fuel_cell", "Fuel cell"]]},
+        {"id": "size_class", "label": "Size class", "type": "select", "default": "2", "disabled_unless": "custom_prime_mover", "options": [["0", "Size Class 0 (35 - 4,500 kW)"], ["1", "Size Class 1 (35 - 100 kW)"], ["2", "Size Class 2 (100 - 250 kW)"], ["3", "Size Class 3 (250 - 500 kW)"], ["4", "Size Class 4 (500 - 1,000 kW)"], ["5", "Size Class 5 (1,000 - 2,000 kW)"], ["6", "Size Class 6 (2,000 - 3,000 kW)"], ["7", "Size Class 7 (3,000 - 4,500 kW)"]]},
+        {"note": "Electric capacity sized based on the average load for all 8,760 hours of the year = 170 kW (Size Class 2)"},
+        {"id": "custom_prime_mover", "label": "Change default prime mover & size class?", "type": "checkbox", "default": false},
+        {"link": "Apply CHP size to the max size considered"},
+        {"id": "min_kw", "label": "Minimum new electric power capacity (kW)", "type": "text", "placeholder": "0"},
+        {"id": "min_allowable_kw", "label": "Minimum new non-zero power capacity (kW)", "type": "text", "placeholder": "50"},
+        {"id": "max_kw", "label": "Maximum new electric power capacity (kW)", "type": "text", "placeholder": "341"},
+        {"id": "existing_chp_chk", "label": "Existing CHP system?", "type": "checkbox", "default": false},
+        {"id": "single_cost_for_all_sizes", "label": "Use single cost ($/kW) for all CHP sizes?", "type": "checkbox", "default": false},
+        {"grid": "size_cost_pairs", "columns": ["Size-Cost Pair 1", "Size-Cost Pair 2"], "rows": ["Electric power capacity (kW)", "Total installed cost ($/kW)"],
+         "cells": [["tech_sizes_for_cost_curve_1", "100"], ["tech_sizes_for_cost_curve_2", "250"], ["installed_cost_per_kw_1", "$3920"], ["installed_cost_per_kw_2", "$3660"]]},
+        {"id": "dispatch_options", "label": "Dispatch options", "type": "select", "default": "cost_optimal", "options": [["cost_optimal", "Cost optimal"], ["follow_electrical_load", "Electrical load-following"], ["follow_heating_load", "Heating load-following (beta)"]]}
+      ],
+      "advanced": [
+        {"section": "CHP Maintenance Schedule", "buttons": ["Default", "Upload"], "text": ["A default maintenance schedule has been selected based on your prime mover type and the year of your electric load profile.", "Use the summary table and detailed table links below to view the details of the default schedule."], "links": ["Download schedule", "View summary table", "View detailed table"]},
+        {"section": "CHP Costs"},
+        {"id": "om_cost_per_kw", "label": "Fixed O&M Cost ($/kW/yr)", "type": "text", "placeholder": "$0"},
+        {"id": "om_cost_per_kwh", "label": "Variable O&M Cost ($/kWh)", "type": "text", "placeholder": "$0.027"},
+        {"section": "CHP System Characteristics"},
+        {"id": "electric_efficiency_full_load", "label": "Electric efficiency at 100% load (% HHV-basis)", "type": "text", "placeholder": "31.20%"},
+        {"id": "electric_efficiency_half_load", "label": "Electric efficiency at 50% load (% HHV-basis)", "type": "text", "placeholder": "31.20%"},
+        {"id": "thermal_efficiency_full_load", "label": "Thermal efficiency at 100% load (% HHV-basis)", "type": "text", "placeholder": "48.50%"},
+        {"id": "thermal_efficiency_half_load", "label": "Thermal efficiency at 50% load (% HHV-basis)", "type": "text", "placeholder": "48.50%"},
+        {"id": "min_turn_down_fraction", "label": "Min. electric loading of prime mover (% of rated electric capacity)", "type": "text", "placeholder": "25.00%"},
+        {"id": "cooling_thermal_factor", "label": "Knockdown factor for CHP-supplied thermal to Absorption Chiller (%)", "type": "text", "placeholder": "82.50%"},
+        {"id": "chp_generation", "label": "CHP maximum generation", "type": "radio", "options": [["maximum_capacity", "Always allow CHP to operate at maximum capacity"], ["generation_profile", "Provide custom maximum generation profile"]], "default": "maximum_capacity"},
+        {"section": "CHP Incentives and Tax Treatment"},
+        {"subsection": "Capital Cost or System Size Based Incentives", "link": "Database of state incentives for renewables"},
+        {"grid": "capital_incentives",
+         "columns": ["Incentive based on percentage of cost (%)", "Maximum dollar amount for incentive based on percentage of cost ($)", "Rebate based on system size ($/kW)", "Maximum dollar amount for rebate based on system size ($)"],
+         "rows": {
+           "Federal": [["federal_itc_fraction", "0%"], [null, "Unlimited"], ["federal_rebate_per_kw", "$0"], [null, "Unlimited"]],
+           "State": [["state_ibi_fraction", "0%"], ["state_ibi_max", "Unlimited"], ["state_rebate_per_kw", "$0"], ["state_rebate_max", "Unlimited"]],
+           "Utility": [["utility_ibi_fraction", "0%"], ["utility_ibi_max", "Unlimited"], ["utility_rebate_per_kw", "$0"], ["utility_rebate_max", "Unlimited"]]
+         }},
+        {"subsection": "Production Based Incentives"},
+        {"grid": "production_incentives",
+         "columns": ["Production incentive ($/kWh)", "Incentive duration (yrs)", "Maximum incentive ($)", "System size limit (kW)"],
+         "rows": {"Total": [["production_incentive_per_kwh", "$0.000"], ["pbi_years", "1"], ["production_incentive_max_benefit", "Unlimited"], ["pbi_system_max_kw", "Unlimited"]]}},
+        {"subsection": "Tax Treatment"},
+        {"id": "macrs_option_years", "label": "MACRS schedule", "type": "select", "default": "5", "options": [["0", "No MACRS"], ["5", "5 years"], ["7", "7 years"]]},
+        {"id": "macrs_bonus_fraction", "label": "MACRS bonus depreciation", "type": "select", "default": "1", "options": [["0", "0%"], ["0.2", "20%"], ["0.4", "40%"], ["0.6", "60%"], ["0.8", "80%"], ["1", "100%"]]}
+      ],
+      "toggles": ["Advanced inputs / Show fewer inputs", "Reset to default values"]
+    }
+  }
+}

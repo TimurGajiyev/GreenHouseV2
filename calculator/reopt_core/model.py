@@ -15,9 +15,11 @@ from dataclasses import dataclass, field
 
 import pulp
 
+from .cost_curve import CostCurveTech, cost_curve, needs_segments, segments
 from .finance import (annuity, effective_cost, fuel_slope_and_intercept,
                       levelization_factor, macrs_schedule_for)
-from .proforma import build as proforma_build, depreciation_tax_shields, pv_lcoe
+from .proforma import depreciation_tax_shields, pv_lcoe
+from . import proforma as PF
 from .tariff import Tariff
 
 HOURS = 8760
@@ -35,6 +37,10 @@ class FinancialInputs:
     owner_discount_rate_fraction: float | None = None   # defaults to offtaker
     owner_tax_rate_fraction: float | None = None
     fuel_cost_escalation_rate_fraction: float = 0.034
+    # financial.jl:9 -- CHP fuel has its own escalation (web form: 3.48%).
+    # None keeps the generic rate above, which is how every run before this
+    # field existed was priced.
+    chp_fuel_cost_escalation_rate_fraction: float | None = None
 
     def __post_init__(self) -> None:
         if self.owner_discount_rate_fraction is None:
@@ -60,6 +66,9 @@ class PVInputs:
     can_curtail: bool = True
     # pv.jl:46 -- off-grid only; REopt zeroes it on-grid (pv.jl:175)
     operating_reserve_required_fraction: float = 0.25
+    # pv.jl -- REopt prices PV through cost_curve.jl too; a $/kW federal rebate
+    # is the one incentive beyond the ITC that its test scenarios use.
+    federal_rebate_per_kw: float = 0.0
 
 
 @dataclass
@@ -91,6 +100,20 @@ class StorageInputs:
     total_itc_fraction: float = 0.3
     # Free-text name, used only for labelling results.
     name: str = ""
+    # Beyond REopt: wear cost per kWh discharged. 0 adds nothing to the model.
+    discharge_cost_per_kwh: float = 0.0
+    # ---- electric_storage.jl fields the web form exposes (Advanced inputs) ----
+    replace_cost_constant: float = 0.0
+    cost_constant_replacement_year: int = 10
+    total_rebate_per_kw: float = 0.0
+    total_rebate_per_kwh: float = 0.0
+    # electric_storage.jl:209 + storage_constraints.jl:39-53. False (REopt's
+    # default): SOC before hour 1 is soc_init_fraction x energy and the final
+    # SOC is free. True: initial SOC is optimised and equals the final SOC.
+    optimize_soc_init_fraction: bool = False
+    # 'Custom hourly state of charge' -- storage_constraints.jl:139-148
+    fixed_soc_series_fraction: list[float] | None = None
+    fixed_soc_series_fraction_tolerance: float = 0.02
 
 
 @dataclass
@@ -126,6 +149,54 @@ class FuelTechInputs:
     electric_efficiency_half_load: float | None = None
     # generator_constraints.jl:26-36. 0 means no turndown floor and no binary.
     min_turn_down_fraction: float = 0.0
+    # ---- beyond REopt: unit-commitment details, every one off by default ----
+    # Cost per start event. REopt prices no starts. 0 creates no variables.
+    start_cost: float = 0.0
+    # O&M billed per hour the unit runs, not per kWh. REopt has only per-kW-year
+    # and per-kWh terms; a per-running-hour service contract is a third structure
+    # and it does not scale with output. 0 creates no variables.
+    om_cost_per_running_hour: float = 0.0
+    # Hours a unit must stay on after a start / off after a stop. 1 = no rule.
+    min_up_hours: int = 1
+    min_down_hours: int = 1
+    # Let a unit spill output it cannot deliver. It is still paid for (O&M and
+    # fuel are charged on rated production) but it does not reach the load.
+    # REopt has dvCurtail for every tech (reopt.jl:656); this port had it for PV only.
+    can_curtail: bool = False
+    # ---- chp.jl fields the web form exposes; every default is REopt's "off" ----
+    # Size-cost pairs. When both lists are given the capital cost is REopt's
+    # piecewise curve (cost_curve.jl) instead of installed_cost_per_kw.
+    tech_sizes_for_cost_curve: list[float] = field(default_factory=list)
+    installed_cost_curve_per_kw: list[float] = field(default_factory=list)
+    min_allowable_kw: float = 0.0          # 0 or at least this much (chp.jl:21)
+    existing_kw: float = 0.0               # already installed, no capital cost
+    federal_rebate_per_kw: float = 0.0
+    state_ibi_fraction: float = 0.0
+    state_ibi_max: float = 1.0e10
+    state_rebate_per_kw: float = 0.0
+    state_rebate_max: float = 1.0e10
+    utility_ibi_fraction: float = 0.0
+    utility_ibi_max: float = 1.0e10
+    utility_rebate_per_kw: float = 0.0
+    utility_rebate_max: float = 1.0e10
+    production_incentive_per_kwh: float = 0.0
+    production_incentive_max_benefit: float = 1.0e9
+    production_incentive_years: int = 1
+    production_incentive_max_kw: float = 1.0e9
+    # chp.jl:280 -- None means same as full load (thermal curve intercept 0)
+    thermal_efficiency_half_load: float | None = None
+    # production_factor.jl:285 -- (custom maximum profile) x (1 - maintenance).
+    # None = available at full capacity every hour.
+    production_factor_series: list[float] | None = None
+    follow_electrical_load: bool = False   # chp_constraints.jl add_chp_electrical_load_following
+    follow_heating_load: bool = False      # chp_constraints.jl add_chp_heating_load_following
+    cooling_thermal_factor: float = 0.0    # only acts with an absorption chiller (none here)
+    fuel_type: str = "natural_gas"
+    # CHP fuel by month (12 values, $/MMBtu). None = fuel_cost_per_mmbtu all year.
+    fuel_cost_per_mmbtu_monthly: list[float] | None = None
+    # ElectricTariff "CHP standby charge based on CHP size ($/kW/month)" --
+    # reopt.jl:295 charges pwf_e x 12 x rate x size, after tax.
+    standby_rate_per_kw_per_month: float = 0.0
 
 
 @dataclass
@@ -167,13 +238,49 @@ class ScenarioInputs:
     heating_fuel_mmbtu: float | None = None
     # financial.jl:7 existing_boiler_fuel_cost_escalation_rate_fraction
     boiler_fuel_escalation: float = 0.0348
+    # Hourly heating THERMAL load (kW), space heating + hot water, as REopt
+    # builds it (heating_cooling_loads.jl). When given, heat is balanced hour by
+    # hour -- CHP heat can only displace boiler fuel in the hour it is made.
+    heating_loads_kw: list[float] | None = None
+    boiler_max_thermal_factor_on_peak_load: float = 1.25
+    boiler_installed_cost_per_mmbtu_per_hour: float = 0.0
+    boiler_installed_cost_dollars: float = 0.0
+    boiler_fuel_cost_per_mmbtu_monthly: list[float] | None = None
+    boiler_fuel_type: str = "natural_gas"
+    heating_unaddressable_fuel_mmbtu: float = 0.0   # reported, as REopt does
+    # "Net (gross load minus existing CHP generation)" -- reopt_inputs.jl:1258.
+    # When True and a unit has existing_kw, that unit's available output is added
+    # back onto the load, because the metered load was already net of it.
+    loads_kw_is_net: bool = True
+
+
+def _month_of_hour_2017() -> list[int]:
+    import datetime as _dt
+    out, d = [], _dt.datetime(2017, 1, 1)
+    for _ in range(8760):
+        out.append(d.month - 1)
+        d += _dt.timedelta(hours=1)
+    return out
+
+
+_MONTH_OF_HOUR = _month_of_hour_2017()
 
 
 # --------------------------------------------------------------- the model
-def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> dict:
+def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
+          mip_gap: float | None = None) -> dict:
     f = inp.financial
-    T = list(range(HOURS))
-    loads = inp.loads_kw
+    # The horizon follows the load. Every annual caller passes 8,760 hours, so
+    # this is HOURS for them; a 168-hour week can now be solved as posed.
+    H = len(inp.loads_kw)
+    T = list(range(H))
+    loads = list(inp.loads_kw)
+    if inp.loads_kw_is_net:
+        for _u in (list(inp.fuel_techs) if inp.fuel_techs else [inp.fuel_tech]):
+            if _u.enabled and _u.kind == "CHP" and _u.existing_kw > 0:
+                _pfx = (list(_u.production_factor_series)[:H]
+                        if _u.production_factor_series is not None else [1.0] * H)
+                loads = [loads[t] + _u.existing_kw * _pfx[t] for t in range(H)]
 
     # ---- present-worth factors: REopt/src/core/reopt_inputs.jl:1128-1138 ----
     pwf_e = annuity(f.analysis_years, f.elec_cost_escalation_rate_fraction,
@@ -182,6 +289,10 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
                      f.owner_discount_rate_fraction)
     pwf_fuel = annuity(f.analysis_years, f.fuel_cost_escalation_rate_fraction,
                        f.offtaker_discount_rate_fraction)
+    # reopt_inputs.jl pwf_fuel["CHP"] uses chp_fuel_cost_escalation_rate_fraction
+    pwf_fuel_chp = (pwf_fuel if f.chp_fuel_cost_escalation_rate_fraction is None
+                    else annuity(f.analysis_years, f.chp_fuel_cost_escalation_rate_fraction,
+                                 f.offtaker_discount_rate_fraction))
     pwf_boiler = annuity(f.analysis_years, inp.boiler_fuel_escalation,
                          f.offtaker_discount_rate_fraction)
     # PV is the only tech with degradation -> levelization_factor (reopt_inputs.jl:1119)
@@ -194,15 +305,20 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
     # ---- capital cost slopes: utils.jl:83 effective_cost ----
     pv_slope = 0.0
     if inp.pv.enabled:
-        itc = inp.pv.federal_itc_fraction
-        pv_slope = effective_cost(
-            itc_basis=inp.pv.installed_cost_per_kw,
-            replacement_cost=0.0, replacement_year=f.analysis_years,
-            discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own, itc=itc,
-            macrs_schedule=macrs_schedule_for(inp.pv.macrs_option_years),
-            macrs_bonus_fraction=inp.pv.macrs_bonus_fraction if inp.pv.macrs_option_years else 0.0,
-            macrs_itc_reduction=inp.pv.macrs_itc_reduction if inp.pv.macrs_option_years else 0.0,
-        )
+        # reopt_inputs.jl setup_pv_inputs -> update_cost_curve! -> cost_curve.jl.
+        # For a whole-dollar cost and no rebate this is the same number the
+        # direct effective_cost call gave; with a rebate it is REopt's number.
+        _psl, _, _, _pn = cost_curve(
+            CostCurveTech(installed_cost_per_kw=inp.pv.installed_cost_per_kw,
+                          tech_sizes_for_cost_curve=[],
+                          federal_itc_fraction=inp.pv.federal_itc_fraction,
+                          federal_rebate_per_kw=inp.pv.federal_rebate_per_kw,
+                          macrs_option_years=inp.pv.macrs_option_years,
+                          macrs_bonus_fraction=inp.pv.macrs_bonus_fraction,
+                          macrs_itc_reduction=inp.pv.macrs_itc_reduction),
+            analysis_years=f.analysis_years, owner_discount_rate=f.owner_discount_rate_fraction,
+            owner_tax_rate=tax_own)
+        pv_slope = _psl[0]
 
     # A fleet of one is the single-slot case, so both shapes run one code path.
     fts = list(inp.fuel_techs) if inp.fuel_techs else [inp.fuel_tech]
@@ -210,8 +326,38 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
     ft = fts[0]                     # kept for the single-unit expressions below
 
     ft_slopes = {}
+    # CHP (and Prime Generator, which REopt builds as a CHP) is priced through
+    # cost_curve.jl: size-cost pairs and the full incentive table become a
+    # piecewise curve. With a scalar cost and no incentives that curve is one
+    # segment whose slope is effective_cost(round(cost)) -- REopt's own number.
+    ft_curve = {}
     for g in NG:
         u = fts[g]
+        ft_curve[g] = None
+        if u.enabled and u.kind == "CHP":
+            _pairs = bool(u.tech_sizes_for_cost_curve and u.installed_cost_curve_per_kw)
+            _sl, _bx, _yi, _n = cost_curve(
+                CostCurveTech(
+                    installed_cost_per_kw=(list(u.installed_cost_curve_per_kw) if _pairs
+                                           else u.installed_cost_per_kw),
+                    tech_sizes_for_cost_curve=(list(u.tech_sizes_for_cost_curve) if _pairs else []),
+                    federal_itc_fraction=u.federal_itc_fraction,
+                    federal_rebate_per_kw=u.federal_rebate_per_kw,
+                    state_ibi_fraction=u.state_ibi_fraction, state_ibi_max=u.state_ibi_max,
+                    state_rebate_per_kw=u.state_rebate_per_kw, state_rebate_max=u.state_rebate_max,
+                    utility_ibi_fraction=u.utility_ibi_fraction, utility_ibi_max=u.utility_ibi_max,
+                    utility_rebate_per_kw=u.utility_rebate_per_kw,
+                    utility_rebate_max=u.utility_rebate_max,
+                    macrs_option_years=u.macrs_option_years,
+                    macrs_bonus_fraction=u.macrs_bonus_fraction,
+                    macrs_itc_reduction=u.macrs_itc_reduction),
+                analysis_years=f.analysis_years,
+                owner_discount_rate=f.owner_discount_rate_fraction,
+                owner_tax_rate=tax_own)
+            ft_slopes[g] = _sl[0]
+            if needs_segments(_n, is_chp=True, min_allowable_kw=u.min_allowable_kw):
+                ft_curve[g] = segments(_sl, _bx, _yi, _n, min_allowable_kw=u.min_allowable_kw)
+            continue
         ft_slopes[g] = effective_cost(
             itc_basis=u.installed_cost_per_kw,
             replacement_cost=(0.0 if u.replacement_year >= f.analysis_years else u.replace_cost_per_kw),
@@ -226,6 +372,7 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
     # ---- affine fuel curve per unit, utils.jl:645 + generator_constraints.jl:8 ----
     # CHP is priced per MMBtu, so its heating value is kWh per MMBtu.
     ft_slope_fuel, ft_icept, ft_needs_bin = {}, {}, {}
+    ft_th_slope, ft_th_icept = {}, {}
     for g in NG:
         u = fts[g]
         hhv = (293.07107 if u.kind == "CHP" else u.fuel_higher_heating_value_kwh_per_gal)
@@ -238,10 +385,26 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
             fuel_higher_heating_value_kwh_per_unit=hhv,
         )
         ft_slope_fuel[g], ft_icept[g] = sl, ic
+        # chp_constraints.jl:47-51 -- thermal output per kWe, affine like fuel.
+        # Half == full (REopt's default) gives slope th/el and intercept 0.
+        if u.kind == "CHP" and u.thermal_efficiency_full_load > 0:
+            _th_half_eff = (u.thermal_efficiency_half_load
+                            if u.thermal_efficiency_half_load is not None
+                            else u.thermal_efficiency_full_load)
+            _full = 1.0 / u.electric_efficiency_full_load * u.thermal_efficiency_full_load
+            _half = 0.5 / half * _th_half_eff
+            ft_th_slope[g] = (_full - _half) / (1.0 - 0.5)
+            ft_th_icept[g] = _full - ft_th_slope[g] * 1.0
+        else:
+            ft_th_slope[g], ft_th_icept[g] = 0.0, 0.0
         # A binary is only needed when something actually references on/off.
         # At REopt defaults ic == 0.0 and turndown == 0, so none is created and
         # the model stays a pure LP -- identical to the pre-curve formulation.
-        ft_needs_bin[g] = bool(u.enabled and (ic > 0.0 or u.min_turn_down_fraction > 0.0))
+        ft_needs_bin[g] = bool(u.enabled and (
+            ic > 0.0 or u.min_turn_down_fraction > 0.0
+            or abs(ft_th_icept[g]) > 1.0e-7
+            or u.start_cost > 0.0 or u.min_up_hours > 1 or u.min_down_hours > 1
+            or u.om_cost_per_running_hour > 0.0))
 
     sts = list(inp.storages) if inp.storages else [inp.storage]
     NB = range(len(sts))
@@ -263,6 +426,7 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
             discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own,
             itc=st.total_itc_fraction, macrs_schedule=sched,
             macrs_bonus_fraction=st.macrs_bonus_fraction, macrs_itc_reduction=st.macrs_itc_reduction,
+            rebate_per_kw=st.total_rebate_per_kw,
         )
         b_npc_kwh[b] = effective_cost(
             itc_basis=st.installed_cost_per_kwh,
@@ -271,15 +435,17 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
             discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own,
             itc=st.total_itc_fraction, macrs_schedule=sched,
             macrs_bonus_fraction=st.macrs_bonus_fraction, macrs_itc_reduction=st.macrs_itc_reduction,
-        )
+        ) - st.total_rebate_per_kwh                    # electric_storage.jl:506
         b_npc_const[b] = effective_cost(
-            itc_basis=st.installed_cost_constant, replacement_cost=0.0,
-            replacement_year=f.analysis_years,
+            itc_basis=st.installed_cost_constant,
+            replacement_cost=(0.0 if st.cost_constant_replacement_year >= f.analysis_years
+                              else st.replace_cost_constant),
+            replacement_year=st.cost_constant_replacement_year,
             discount_rate=f.owner_discount_rate_fraction, tax_rate=tax_own,
             itc=st.total_itc_fraction, macrs_schedule=sched,
             macrs_bonus_fraction=st.macrs_bonus_fraction,
             macrs_itc_reduction=st.macrs_itc_reduction,
-        ) if st.installed_cost_constant else 0.0
+        ) if (st.installed_cost_constant or st.replace_cost_constant) else 0.0
     npc_kw, npc_kwh, npc_const = b_npc_kw[0], b_npc_kwh[0], b_npc_const[0]
 
     # ------------------------------------------------------------- variables
@@ -300,9 +466,16 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
 
     dvPVsize = pulp.LpVariable("dvSize_PV", lowBound=inp.pv.min_kw,
                                upBound=pv_space_max if inp.pv.enabled else 0.0)
-    ftsize = {g: pulp.LpVariable(f"dvSize_FT_{g}", lowBound=fts[g].min_kw,
-                                 upBound=fts[g].max_kw if fts[g].enabled else 0.0)
+    ftsize = {g: pulp.LpVariable(f"dvSize_FT_{g}", lowBound=fts[g].existing_kw + fts[g].min_kw,
+                                 upBound=(fts[g].existing_kw + fts[g].max_kw)
+                                 if fts[g].enabled else 0.0)
               for g in NG}
+    # max_sizes = existing_kw + max_kw -- the big-M REopt uses for every CHP constraint
+    ft_M = {g: fts[g].existing_kw + fts[g].max_kw for g in NG}
+    # hourly availability: (custom maximum profile) x (1 - maintenance); None = 1
+    ft_pf = {g: (list(fts[g].production_factor_series)[:H]
+                 if (fts[g].enabled and fts[g].production_factor_series is not None) else None)
+             for g in NG}
     # Aggregate alias: every expression downstream is written against the fleet
     # total, so the single-unit algebra is untouched when the fleet has one unit.
     dvFTsize = pulp.lpSum(ftsize[g] for g in NG)
@@ -325,13 +498,35 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
     pvcurt = {t: pulp.LpVariable(f"pvcurt_{t}", lowBound=0) for t in T}
     ftgen = {g: {t: pulp.LpVariable(f"ftprod_{g}_{t}", lowBound=0) for t in T}
              for g in NG}
-    ftprod = {t: pulp.lpSum(ftgen[g][t] for g in NG) for t in T}
+    # ftgen is RATED production -- what O&M, fuel and the turndown floor see.
+    # A unit allowed to curtail delivers ftgen - ftcurt to the load balance.
+    ftcurt = {g: ({t: pulp.LpVariable(f"ftcurt_{g}_{t}", lowBound=0) for t in T}
+                  if (fts[g].enabled and fts[g].can_curtail) else None) for g in NG}
+    ftprod = {t: pulp.lpSum((ftgen[g][t] - ftcurt[g][t]) if ftcurt[g] is not None
+                            else ftgen[g][t] for g in NG) for t in T}
     ftu = {g: ({t: pulp.LpVariable(f"ftON_{g}_{t}", cat="Binary") for t in T}
                if ft_needs_bin[g] else None) for g in NG}
+    # Start / stop indicators. Continuous in [0, 1]: with u binary and
+    # su - sd = u[t] - u[t-1] they take integral values at any optimum.
+    ft_needs_uc = {g: bool(fts[g].enabled and (fts[g].start_cost > 0.0
+                                               or fts[g].min_up_hours > 1
+                                               or fts[g].min_down_hours > 1))
+                   for g in NG}
+    ftsu = {g: ({t: pulp.LpVariable(f"ftSU_{g}_{t}", lowBound=0, upBound=1) for t in T}
+                if ft_needs_uc[g] else None) for g in NG}
+    ftsd = {g: ({t: pulp.LpVariable(f"ftSD_{g}_{t}", lowBound=0, upBound=1) for t in T}
+                if ft_needs_uc[g] else None) for g in NG}
     bchg = {b: {t: pulp.LpVariable(f"chg_{b}_{t}", lowBound=0) for t in T} for b in NB}
     bgchg = {b: {t: pulp.LpVariable(f"gridchg_{b}_{t}", lowBound=0) for t in T} for b in NB}
     bdis = {b: {t: pulp.LpVariable(f"dis_{b}_{t}", lowBound=0) for t in T} for b in NB}
     bsoc = {b: {t: pulp.LpVariable(f"soc_{b}_{t}", lowBound=0) for t in T} for b in NB}
+    def _soc_prev(b, t):
+        if t > 0:
+            return bsoc[b][t - 1]
+        if sts[b].optimize_soc_init_fraction:
+            return bsoc[b][T[-1]]
+        return sts[b].soc_init_fraction * ben[b]
+
     chg = {t: pulp.lpSum(bchg[b][t] for b in NB) for t in T}       # into storage (AC)
     gridchg = {t: pulp.lpSum(bgchg[b][t] for b in NB) for t in T}
     dis = {t: pulp.lpSum(bdis[b][t] for b in NB) for t in T}       # out of storage (AC)
@@ -347,10 +542,17 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
     _heat_fuel = None if inp.off_grid_flag else inp.heating_fuel_mmbtu
     # Thermal load the boiler must serve, less whatever CHP recovers.
     thermal_load_mmbtu = ((_heat_fuel or 0.0) * inp.boiler_efficiency)
+    if inp.heating_loads_kw is not None and not inp.off_grid_flag:
+        thermal_load_mmbtu = sum(list(inp.heating_loads_kw)[:H]) / 293.07107
     chp_thermal = pulp.LpVariable("chp_thermal_mmbtu", lowBound=0)
     boiler_thermal = pulp.LpVariable("boiler_thermal_mmbtu", lowBound=0)
 
     tar = inp.tariff
+    # A horizon shorter than a year keeps only the demand-period hours it contains.
+    tou_periods = ([[t for t in hrs if t < H] for hrs in tar.tou_demand_periods]
+                   if tar is not None else [])
+    mon_periods = ([[t for t in hrs if t < H] for hrs in tar.monthly_demand_periods]
+                   if tar is not None else [])
     tou_peak, mon_peak = [], []
     if tar is not None:
         tou_peak = [pulp.LpVariable(f"tou_{i}", lowBound=0) for i in range(len(tar.tou_demand_rates))]
@@ -358,26 +560,64 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
 
     # ----------------------------------------------------------- constraints
     # PV production ties to size (tech_constraints.jl: dvRatedProduction == prodfactor * dvSize)
-    pf = inp.pv.production_factor or [0.0] * HOURS
+    pf = inp.pv.production_factor or [0.0] * H
     for t in T:
         m += pvprod[t] + pvcurt[t] == pf[t] * dvPVsize * lvl_pv, f"pv_prod_{t}"
         if not inp.pv.can_curtail:
             m += pvcurt[t] == 0, f"pv_nocurt_{t}"
         for g in NG:
-            # Rated production never exceeds installed size (tech_constraints.jl)
-            m += ftgen[g][t] <= ftsize[g], f"ft_cap_{g}_{t}"
+            _pf = ft_pf[g][t] if ft_pf[g] is not None else None
+            _M = ft_M[g]
+            # Rated production never exceeds installed size (tech_constraints.jl).
+            # ftgen is what the unit delivers, pf x rated in REopt's terms, so an
+            # availability below 1 scales the ceiling and the turndown floor alike.
+            if _pf is None:
+                m += ftgen[g][t] <= ftsize[g], f"ft_cap_{g}_{t}"
+            else:
+                m += ftgen[g][t] <= _pf * ftsize[g], f"ft_cap_{g}_{t}"
             if ft_needs_bin[g]:
                 # generator_constraints.jl:22-24 -- off means exactly zero.
                 # The big-M is the unit's own upper bound, as REopt uses max_sizes.
-                m += ftgen[g][t] <= fts[g].max_kw * ftu[g][t], f"ft_on_{g}_{t}"
+                m += ftgen[g][t] <= _M * ftu[g][t], f"ft_on_{g}_{t}"
                 if fts[g].min_turn_down_fraction > 0:
-                    # generator_constraints.jl:32-35
-                    m += (fts[g].min_turn_down_fraction * ftsize[g] - ftgen[g][t]
-                          <= fts[g].max_kw * (1 - ftu[g][t])), f"ft_turndown_{g}_{t}"
+                    # generator_constraints.jl:32-35 / chp_constraints.jl:198-201
+                    if _pf is None:
+                        m += (fts[g].min_turn_down_fraction * ftsize[g] - ftgen[g][t]
+                              <= _M * (1 - ftu[g][t])), f"ft_turndown_{g}_{t}"
+                    else:
+                        m += (_pf * fts[g].min_turn_down_fraction * ftsize[g] - ftgen[g][t]
+                              <= _pf * _M * (1 - ftu[g][t])), f"ft_turndown_{g}_{t}"
+                    if fts[g].min_kw == fts[g].max_kw:
+                        # Fixed nameplate: the same floor written without a big-M.
+                        # A valid inequality -- the integer solutions are identical,
+                        # the LP relaxation is tighter, branch and bound is shorter.
+                        m += (ftgen[g][t] >= (1.0 if _pf is None else _pf)
+                              * fts[g].min_turn_down_fraction * _M
+                              * ftu[g][t]), f"ft_turndown_tight_{g}_{t}"
 
-    # Land use -- tech_constraints.jl:26-31
-    if inp.land_acres is not None and inp.pv.enabled:
-        m += inp.pv.acres_per_kw * dvPVsize <= inp.land_acres, "land"
+    # ---- beyond REopt: spill, starts, minimum up and down time ----
+    for g in NG:
+        if ftcurt[g] is not None:
+            for t in T:
+                m += ftcurt[g][t] <= ftgen[g][t], f"ft_curt_{g}_{t}"
+        if ftsu[g] is None:
+            continue
+        MU = max(1, int(fts[g].min_up_hours))
+        MD = max(1, int(fts[g].min_down_hours))
+        for t in T:
+            # cyclic, like the state-of-charge balance: the period is closed
+            prev = ftu[g][T[-1]] if t == 0 else ftu[g][t - 1]
+            m += ftsu[g][t] - ftsd[g][t] == ftu[g][t] - prev, f"ft_switch_{g}_{t}"
+            if MU > 1:
+                m += (ftu[g][t] >= pulp.lpSum(ftsu[g][(t - k) % H] for k in range(MU))
+                      ), f"ft_minup_{g}_{t}"
+            if MD > 1:
+                m += (1 - ftu[g][t] >= pulp.lpSum(ftsd[g][(t - k) % H] for k in range(MD))
+                      ), f"ft_mindown_{g}_{t}"
+
+    # Land use: REopt adds LandConstraint only alongside CST (tech_constraints.jl:23);
+    # for PV alone the space limit is the max size set above (reopt_inputs.jl:620-645),
+    # which for "both" is roof + land -- a separate land cap would cut that to land only.
 
     # Storage sizing -- storage_constraints.jl:2-20, per unit
     for b in NB:
@@ -398,12 +638,22 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
             # storage_constraints.jl:151 -- dvStorageEnergy <= max_kwh * bin
             if b_npc_const[b]:
                 m += ben[b] <= st.max_kwh * bconst[b], f"storage_const_bin_{b}"
-            # SOC dynamics -- storage_constraints.jl:39-73 (general dispatch)
+            # SOC dynamics -- storage_constraints.jl:39-73 (general dispatch).
+            # (4a): the state before hour 1 is soc_init_fraction x energy and the
+            # last state is free -- REopt's default. With optimize_soc_init_fraction
+            # the first state is instead tied to the last one (a closed cycle).
             for t in T:
-                prev = bsoc[b][T[-1]] if t == 0 else bsoc[b][t - 1]
+                prev = _soc_prev(b, t)
                 m += bsoc[b][t] == prev + st.charge_efficiency * bchg[b][t] \
                      + st.grid_charge_efficiency * bgchg[b][t] \
                      - bdis[b][t] / st.discharge_efficiency, f"soc_bal_{b}_{t}"
+            # (4l): "Custom hourly state of charge" -- fixed series +- tolerance
+            if st.fixed_soc_series_fraction is not None:
+                _fx = list(st.fixed_soc_series_fraction)[:H]
+                _tol = st.fixed_soc_series_fraction_tolerance
+                for t in T:
+                    m += bsoc[b][t] <= (_tol + _fx[t]) * ben[b], f"soc_fix_hi_{b}_{t}"
+                    m += bsoc[b][t] >= (-_tol + _fx[t]) * ben[b], f"soc_fix_lo_{b}_{t}"
         else:
             for t in T:
                 m += bchg[b][t] == 0, f"nochg_{b}_{t}"
@@ -463,7 +713,7 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
                 # 3. battery: bounded by usable stored energy and by its power rating
                 if any_storage:
                     m += or_bat[t] <= pulp.lpSum(
-                        (bsoc[b][T[-1]] if t == 0 else bsoc[b][t - 1])
+                        _soc_prev(b, t)
                         - sts[b].soc_min_fraction * ben[b]
                         - bdis[b][t] / sts[b].discharge_efficiency
                         for b in NB if sts[b].enabled), f"or_bat_e_{t}"
@@ -482,15 +732,141 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
 
     # Peak demand tracking for demand charges -- electric_tariff / ElectricUtility
     if tar is not None:
-        for i, hrs in enumerate(tar.tou_demand_periods):
+        for i, hrs in enumerate(tou_periods):
             for t in hrs:
                 m += tou_peak[i] >= grid[t] + gridchg[t], f"toupk_{i}_{t}"
         for mo in range(12):
-            for t in tar.monthly_demand_periods[mo]:
+            for t in mon_periods[mo]:
                 m += mon_peak[mo] >= grid[t] + gridchg[t], f"monpk_{mo}_{t}"
 
+    # ---- segmented CHP cost curve -- cost_curve_constraints.jl (7f)-(7h) ----
+    # A unit on a cost curve (or with a minimum non-zero size) buys its new
+    # capacity on exactly one segment. REopt's last breakpoint is a 1e10
+    # sentinel; it is clamped to the unit's max_kw here, which leaves the
+    # feasible set unchanged (purchase <= max_kw anyway) and keeps the big-M sane.
+    ft_seg, ft_purch = {}, {}
+    for g in NG:
+        u = fts[g]
+        if not u.enabled:
+            continue
+        if ft_curve[g] is not None:
+            _z = [pulp.LpVariable(f"dvSegmentSystemSize_{g}_{k}", lowBound=0)
+                  for k in range(len(ft_curve[g]))]
+            _y = [pulp.LpVariable(f"binSegment_{g}_{k}", cat="Binary")
+                  for k in range(len(ft_curve[g]))]
+            for k, sg in enumerate(ft_curve[g]):
+                m += _z[k] >= sg["min"] * _y[k], f"seg_min_{g}_{k}"
+                m += _z[k] <= min(sg["max"], u.max_kw) * _y[k], f"seg_max_{g}_{k}"
+            m += pulp.lpSum(_z) == ftsize[g] - u.existing_kw, f"seg_sum_{g}"
+            m += pulp.lpSum(_y) <= 1, f"seg_one_{g}"
+            ft_seg[g] = (_z, _y)
+        elif u.existing_kw > 0:
+            # tech_constraints.jl: dvPurchaseSize >= dvSize - existing_kw
+            ft_purch[g] = pulp.LpVariable(f"dvPurchaseSize_FT_{g}", lowBound=0)
+            m += ft_purch[g] >= ftsize[g] - u.existing_kw, f"purchase_{g}"
+
+    # ---- production based incentive -- production_incentive_constraints.jl ----
+    _pbi = []
+    for g in NG:
+        u = fts[g]
+        if not (u.enabled and u.production_incentive_per_kwh > 0):
+            continue
+        _pwf_pbi = annuity(int(u.production_incentive_years), 0.0, f.owner_discount_rate_fraction)
+        _dv = pulp.LpVariable(f"dvProdIncent_{g}", lowBound=0)
+        _bb = pulp.LpVariable(f"binProdIncent_{g}", cat="Binary")
+        m += _dv <= _bb * u.production_incentive_max_benefit * _pwf_pbi, f"pbi_ub_{g}"
+        m += (_dv <= u.production_incentive_per_kwh * _pwf_pbi
+              * pulp.lpSum(ftgen[g][t] for t in T)), f"pbi_prod_{g}"
+        m += ftsize[g] <= u.production_incentive_max_kw + ft_M[g] * (1 - _bb), f"pbi_size_{g}"
+        _pbi.append(_dv)
+    TotalProductionIncentive = pulp.lpSum(_pbi) if _pbi else 0.0
+
+    # ---- electrical load following -- chp_constraints.jl add_chp_electrical_... ----
+    for g in NG:
+        u = fts[g]
+        if not (u.enabled and u.follow_electrical_load):
+            continue
+        _Me = 2 * max(ft_M[g], max(loads) if loads else 0.0)
+        _be = {t: pulp.LpVariable(f"binCHPSizeExceedsElectricLoad_{g}_{t}", cat="Binary") for t in T}
+        for t in T:
+            _p = ft_pf[g][t] if ft_pf[g] is not None else 1.0
+            m += _Me * _be[t] >= _p * ftsize[g] - loads[t], f"fel_a_{g}_{t}"
+            m += _Me * _be[t] <= _Me - (loads[t] - _p * ftsize[g]), f"fel_b_{g}_{t}"
+            if _p > 0:
+                # rated >= size - M b, delivered = pf x rated
+                m += ftgen[g][t] >= _p * ftsize[g] - _p * _Me * _be[t], f"fel_c_{g}_{t}"
+            m += grid[t] + gridchg[t] <= _Me * (1 - _be[t]), f"fel_d_{g}_{t}"
+
+    # ---- hourly heat balance -- thermal_tech_constraints.jl / chp_constraints.jl ----
+    # REopt balances heat in every hour: CHP heat serves that hour's load or is
+    # wasted; the existing boiler makes up the rest. The annual aggregate this
+    # replaces let July CHP heat pay down January boiler fuel.
+    _hl = None if inp.off_grid_flag else (list(inp.heating_loads_kw)[:H]
+                                          if inp.heating_loads_kw is not None else None)
+    _heat_units = [g for g in NG if fts[g].enabled and fts[g].kind == "CHP"
+                   and fts[g].thermal_efficiency_full_load > 0]
+    boil_h, chpheat_h, thI = {}, {}, {}
+    boiler_max_kw = 0.0
+    _bsize = None
+    ExistingBoilerCapex = 0.0
+    if _hl is not None:
+        boiler_max_kw = inp.boiler_max_thermal_factor_on_peak_load * (max(_hl) if _hl else 0.0)
+        boil_h = {t: pulp.LpVariable(f"boilerHeat_{t}", lowBound=0, upBound=boiler_max_kw) for t in T}
+        if _heat_units:
+            chpheat_h = {t: pulp.LpVariable(f"chpHeatToLoad_{t}", lowBound=0) for t in T}
+            for g in _heat_units:
+                if abs(ft_th_icept[g]) > 1.0e-7:
+                    _ic = ft_th_icept[g]
+                    thI[g] = {t: pulp.LpVariable(f"dvHeatingProductionYIntercept_{g}_{t}") for t in T}
+                    for t in T:
+                        m += thI[g][t] <= _ic * ftsize[g], f"thI_a1_{g}_{t}"
+                        m += thI[g][t] <= _ic * ft_M[g] * ftu[g][t], f"thI_a2_{g}_{t}"
+                        m += (thI[g][t] >= _ic * ftsize[g]
+                              - _ic * ft_M[g] * (1 - ftu[g][t])), f"thI_b_{g}_{t}"
+        for t in T:
+            m += (boil_h[t] + (chpheat_h[t] if chpheat_h else 0.0) == _hl[t]), f"heat_bal_{t}"
+            if chpheat_h:
+                # heat to load <= heat produced; the difference is dvProductionToWaste
+                m += chpheat_h[t] <= pulp.lpSum(
+                    ft_th_slope[g] * ftgen[g][t] + (thI[g][t] if g in thI else 0.0)
+                    for g in _heat_units), f"chp_heat_{t}"
+        # heating load following (beta in the web tool)
+        for g in _heat_units:
+            u = fts[g]
+            if not u.follow_heating_load:
+                continue
+            _sl, _ic = ft_th_slope[g], ft_th_icept[g]
+            _Mh = 2 * max(ft_M[g] * (abs(_sl) + abs(_ic)), max(_hl) if _hl else 0.0, 1.0)
+            _bh = {t: pulp.LpVariable(f"binCHPSizeExceedsHeatingLoad_{g}_{t}", cat="Binary") for t in T}
+            for t in T:
+                _p = ft_pf[g][t] if ft_pf[g] is not None else 1.0
+                _cap = (_p * _sl + (_ic if _p > 0.0 else 0.0)) * ftsize[g]
+                m += _Mh * _bh[t] >= _cap - _hl[t], f"fhl_a_{g}_{t}"
+                m += _Mh * _bh[t] <= _Mh - (_hl[t] - _cap), f"fhl_b_{g}_{t}"
+                if _p > 0:
+                    m += ftgen[g][t] >= _p * ftsize[g] - _p * ft_M[g] * _bh[t], f"fhl_c_{g}_{t}"
+                m += boil_h[t] <= _Mh * (1 - _bh[t]), f"fhl_d_{g}_{t}"
+        # existing boiler capital cost -- existing_boiler.jl:109-114, thermal_tech_constraints.jl:313
+        _b_per_kw = 0.0
+        if inp.boiler_installed_cost_per_mmbtu_per_hour and not inp.boiler_installed_cost_dollars:
+            _b_per_kw = (inp.boiler_installed_cost_per_mmbtu_per_hour / 293.07107
+                         * inp.boiler_max_thermal_factor_on_peak_load)
+        if _b_per_kw or inp.boiler_installed_cost_dollars:
+            _bsize = pulp.LpVariable("dvSize_ExistingBoiler", lowBound=0, upBound=boiler_max_kw)
+            for t in T:
+                m += boil_h[t] <= _bsize, f"boiler_size_{t}"
+            ExistingBoilerCapex = _b_per_kw * _bsize
+            if inp.boiler_installed_cost_dollars:
+                _bin_b = pulp.LpVariable("binExistingBoiler", cat="Binary")
+                m += _bsize <= _bin_b * max(boiler_max_kw, 1.0), "boiler_bin"
+                ExistingBoilerCapex = ExistingBoilerCapex + inp.boiler_installed_cost_dollars * _bin_b
+        # the annual reporting variables become sums of the hourly ones
+        m += chp_thermal == (pulp.lpSum(chpheat_h[t] for t in T) / 293.07107
+                             if chpheat_h else 0.0), "chp_thermal_sum"
+        m += boiler_thermal == pulp.lpSum(boil_h[t] for t in T) / 293.07107, "boiler_thermal_sum"
+
     # Thermal balance: boiler covers whatever CHP does not.
-    if thermal_load_mmbtu > 0:
+    elif thermal_load_mmbtu > 0:
         m += boiler_thermal + chp_thermal == thermal_load_mmbtu, "thermal_balance"
         _heat_units = [g for g in NG if fts[g].enabled and fts[g].kind == "CHP"
                        and fts[g].thermal_efficiency_full_load > 0]
@@ -508,8 +884,15 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
 
     # ------------------------------------------------------------- objective
     # reopt.jl:511 -- Costs
-    TotalTechCapCosts = pv_slope * dvPVsize + pulp.lpSum(
-        ft_slopes[g] * ftsize[g] for g in NG)
+    def _ft_capex(g):
+        if g in ft_seg:
+            _z, _y = ft_seg[g]
+            return pulp.lpSum(sg["slope"] * _z[k] + sg["yint"] * _y[k]
+                              for k, sg in enumerate(ft_curve[g]))
+        if g in ft_purch:
+            return ft_slopes[g] * ft_purch[g]
+        return ft_slopes[g] * ftsize[g]
+    TotalTechCapCosts = pv_slope * dvPVsize + pulp.lpSum(_ft_capex(g) for g in NG)
     TotalStorageCapCosts = pulp.lpSum(
         b_npc_kw[b] * bpow[b] + b_npc_kwh[b] * ben[b] + b_npc_const[b] * bconst[b]
         for b in NB)
@@ -535,8 +918,13 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
     else:
         ElectricStorageCapCost = 0.0
         ElectricStorageOMCost = 0.0
+    def _rated_sum(g):
+        # delivered = pf x rated, so rated = delivered / pf wherever pf > 0
+        if ft_pf[g] is None:
+            return pulp.lpSum(ftgen[g][t] for t in T)
+        return pulp.lpSum(ftgen[g][t] * (1.0 / ft_pf[g][t]) for t in T if ft_pf[g][t] > 0)
     TotalPerUnitProdOMCosts = pwf_om * pulp.lpSum(
-        fts[g].om_cost_per_kwh * pulp.lpSum(ftgen[g][t] for t in T) for g in NG)
+        fts[g].om_cost_per_kwh * _rated_sum(g) for g in NG)
 
     # Fuel, per unit: generator_constraints.jl:8-12
     #     usage = slope * production + intercept * on
@@ -560,8 +948,18 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
                 coef *= u.max_kw
             usage = usage + coef * pulp.lpSum(ftu[g][t] for t in T)
         ft_fuel_units[g] = usage
-        price = (u.fuel_cost_per_gallon if u.kind == "Generator" else u.fuel_cost_per_mmbtu)
-        TotalFuelCosts = TotalFuelCosts + pwf_fuel * price * usage
+        _pwf = pwf_fuel_chp if u.kind == "CHP" else pwf_fuel
+        if u.kind == "CHP" and u.fuel_cost_per_mmbtu_monthly:
+            # "CHP fuel cost varies by month?" -- each hour priced at its month
+            _mp = [u.fuel_cost_per_mmbtu_monthly[_MONTH_OF_HOUR[t]] for t in T]
+            _hourly = (pulp.lpSum(_mp[t] * ft_slope_fuel[g] * ftgen[g][t] for t in T))
+            if ft_needs_bin[g] and ft_icept[g] > 0.0:
+                _c = ft_icept[g] * (u.max_kw if inp.fuel_intercept_basis == "rated" else 1.0)
+                _hourly = _hourly + pulp.lpSum(_mp[t] * _c * ftu[g][t] for t in T)
+            TotalFuelCosts = TotalFuelCosts + _pwf * _hourly
+        else:
+            price = (u.fuel_cost_per_gallon if u.kind == "Generator" else u.fuel_cost_per_mmbtu)
+            TotalFuelCosts = TotalFuelCosts + _pwf * price * usage
 
     if tar is not None:
         # Export credit: net metering pays the retail energy rate, net billing the
@@ -569,9 +967,9 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
         if inp.compensation_type == "net_metering":
             export_rate = list(tar.energy_cost_per_kwh)
         elif inp.compensation_type in ("net_billing", "net_meter_net_bill"):
-            export_rate = [inp.wholesale_rate] * HOURS
+            export_rate = [inp.wholesale_rate] * H
         else:
-            export_rate = [0.0] * HOURS
+            export_rate = [0.0] * H
         energy_cost = (pulp.lpSum(tar.energy_cost_per_kwh[t] * (grid[t] + gridchg[t]) for t in T)
                        - pulp.lpSum(export_rate[t] * export[t] for t in T))
         demand_cost = pulp.lpSum(tar.tou_demand_rates[i] * tou_peak[i] for i in range(len(tou_peak))) \
@@ -585,17 +983,60 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
     ExistingBoilerFuelCost = (
         pwf_boiler * inp.existing_boiler_fuel_cost_per_mmbtu
         * (boiler_thermal / inp.boiler_efficiency)) if thermal_load_mmbtu > 0 else 0.0
+    if boil_h and inp.boiler_fuel_cost_per_mmbtu_monthly:
+        ExistingBoilerFuelCost = pwf_boiler * pulp.lpSum(
+            inp.boiler_fuel_cost_per_mmbtu_monthly[_MONTH_OF_HOUR[t]]
+            * boil_h[t] / (inp.boiler_efficiency * 293.07107) for t in T)
+
+    # Beyond REopt. Built only when some unit carries the cost, so a scenario
+    # without them adds a literal 0.0 and the objective is unchanged.
+    _start_terms = [fts[g].start_cost * pulp.lpSum(ftsu[g][t] for t in T)
+                    for g in NG if ftsu[g] is not None and fts[g].start_cost > 0.0]
+    TotalStartCosts = pwf_om * pulp.lpSum(_start_terms) if _start_terms else 0.0
+    _hour_terms = [fts[g].om_cost_per_running_hour * pulp.lpSum(ftu[g][t] for t in T)
+                   for g in NG if ftu[g] is not None and fts[g].om_cost_per_running_hour > 0.0]
+    TotalRunHourCosts = pwf_om * pulp.lpSum(_hour_terms) if _hour_terms else 0.0
+    _cycle_terms = [sts[b].discharge_cost_per_kwh * pulp.lpSum(bdis[b][t] for t in T)
+                    for b in NB if sts[b].enabled and sts[b].discharge_cost_per_kwh > 0.0]
+    TotalCyclingCosts = pwf_om * pulp.lpSum(_cycle_terms) if _cycle_terms else 0.0
+    _standby = [fts[g].standby_rate_per_kw_per_month * ftsize[g]
+                for g in NG if fts[g].enabled and fts[g].standby_rate_per_kw_per_month > 0]
+    TotalCHPStandbyCharges = pwf_e * 12 * pulp.lpSum(_standby) if _standby else 0.0
 
     m += (TotalTechCapCosts + TotalStorageCapCosts
           + (TotalPerUnitSizeOMCosts + ElectricStorageOMCost) * (1 - tax_own)
           + TotalPerUnitProdOMCosts * (1 - tax_own)
           + TotalFuelCosts * (1 - tax_off)
           + TotalElecBill * (1 - tax_off)
-          + ExistingBoilerFuelCost * (1 - tax_off)), "Costs"
+          + ExistingBoilerFuelCost * (1 - tax_off)
+          + (TotalStartCosts + TotalCyclingCosts + TotalRunHourCosts) * (1 - tax_own)
+          # reopt.jl:525 -- CHP standby charge, deductible for the offtaker
+          + TotalCHPStandbyCharges * (1 - tax_off)
+          # reopt.jl:531 -- production incentive, taxable to the owner
+          - TotalProductionIncentive * (1 - tax_own)
+          # reopt.jl:582 -- existing boiler capital cost, never incentivised
+          + ExistingBoilerCapex), "Costs"
 
     # ---------------------------------------------------------------- solve
-    solver = pulp.HiGHS(msg=msg, timeLimit=time_limit)
+    _hopts = dict(msg=msg, timeLimit=time_limit)
+    if mip_gap is not None:
+        _hopts["gapRel"] = mip_gap
+    solver = pulp.HiGHS(**_hopts)
     status = m.solve(solver)
+    # Reporting only: how solved is "solved". pulp keeps the HiGHS instance on the
+    # problem; the MIP gap and dual bound turn a time-limited run into a range.
+    solver_info = {}
+    _hs = getattr(m, "solverModel", None)
+    if _hs is not None:
+        try:
+            _hi = _hs.getInfo()
+            solver_info = {
+                "model_status": _hs.modelStatusToString(_hs.getModelStatus()),
+                "mip_gap": float(_hi.mip_gap),
+                "mip_dual_bound": float(_hi.mip_dual_bound),
+            }
+        except Exception:  # an LP, or an older highspy
+            solver_info = {}
 
     v = lambda x: float(pulp.value(x) or 0.0)
     pv_kw, ft_kw = v(dvPVsize), v(dvFTsize)
@@ -612,6 +1053,25 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
                     + (sts[b].installed_cost_constant if e > 1e-6 else 0.0))
         return tot
     bat_basis = _bat_basis()
+
+    def _ft_upfront(g):
+        """CHPCapexNoIncentives: the size-cost curve without incentives."""
+        u = fts[g]
+        if not u.enabled:
+            return 0.0
+        purchase = max(0.0, v(ftsize[g]) - u.existing_kw)
+        if g in ft_seg and u.tech_sizes_for_cost_curve and u.installed_cost_curve_per_kw:
+            c, sz = list(u.installed_cost_curve_per_kw), list(u.tech_sizes_for_cost_curve)
+            sl, yi = [c[0]], [0.0]
+            for k in range(1, len(sz)):
+                ts = float(round((c[k] * sz[k] - c[k - 1] * sz[k - 1]) / (sz[k] - sz[k - 1])))
+                yi.append(float(round(c[k - 1] * sz[k - 1] - ts * sz[k - 1])))
+                sl.append(ts)
+            sl.append(c[-1])
+            yi.append(0.0)
+            _z, _y = ft_seg[g]
+            return sum(sl[k] * v(_z[k]) + yi[k] * v(_y[k]) for k in range(min(len(sl), len(_z))))
+        return u.installed_cost_per_kw * purchase
     bat_om_y1 = sum(
         sts[b].om_cost_fraction_of_installed_cost
         * (sts[b].installed_cost_per_kw * v(bpow[b])
@@ -632,11 +1092,19 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
             "size_kw": kw,
             "energy_kwh": kwh,
             "running_hours": hrs,
-            "capacity_factor": (kwh / (kw * HOURS)) if kw > 1e-9 else 0.0,
+            "capacity_factor": (kwh / (kw * H)) if kw > 1e-9 else 0.0,
+            "spill_kwh": (sum(v(ftcurt[g][t]) for t in T) if ftcurt[g] is not None else 0.0),
             "fuel_units": float(pulp.value(ft_fuel_units[g]) or 0.0),
             "fuel_unit_name": ("gallons" if fts[g].kind == "Generator" else "MMBtu"),
+            "existing_kw": fts[g].existing_kw,
+            "purchase_kw": max(0.0, kw - fts[g].existing_kw),
+            "segment": (next((k + 1 for k, _y in enumerate(ft_seg[g][1]) if v(_y) > 0.5), None)
+                        if g in ft_seg else None),
+            "unavailable_hours": (sum(1 for t in T if ft_pf[g][t] <= 0.0)
+                                  if ft_pf[g] is not None else 0),
+            "production_incentive": 0.0,
             "starts": (sum(1 for t in T
-                           if v(ftu[g][t]) > 0.5 and v(ftu[g][t - 1]) < 0.5)
+                           if v(ftu[g][t]) > 0.5 and v(ftu[g][(t - 1) % H]) < 0.5)
                        if ft_needs_bin[g] else None),
         })
     bat_kw, bat_kwh = v(dvStoragePower), v(dvStorageEnergy)
@@ -662,6 +1130,17 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
             (sts[b].name or f"Battery {b + 1}"): [v(bsoc[b][t]) for t in T]
             for b in NB if sts[b].enabled
         },
+        "fueltech_unit_spill_kw": {
+            (fts[g].name or fts[g].label or f"Unit {g + 1}"): [v(ftcurt[g][t]) for t in T]
+            for g in NG if fts[g].enabled and ftcurt[g] is not None
+        },
+        "heating_load_kw": (list(_hl) if _hl is not None else []),
+        "chp_heat_to_load_kw": [v(chpheat_h[t]) for t in T] if chpheat_h else [],
+        "boiler_heat_kw": [v(boil_h[t]) for t in T] if boil_h else [],
+        "chp_heat_waste_kw": ([max(0.0, sum(ft_th_slope[g] * v(ftgen[g][t])
+                                           + (v(thI[g][t]) if g in thI else 0.0)
+                                           for g in _heat_units) - v(chpheat_h[t])) for t in T]
+                              if chpheat_h else []),
         "fueltech_unit_on": {
             (fts[g].name or fts[g].label or f"Unit {g + 1}"): [v(ftu[g][t]) for t in T]
             for g in NG if fts[g].enabled and ft_needs_bin[g]
@@ -676,6 +1155,7 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
 
     out = {
         "status": pulp.LpStatus[status],
+        "solver": solver_info,
         "objective_lifecycle_cost": float(pulp.value(m.objective) or 0.0),
         "sizes": {
             "pv_kw": pv_kw, "battery_kw": bat_kw, "battery_kwh": bat_kwh,
@@ -712,9 +1192,12 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
             "storage_npc_per_kw": npc_kw,
             "storage_npc_per_kwh": npc_kwh,
             "storage_npc_constant": npc_const,
+            # REopt results Financial.initial_capital_costs_after_incentives:
+            # the capital terms of the objective, net of ITC, MACRS and rebates
+            "lifecycle_capex": v(TotalTechCapCosts + TotalStorageCapCosts),
             "upfront_before_incentives": (
                 inp.pv.installed_cost_per_kw * pv_kw
-                + sum(fts[g].installed_cost_per_kw * v(ftsize[g]) for g in NG)
+                + sum(_ft_upfront(g) for g in NG)
                 + bat_basis
             ),
         },
@@ -725,6 +1208,13 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
                 + fts[g].om_cost_per_kwh * sum(v(ftgen[g][t]) for t in T)
                 for g in NG),
             "year1_storage": bat_om_y1,
+            "year1_starts": sum(fts[g].start_cost * sum(v(ftsu[g][t]) for t in T)
+                                for g in NG if ftsu[g] is not None),
+            "year1_running_hours": sum(fts[g].om_cost_per_running_hour * sum(v(ftu[g][t]) for t in T)
+                                       for g in NG if ftu[g] is not None),
+            "year1_storage_cycling": sum(sts[b].discharge_cost_per_kwh
+                                         * sum(v(bdis[b][t]) for t in T)
+                                         for b in NB if sts[b].enabled),
         },
         "thermal": {
             "heating_fuel_mmbtu": _heat_fuel or 0.0,
@@ -785,17 +1275,18 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
         }
         # ---- pro-forma: payback, IRR, PV LCOE (results/proforma.jl, financial.jl:320) ----
         bau_year1 = (sum(tar.energy_cost_per_kwh[t] * loads[t] for t in T)
-                     + sum(r_ * max(loads[h] for h in hrs)
-                           for r_, hrs in zip(tar.tou_demand_rates, tar.tou_demand_periods))
-                     + sum(tar.monthly_demand_rates[mo] * max(loads[h] for h in tar.monthly_demand_periods[mo])
+                     + sum(r_ * max((loads[h] for h in hrs), default=0.0)
+                           for r_, hrs in zip(tar.tou_demand_rates, tou_periods))
+                     + sum(tar.monthly_demand_rates[mo] * max((loads[h] for h in mon_periods[mo]), default=0.0)
                            for mo in range(12))
                      + tar.fixed_monthly_charge * 12)
         pv_capex = inp.pv.installed_cost_per_kw * pv_kw
         bat_capex = bat_basis
-        ft_capex = sum(fts[g].installed_cost_per_kw * v(ftsize[g]) for g in NG)
+        ft_capex = sum(_ft_upfront(g) for g in NG)
         initial_capital = pv_capex + bat_capex + ft_capex
         y1_om_total = (out["om"]["year1_pv"] + out["om"]["year1_storage"]
-                       + out["om"]["year1_fueltech"])
+                       + out["om"]["year1_fueltech"] + out["om"]["year1_starts"]
+                       + out["om"]["year1_storage_cycling"] + out["om"]["year1_running_hours"])
         sh_pv = depreciation_tax_shields(pv_capex, inp.pv.federal_itc_fraction,
                                          inp.pv.macrs_option_years, inp.pv.macrs_bonus_fraction,
                                          inp.pv.macrs_itc_reduction, tax_own, f.analysis_years)
@@ -803,27 +1294,170 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False) -> d
                                           s.macrs_bonus_fraction, s.macrs_itc_reduction,
                                           tax_own, f.analysis_years) if any_storage else [0.0] * (f.analysis_years + 1)
         shields = [a + b for a, b in zip(sh_pv, sh_bat)]
+        for g in NG:
+            if fts[g].enabled and fts[g].kind == "CHP" and _ft_upfront(g) > 0:
+                _sh = depreciation_tax_shields(
+                    _ft_upfront(g), fts[g].federal_itc_fraction, fts[g].macrs_option_years,
+                    fts[g].macrs_bonus_fraction, fts[g].macrs_itc_reduction,
+                    tax_own, f.analysis_years)
+                shields = [a + b for a, b in zip(shields, _sh)]
         itc_amt = pv_capex * inp.pv.federal_itc_fraction + sum(
             (sts[b].installed_cost_per_kw * v(bpow[b])
              + sts[b].installed_cost_per_kwh * v(ben[b])
              + (sts[b].installed_cost_constant if v(ben[b]) > 1e-6 else 0.0))
             * sts[b].total_itc_fraction for b in NB if sts[b].enabled)
-        pf = proforma_build(
-            years=f.analysis_years, initial_capital=initial_capital,
-            bau_year1_bill=bau_year1,
-            opt_year1_bill=(out["utility"]["year1_energy_cost"]
-                            + out["utility"]["year1_tou_demand_cost"]
-                            + out["utility"]["year1_monthly_demand_cost"]
-                            + out["utility"]["year1_fixed_cost"]),
-            year1_om=y1_om_total, elec_escalation=f.elec_cost_escalation_rate_fraction,
-            om_escalation=f.om_cost_escalation_rate_fraction, tax_rate=tax_off,
+        # ---- REopt's pro-forma, proforma.jl host-owned branch ----------------
+        _n = f.analysis_years
+        _m = PF.Metrics(_n)
+        _om_esc = f.om_cost_escalation_rate_fraction
+        if inp.pv.enabled and pv_kw > 1e-9:
+            PF.add_tech(_m, om_escalation=_om_esc, capital_cost=pv_capex, new_kw=pv_kw,
+                        annual_om=pv_kw * inp.pv.om_cost_per_kw,
+                        federal_itc_fraction=inp.pv.federal_itc_fraction,
+                        federal_rebate_per_kw=inp.pv.federal_rebate_per_kw,
+                        degradation_fraction=inp.pv.degradation_fraction,
+                        macrs_option_years=inp.pv.macrs_option_years,
+                        macrs_bonus_fraction=inp.pv.macrs_bonus_fraction,
+                        macrs_itc_reduction=inp.pv.macrs_itc_reduction)
+        _rep_cost = 0.0
+        for b in NB:
+            st_ = sts[b]
+            if st_.enabled and v(bpow[b]) > 1e-9:
+                _rep_cost += PF.add_storage(
+                    _m, om_escalation=_om_esc, size_kw=v(bpow[b]), size_kwh=v(ben[b]),
+                    cost_per_kw=st_.installed_cost_per_kw, cost_per_kwh=st_.installed_cost_per_kwh,
+                    cost_constant=st_.installed_cost_constant,
+                    replace_per_kw=st_.replace_cost_per_kw, replace_per_kwh=st_.replace_cost_per_kwh,
+                    replace_constant=st_.replace_cost_constant,
+                    battery_replacement_year=st_.battery_replacement_year,
+                    om_fraction=st_.om_cost_fraction_of_installed_cost,
+                    rebate_per_kw=st_.total_rebate_per_kw, rebate_per_kwh=st_.total_rebate_per_kwh,
+                    itc_fraction=st_.total_itc_fraction, macrs_option_years=st_.macrs_option_years,
+                    macrs_bonus_fraction=st_.macrs_bonus_fraction,
+                    macrs_itc_reduction=st_.macrs_itc_reduction)
+        _standby_y1 = 0.0
+        _chp_fuel_y1 = _chp_fuel_mmbtu = _chp_heat_prod = 0.0
+        for g in NG:
+            u = fts[g]
+            if not u.enabled or v(ftsize[g]) <= 1e-9:
+                continue
+            _kw = v(ftsize[g])
+            _kwh = sum(v(ftgen[g][t]) for t in T)
+            # hourly fuel, then priced hour by hour (monthly prices when given)
+            _fuel_h = [ft_slope_fuel[g] * v(ftgen[g][t])
+                       + ((ft_icept[g] * (u.max_kw if inp.fuel_intercept_basis == "rated" else 1.0)
+                           * v(ftu[g][t])) if (ft_needs_bin[g] and ft_icept[g] > 0.0) else 0.0)
+                       for t in T]
+            if u.kind == "CHP" and u.fuel_cost_per_mmbtu_monthly:
+                _fuel_y1 = sum(u.fuel_cost_per_mmbtu_monthly[_MONTH_OF_HOUR[t]] * _fuel_h[t] for t in T)
+            else:
+                _fuel_y1 = sum(_fuel_h) * (u.fuel_cost_per_gallon if u.kind == "Generator"
+                                           else u.fuel_cost_per_mmbtu)
+            # results/chp.jl:165 digits=3, results/generator.jl:35 digits=2
+            _fuel_y1 = round(_fuel_y1, 2 if u.kind == "Generator" else 3)
+            _new_kw = max(0.0, _kw - u.existing_kw)
+            _extra = (u.start_cost * sum(v(ftsu[g][t]) for t in T) if ftsu[g] is not None else 0.0) \
+                + (u.om_cost_per_running_hour * sum(v(ftu[g][t]) for t in T) if ftu[g] is not None else 0.0)
+            if u.kind == "CHP":
+                _standby_y1 += 12 * u.standby_rate_per_kw_per_month * _kw
+                _chp_fuel_y1 += _fuel_y1
+                _chp_fuel_mmbtu += sum(_fuel_h)
+                # heat produced, used or wasted (REopt annual_thermal_production_mmbtu)
+                _chp_heat_prod += sum(ft_th_slope[g] * v(ftgen[g][t])
+                                      + (v(thI[g][t]) if g in thI else 0.0) for t in T) / 293.07107
+                PF.add_tech(
+                    _m, om_escalation=_om_esc, capital_cost=_ft_upfront(g), new_kw=_new_kw,
+                    annual_om=_kwh * u.om_cost_per_kwh + _new_kw * u.om_cost_per_kw + _extra,
+                    annual_om_bau=u.existing_kw * u.om_cost_per_kw,
+                    fuel_year1=_fuel_y1,
+                    fuel_escalation=(f.chp_fuel_cost_escalation_rate_fraction
+                                     if f.chp_fuel_cost_escalation_rate_fraction is not None
+                                     else f.fuel_cost_escalation_rate_fraction),
+                    federal_itc_fraction=u.federal_itc_fraction,
+                    federal_rebate_per_kw=u.federal_rebate_per_kw,
+                    state_ibi_fraction=u.state_ibi_fraction, state_ibi_max=u.state_ibi_max,
+                    state_rebate_per_kw=u.state_rebate_per_kw, state_rebate_max=u.state_rebate_max,
+                    utility_ibi_fraction=u.utility_ibi_fraction, utility_ibi_max=u.utility_ibi_max,
+                    utility_rebate_per_kw=u.utility_rebate_per_kw,
+                    utility_rebate_max=u.utility_rebate_max,
+                    production_incentive_per_kwh=u.production_incentive_per_kwh,
+                    production_incentive_max_benefit=u.production_incentive_max_benefit,
+                    production_incentive_years=int(u.production_incentive_years),
+                    year_one_energy_kwh=_kwh,
+                    macrs_option_years=u.macrs_option_years,
+                    macrs_bonus_fraction=u.macrs_bonus_fraction,
+                    macrs_itc_reduction=u.macrs_itc_reduction)
+            else:
+                # proforma.jl:108-133 -- generator: O&M and fuel only
+                PF.add_tech(_m, om_escalation=_om_esc, capital_cost=0.0, new_kw=0.0,
+                            annual_om=_kw * u.om_cost_per_kw + _kwh * u.om_cost_per_kwh + _extra)
+                PF.add_fuel(_m, year1=_fuel_y1, year1_bau=0.0,
+                            escalation=f.fuel_cost_escalation_rate_fraction)
+        # existing boiler fuel, optimal and BAU (proforma.jl:146-160)
+        _boiler_y1 = _boiler_y1_bau = 0.0
+        if boil_h:
+            _bp = (lambda t: inp.boiler_fuel_cost_per_mmbtu_monthly[_MONTH_OF_HOUR[t]]) \
+                if inp.boiler_fuel_cost_per_mmbtu_monthly else (lambda t: inp.existing_boiler_fuel_cost_per_mmbtu)
+            _den = inp.boiler_efficiency * 293.07107
+            _boiler_y1 = sum(_bp(t) * v(boil_h[t]) / _den for t in T)
+            _boiler_y1_bau = sum(_bp(t) * _hl[t] / _den for t in T)
+        elif thermal_load_mmbtu > 0:
+            _boiler_y1 = v(boiler_thermal) / inp.boiler_efficiency * inp.existing_boiler_fuel_cost_per_mmbtu
+            _boiler_y1_bau = (_heat_fuel or 0.0) * inp.existing_boiler_fuel_cost_per_mmbtu
+        # results/existing_boiler.jl:109 rounds year-one fuel cost to digits=3
+        _boiler_y1, _boiler_y1_bau = round(_boiler_y1, 3), round(_boiler_y1_bau, 3)
+        # the web tool's fuel rows: year one, and lifecycle after tax (results/chp.jl,
+        # existing_boiler.jl, financial.jl standby); hour-by-hour prices included
+        out["thermal"].update({
+            "boiler_fuel_cost_year1": _boiler_y1,
+            "boiler_fuel_cost_lifecycle": _boiler_y1 * pwf_boiler * (1 - tax_off),
+            # existing_boiler.jl: max size = factor x peak heating load
+            "boiler_capacity_mmbtu_per_hour": boiler_max_kw / 293.07107,
+            "chp_fuel_mmbtu": _chp_fuel_mmbtu,
+            "chp_thermal_production_mmbtu": _chp_heat_prod,
+            "chp_fuel_cost_year1": _chp_fuel_y1,
+            "chp_fuel_cost_lifecycle": _chp_fuel_y1 * pwf_fuel_chp * (1 - tax_off),
+            "standby_year1": _standby_y1,
+            "standby_lifecycle": _standby_y1 * pwf_e * (1 - tax_off),
+        })
+        if _boiler_y1 or _boiler_y1_bau:
+            PF.add_fuel(_m, year1=_boiler_y1, year1_bau=_boiler_y1_bau, escalation=inp.boiler_fuel_escalation)
+        _export_y1 = round(sum(export_rate[t] * series["export_kw"][t] for t in T)
+                           if inp.compensation_type != "no_compensation" else 0.0)   # digits=0
+        # results/electric_tariff.jl:61-79: energy and demand to cents, fixed to dollars;
+        # the BAU bill is the same function on the BAU run
+        _u = out["utility"]
+        _bill = (round(_u["year1_energy_cost"], 2)
+                 + round(_u["year1_tou_demand_cost"] + _u["year1_monthly_demand_cost"], 2)
+                 + round(_u["year1_fixed_cost"]))
+        _bill_bau = (round(sum(tar.energy_cost_per_kwh[t] * loads[t] for t in T), 2)
+                     + round(bau_year1 - sum(tar.energy_cost_per_kwh[t] * loads[t] for t in T)
+                             - tar.fixed_monthly_charge * 12, 2)
+                     + round(tar.fixed_monthly_charge * 12))
+        _boiler_capex_bau = 0.0
+        # BAU year 0 is -lifecycle_capital_costs_bau, i.e. the BAU ExistingBoilerCost
+        if boil_h and max(_hl) > 0 and (inp.boiler_installed_cost_per_mmbtu_per_hour or inp.boiler_installed_cost_dollars):
+            if inp.boiler_installed_cost_per_mmbtu_per_hour and not inp.boiler_installed_cost_dollars:
+                _boiler_capex_bau = (inp.boiler_installed_cost_per_mmbtu_per_hour / 293.07107
+                                     * inp.boiler_max_thermal_factor_on_peak_load) * max(_hl)
+            else:
+                _boiler_capex_bau = inp.boiler_installed_cost_dollars
+        pf = PF.finish(
+            _m, elec_escalation=f.elec_cost_escalation_rate_fraction, tax_rate=tax_off,
             discount_rate=f.offtaker_discount_rate_fraction,
-            itc_amount=itc_amt, depr_shields=shields)
+            initial_capital=initial_capital,   # InitialCapexNoIncentives: no ExistingBoiler
+            lifecycle_capital_bau=_boiler_capex_bau,
+            year1_bill=_bill, year1_bill_bau=_bill_bau, year1_export=_export_y1, year1_export_bau=0.0,
+            year1_standby=_standby_y1)
         out["proforma"] = {
             "simple_payback_years": pf["simple_payback_years"],
             "internal_rate_of_return": pf["internal_rate_of_return"],
             "cumulative_cashflow": pf["cumulative_cashflow"],
             "net_free_cashflow": pf["net_free_cashflow"],
+            "npv": pf["npv"],
+            "offtaker_annual_free_cashflows": pf["offtaker_annual_free_cashflows"],
+            "offtaker_annual_free_cashflows_bau": pf["offtaker_annual_free_cashflows_bau"],
+            "battery_replacement_cost": _rep_cost,
             "pv_lcoe": (pv_lcoe(capital_cost=pv_capex, year1_om=out["om"]["year1_pv"],
                                 years=f.analysis_years,
                                 om_escalation=f.om_cost_escalation_rate_fraction,
@@ -852,11 +1486,13 @@ def business_as_usual(inp: ScenarioInputs) -> dict:
     if inp.off_grid_flag or inp.tariff is None:
         return {}
     tar, f = inp.tariff, inp.financial
-    T = range(HOURS)
+    H = len(inp.loads_kw)
+    T = range(H)
     energy = sum(tar.energy_cost_per_kwh[t] * inp.loads_kw[t] for t in T)
-    tou = sum(tar.tou_demand_rates[i] * max(inp.loads_kw[t] for t in hrs)
+    tou = sum(tar.tou_demand_rates[i] * max((inp.loads_kw[t] for t in hrs if t < H), default=0.0)
               for i, hrs in enumerate(tar.tou_demand_periods))
-    mon = sum(tar.monthly_demand_rates[mo] * max(inp.loads_kw[t] for t in tar.monthly_demand_periods[mo])
+    mon = sum(tar.monthly_demand_rates[mo]
+              * max((inp.loads_kw[t] for t in tar.monthly_demand_periods[mo] if t < H), default=0.0)
               for mo in range(12))
     fixed = tar.fixed_monthly_charge * 12
     year1 = energy + tou + mon + fixed
@@ -864,18 +1500,39 @@ def business_as_usual(inp: ScenarioInputs) -> dict:
                     f.offtaker_discount_rate_fraction)
     # BAU carries the full boiler fuel bill: no CHP means no heat recovery
     boiler_lcc = 0.0
-    if inp.heating_fuel_mmbtu and not inp.off_grid_flag:
-        boiler_lcc = (annuity(f.analysis_years, inp.boiler_fuel_escalation,
-                              f.offtaker_discount_rate_fraction)
-                      * inp.heating_fuel_mmbtu * inp.existing_boiler_fuel_cost_per_mmbtu
-                      * (1 - f.offtaker_tax_rate_fraction))
+    _pwf_b = annuity(f.analysis_years, inp.boiler_fuel_escalation, f.offtaker_discount_rate_fraction)
+    boiler_fuel_mmbtu = 0.0
+    boiler_year1 = 0.0
+    boiler_capex = 0.0
+    if inp.heating_loads_kw is not None and not inp.off_grid_flag:
+        # the same hourly load the optimal case balances, all of it on the boiler
+        _hl = list(inp.heating_loads_kw)[:H]
+        _fuel_h = [x / (inp.boiler_efficiency * 293.07107) for x in _hl]
+        boiler_fuel_mmbtu = sum(_fuel_h)
+        if inp.boiler_fuel_cost_per_mmbtu_monthly:
+            boiler_year1 = sum(inp.boiler_fuel_cost_per_mmbtu_monthly[_MONTH_OF_HOUR[t]] * _fuel_h[t]
+                               for t in T)
+        else:
+            boiler_year1 = boiler_fuel_mmbtu * inp.existing_boiler_fuel_cost_per_mmbtu
+        boiler_lcc = _pwf_b * boiler_year1 * (1 - f.offtaker_tax_rate_fraction)
+        # existing boiler capital cost, sized to the peak it must serve in BAU
+        _peak = max(_hl) if _hl else 0.0
+        if inp.boiler_installed_cost_per_mmbtu_per_hour and not inp.boiler_installed_cost_dollars:
+            boiler_capex = (inp.boiler_installed_cost_per_mmbtu_per_hour / 293.07107
+                            * inp.boiler_max_thermal_factor_on_peak_load) * _peak
+        elif inp.boiler_installed_cost_dollars and _peak > 0:
+            boiler_capex = inp.boiler_installed_cost_dollars
+        boiler_lcc += boiler_capex
+    elif inp.heating_fuel_mmbtu and not inp.off_grid_flag:
+        boiler_fuel_mmbtu = inp.heating_fuel_mmbtu
+        boiler_year1 = inp.heating_fuel_mmbtu * inp.existing_boiler_fuel_cost_per_mmbtu
+        boiler_lcc = _pwf_b * boiler_year1 * (1 - f.offtaker_tax_rate_fraction)
     return {
         "year1_energy_cost": energy, "year1_tou_demand_cost": tou,
         "year1_monthly_demand_cost": mon, "year1_fixed_cost": fixed,
         "year1_total": year1,
-        "year1_boiler_fuel_cost": (0.0 if inp.off_grid_flag else
-                                   (inp.heating_fuel_mmbtu or 0.0)
-                                   * inp.existing_boiler_fuel_cost_per_mmbtu),
+        "year1_boiler_fuel_cost": 0.0 if inp.off_grid_flag else boiler_year1,
+        "boiler_fuel_mmbtu": 0.0 if inp.off_grid_flag else boiler_fuel_mmbtu,
         "boiler_lifecycle_cost": boiler_lcc,
         "lifecycle_cost": pwf_e * year1 * (1 - f.offtaker_tax_rate_fraction) + boiler_lcc,
     }

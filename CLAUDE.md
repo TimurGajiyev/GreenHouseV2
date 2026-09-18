@@ -12,6 +12,25 @@ Playwright 1.63.0-alpha). Verified working.
   `page.screenshot({path})` still writes files. A script loaded via `filename` must
   live inside the project root.
 
+## Local REopt.jl (reference engine)
+
+Julia 1.10 LTS via juliaup (`winget install --id 9NJNWW8PVKMN -e`); environment in
+`reopt_jl/`, which `develop`s the repo's own `REopt/` source (v0.61.1) + HiGHS.
+Package depot is **`D:\JuliaDepot`** (C: is short on space) — always set
+`JULIA_DEPOT_PATH=D:\JuliaDepot`; the Python wrapper does it for you.
+
+- Setup once: `julia --project=reopt_jl reopt_jl/setup.jl`
+- From Python: `from tools.reopt_jl import run_reopt_jl; run_reopt_jl(scenario_dict)` —
+  REopt API-style JSON in, REopt's results dict out; web-tool defaults (1% gap, 600 s,
+  BAU solved alongside). Cached in `reopt_test_data/reopt_jl/<sha>.json`.
+- CLI: `python calculator/tools/reopt_jl.py <scenario.json> [--no-bau] [--gap=] [--time=] [--fresh]`
+- Install check: `python calculator/tools/check_reopt_jl.py` (REopt's own runtests values,
+  then side by side with this calculator).
+- API key: read from `NLR_DEVELOPER_API_KEY` or the `.nrel_api_key` files, like the calculator.
+- Gotcha: the resolver picks ArchGDAL 0.9.3, which fails to precompile on 1.10
+  ("Method overwriting is not permitted"); it is pinned to 0.9.4 (REopt's own Manifest).
+- First call in a fresh process spends ~1–2 min loading/compiling before solving.
+
 ## Offline docs
 
 - `docs/reopt-jl/` — full text capture of the REopt.jl docs (14 pages, 197 KB),

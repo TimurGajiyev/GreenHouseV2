@@ -1,0 +1,253 @@
+<!doctype html><meta charset='utf-8'><body style='margin:0;padding:24px;background:#EEF1F4'>
+<style>
+/* =============================================================== profiling
+   Scoped to .ghp-* so the REopt-orange styling of steps 1-5 is untouched. */
+
+.ghp-panel-head {
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+    border-bottom: none;
+    padding: 16px 20px 12px;
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+.ghp-title {
+    font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    color: #17242F;
+    margin: 0;
+}
+.ghp-sub {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: #5C6B79;
+    letter-spacing: 0.02em;
+}
+
+/* ---- the chart sits between the header and the stat strip; the two
+   adjacent-sibling rules close the panel around it. Each block is also
+   styled to stand on its own if the sibling match ever fails. ---- */
+.stElementContainer:has(.ghp-panel-head) + .stElementContainer,
+[data-testid="element-container"]:has(.ghp-panel-head) + [data-testid="element-container"] {
+    background: #FFFFFF;
+    border-left: 1px solid #CBD5DC;
+    border-right: 1px solid #CBD5DC;
+    padding: 14px 10px 2px 2px;
+}
+
+.ghp-strip {
+    display: flex;
+    flex-wrap: wrap;
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+}
+.ghp-cell {
+    flex: 1 1 130px;
+    padding: 12px 16px;
+    border-left: 1px solid #CBD5DC;
+}
+.ghp-cell:first-child { border-left: none; }
+.ghp-cell-k {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: #5C6B79;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}
+.ghp-cell-v {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 15px;
+    color: #17242F;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+.ghp-note {
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+    border-top: none;
+    padding: 10px 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11.5px;
+    color: #5C6B79;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+}
+.ghp-note b { font-weight: 500; }
+
+.ghp-h3 {
+    margin: 26px 0 10px;
+    font-family: Inter, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 14.5px;
+    font-weight: 620;
+    letter-spacing: -0.01em;
+    color: #17242F;
+}
+
+/* ---------------------------------------------------------------- tables */
+.ghp-wrap {
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+    overflow-x: auto;
+}
+.ghp-wrap.ghp-tall { max-height: 560px; overflow-y: auto; }
+
+.ghp-table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 560px;
+}
+.ghp-table th {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px;
+    color: #5C6B79;
+    font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 7px 9px;
+    text-align: right;
+    white-space: nowrap;
+    border-bottom: 1px solid #CBD5DC;
+    background: #FFFFFF;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+}
+.ghp-table td {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #17242F;
+    padding: 5px 9px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+.ghp-table th:first-child,
+.ghp-table td:first-child { text-align: left; }
+/* the label column absorbs the slack so the figures stay packed to the
+   right, the way they read when the table is full of unit columns */
+.ghp-table th:first-child { width: 100%; }
+.ghp-table td:first-child { color: #5C6B79; }
+
+.ghp-table tbody tr:nth-child(even) { background: rgba(23, 36, 47, 0.022); }
+
+.ghp-table tr.ghp-foot td {
+    border-top: 1px solid #17242F;
+    font-weight: 600;
+    color: #17242F;
+}
+.ghp-table tr.ghp-sect td {
+    background: transparent;
+    color: #17242F;
+    font-weight: 600;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 15px 9px 5px;
+    border-bottom: 1px solid #CBD5DC;
+}
+.ghp-table tr.ghp-sect td:first-child { color: #17242F; }
+
+.ghp-pos { color: #3F8F5C; }
+.ghp-neg { color: #C2571A; }
+.ghp-dim { color: #5C6B79; }
+.ghp-key { color: #17242F; font-weight: 600; }
+
+/* ---- legend chips under the chart ---- */
+.ghp-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    padding: 2px 2px 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: #5C6B79;
+}
+.ghp-swatch {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    margin-right: 6px;
+    vertical-align: baseline;
+}
+.ghp-sw-0 { background: #46617F; }
+.ghp-sw-1 { background: #7C6E9B; }
+.ghp-sw-2 { background: #A8845C; }
+.ghp-sw-3 { background: #5F8A7A; }
+.ghp-sw-4 { background: #8C5F6E; }
+.ghp-sw-5 { background: #6E7C93; }
+.ghp-sw-pv { background: #C08A2E; }
+.ghp-sw-grid { background: #9BA8B4; }
+.ghp-sw-charge { background: #1F7A8C; }
+.ghp-sw-discharge { background: #C2571A; }
+.ghp-sw-load { background: #17242F; }
+
+/* ---- Vega's tooltip is created outside the chart, so only CSS can reach it.
+   Same box as the reference: white panel, 1px rule, mono 12px, muted keys. */
+#vg-tooltip-element {
+    background: #FFFFFF;
+    border: 1px solid #CBD5DC;
+    border-radius: 0;
+    box-shadow: none;
+    padding: 10px 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: #17242F;
+}
+#vg-tooltip-element table td.key {
+    color: #5C6B79;
+    font-weight: 400;
+    text-align: left;
+    padding-right: 16px;
+}
+#vg-tooltip-element table td.value {
+    color: #17242F;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+#vg-tooltip-element h2 {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: #17242F;
+    margin: 0 0 6px;
+}
+
+/* ---- segmented switches in the profiling block only ----
+   The marker span is emitted immediately before the widget, so the widget is
+   its next element sibling. Steps 1-5 keep Streamlit's own styling. */
+.ghp-switch-scope { display: none; }
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] {
+    gap: 0;
+    border: 1px solid #CBD5DC;
+    width: fit-content;
+    border-radius: 0;
+    background: #FFFFFF;
+}
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] button {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    padding: 9px 18px;
+    border: none;
+    border-left: 1px solid #CBD5DC;
+    border-radius: 0;
+    background: #FFFFFF;
+    color: #5C6B79;
+}
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] button:first-child {
+    border-left: none;
+}
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] button[aria-checked="true"],
+.stElementContainer:has(.ghp-switch-scope) + .stElementContainer [data-testid="stButtonGroup"] button[aria-pressed="true"] {
+    background: #17242F;
+    color: #EEF1F4;
+}
+</style>
+<div class="reopt-panel-head"><span>Dispatch by period</span></div><span class="ghp-switch-scope"></span><span class="ghp-switch-scope"></span><div class="ghp-panel-head"><h2 class="ghp-title">3 × CHP</h2><span class="ghp-sub">Engine 1 300 + Engine 2 300 + Engine 3 300 = 900 kW · PV 800 kW · Battery 1 250 kW / 600 kWh · Battery 2 250 kW / 600 kWh</span></div><div class="ghp-strip"><div class="ghp-cell"><div class="ghp-cell-k">Battery charged</div><div class="ghp-cell-v">2,800 kWh</div></div><div class="ghp-cell"><div class="ghp-cell-k">Battery discharged</div><div class="ghp-cell-v">2,520 kWh</div></div><div class="ghp-cell"><div class="ghp-cell-k">Grid purchase</div><div class="ghp-cell-v">86,490 kWh</div></div><div class="ghp-cell"><div class="ghp-cell-k">Peak grid purchase</div><div class="ghp-cell-v">1,032 kW</div></div><div class="ghp-cell"><div class="ghp-cell-k">Battery idle</div><div class="ghp-cell-v">140 of 168 h</div></div><div class="ghp-cell"><div class="ghp-cell-k">Energy charge</div><div class="ghp-cell-v ghp-key">$9,514</div></div></div><div class="ghp-note"><span>12 February to 18 February</span><span>unit-hours <b>504</b> of 504</span><span>starts in window <b>21</b></span><span>spill <b class="ghp-neg">9 kWh</b></span></div><div class="ghp-legend"><span><span class="ghp-swatch ghp-sw-0"></span>Engine 1</span><span><span class="ghp-swatch ghp-sw-1"></span>Engine 2</span><span><span class="ghp-swatch ghp-sw-2"></span>Engine 3</span><span><span class="ghp-swatch ghp-sw-pv"></span>PV</span><span><span class="ghp-swatch ghp-sw-grid"></span>Grid</span><span><span class="ghp-swatch ghp-sw-charge"></span>Battery charge</span><span><span class="ghp-swatch ghp-sw-discharge"></span>Battery discharge</span><span><span class="ghp-swatch ghp-sw-load"></span>Site load</span></div><div class="ghp-h3">Day by day · 12 February to 18 February</div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>DAY</th><th>LOAD</th><th>ENGINE 1</th><th>ENGINE 2</th><th>ENGINE 3</th><th>PV</th><th>CHARGE +</th><th>DISCHARGE −</th><th>GRID</th><th>SOC %</th><th>ON</th><th>SPILL</th><th>PEAK GRID</th><th>STARTS</th></tr></thead><tbody><tr><td>Sun 12 Feb</td><td>38,349</td><td>7,670</td><td>7,670</td><td>7,670</td><td>3,038</td><td>400</td><td class="ghp-neg">−360</td><td>12,341</td><td>26.9</td><td>3</td><td>—</td><td>993</td><td>3</td></tr><tr><td>Mon 13 Feb</td><td>38,711</td><td>7,742</td><td>7,742</td><td>7,742</td><td>3,038</td><td>400</td><td class="ghp-neg">−360</td><td>12,486</td><td>40.9</td><td>3</td><td>—</td><td>1,032</td><td>3</td></tr><tr><td>Tue 14 Feb</td><td>37,910</td><td>7,582</td><td>7,582</td><td>7,582</td><td>3,038</td><td>400</td><td class="ghp-neg">−360</td><td>12,166</td><td>57.1</td><td>3</td><td>—</td><td>990</td><td>3</td></tr><tr><td>Wed 15 Feb</td><td>38,309</td><td>7,662</td><td>7,662</td><td>7,662</td><td>3,038</td><td>400</td><td class="ghp-neg">−360</td><td>12,325</td><td>29.6</td><td>3</td><td>9</td><td>986</td><td>3</td></tr><tr><td>Thu 16 Feb</td><td>38,169</td><td>7,634</td><td>7,634</td><td>7,634</td><td>3,038</td><td>400</td><td class="ghp-neg">−360</td><td>12,269</td><td>36.2</td><td>3</td><td>—</td><td>1,012</td><td>3</td></tr><tr><td>Fri 17 Feb</td><td>38,370</td><td>7,674</td><td>7,674</td><td>7,674</td><td>3,038</td><td>400</td><td class="ghp-neg">−360</td><td>12,350</td><td>58.3</td><td>3</td><td>—</td><td>1,007</td><td>3</td></tr><tr><td>Sat 18 Feb</td><td>38,876</td><td>7,775</td><td>7,775</td><td>7,775</td><td>3,038</td><td>400</td><td class="ghp-neg">−360</td><td>12,552</td><td>33.3</td><td>3</td><td>—</td><td>989</td><td>3</td></tr><tr class="ghp-foot"><td>Total</td><td>268,695</td><td>53,739</td><td>53,739</td><td>53,739</td><td>21,268</td><td>2,800</td><td>−2,520</td><td>86,490</td><td>33.3</td><td>378</td><td>9</td><td>1,032</td><td>21</td></tr></tbody></table></div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>DAY</th><th>HOUR</th><th>LOAD</th><th>ENGINE 1</th><th>ENGINE 2</th><th>ENGINE 3</th><th>PV</th><th>CHARGE +</th><th>DISCHARGE −</th><th>GRID</th><th>SOC %</th><th>ON</th><th>SPILL</th></tr></thead><tbody><tr><td>Sun</td><td>1</td><td>1,598</td><td>320</td><td>320</td><td>320</td><td>0</td><td>0</td><td>0</td><td>639</td><td>53.9</td><td>0</td><td>—</td></tr><tr><td>Sun</td><td>2</td><td>1,847</td><td>369</td><td>369</td><td>369</td><td>0</td><td>0</td><td>0</td><td>739</td><td>52.9</td><td>0</td><td>—</td></tr><tr><td>Sun</td><td>3</td><td>1,983</td><td>397</td><td>397</td><td>397</td><td>0</td><td>200</td><td>0</td><td>993</td><td>51.8</td><td>0</td><td>—</td></tr><tr><td>Sun</td><td>4</td><td>1,957</td><td>391</td><td>391</td><td>391</td><td>0</td><td>200</td><td>0</td><td>983</td><td>50.7</td><td>0</td><td>—</td></tr><tr><td>Sun</td><td>5</td><td>2,177</td><td>435</td><td>435</td><td>435</td><td>0</td><td>0</td><td>0</td><td>871</td><td>49.5</td><td>0</td><td>—</td></tr><tr><td>Sun</td><td>6</td><td>2,266</td><td>453</td><td>453</td><td>453</td><td>0</td><td>0</td><td>0</td><td>906</td><td>48.3</td><td>0</td><td>—</td></tr><tr><td>Sun</td><td>7</td><td>2,113</td><td>423</td><td>423</td><td>423</td><td>0</td><td>0</td><td>0</td><td>845</td><td>47.0</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>8</td><td>2,150</td><td>430</td><td>430</td><td>430</td><td>104</td><td>0</td><td>0</td><td>756</td><td>45.6</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>9</td><td>2,171</td><td>434</td><td>434</td><td>434</td><td>200</td><td>0</td><td>0</td><td>668</td><td>44.3</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>10</td><td>1,956</td><td>391</td><td>391</td><td>391</td><td>283</td><td>0</td><td>0</td><td>500</td><td>42.9</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>11</td><td>1,979</td><td>396</td><td>396</td><td>396</td><td>346</td><td>0</td><td>0</td><td>445</td><td>41.5</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>12</td><td>1,710</td><td>342</td><td>342</td><td>342</td><td>386</td><td>0</td><td>0</td><td>298</td><td>40.1</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>13</td><td>1,663</td><td>333</td><td>333</td><td>333</td><td>400</td><td>0</td><td>0</td><td>265</td><td>38.7</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>14</td><td>1,373</td><td>275</td><td>275</td><td>275</td><td>386</td><td>0</td><td>0</td><td>163</td><td>37.4</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>15</td><td>1,300</td><td>260</td><td>260</td><td>260</td><td>346</td><td>0</td><td>0</td><td>174</td><td>36.1</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>16</td><td>1,260</td><td>252</td><td>252</td><td>252</td><td>283</td><td>0</td><td>0</td><td>221</td><td>34.8</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>17</td><td>1,022</td><td>204</td><td>204</td><td>204</td><td>200</td><td>0</td><td>0</td><td>209</td><td>33.5</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>18</td><td>973</td><td>195</td><td>195</td><td>195</td><td>104</td><td>0</td><td>0</td><td>286</td><td>32.3</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>19</td><td>1,001</td><td>200</td><td>200</td><td>200</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>220</td><td>31.2</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>20</td><td>984</td><td>197</td><td>197</td><td>197</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>214</td><td>30.2</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>21</td><td>988</td><td>198</td><td>198</td><td>198</td><td>0</td><td>0</td><td>0</td><td>395</td><td>29.2</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>22</td><td>1,112</td><td>222</td><td>222</td><td>222</td><td>0</td><td>0</td><td>0</td><td>445</td><td>28.3</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>23</td><td>1,232</td><td>246</td><td>246</td><td>246</td><td>0</td><td>0</td><td>0</td><td>493</td><td>27.5</td><td>3</td><td>—</td></tr><tr><td>Sun</td><td>24</td><td>1,532</td><td>306</td><td>306</td><td>306</td><td>0</td><td>0</td><td>0</td><td>613</td><td>26.9</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>1</td><td>1,636</td><td>327</td><td>327</td><td>327</td><td>0</td><td>0</td><td>0</td><td>654</td><td>26.3</td><td>0</td><td>—</td></tr><tr><td>Mon</td><td>2</td><td>1,834</td><td>367</td><td>367</td><td>367</td><td>0</td><td>0</td><td>0</td><td>734</td><td>25.8</td><td>0</td><td>—</td></tr><tr><td>Mon</td><td>3</td><td>1,834</td><td>367</td><td>367</td><td>367</td><td>0</td><td>200</td><td>0</td><td>933</td><td>25.4</td><td>0</td><td>—</td></tr><tr><td>Mon</td><td>4</td><td>2,081</td><td>416</td><td>416</td><td>416</td><td>0</td><td>200</td><td>0</td><td>1,032</td><td>25.2</td><td>0</td><td>—</td></tr><tr><td>Mon</td><td>5</td><td>2,043</td><td>409</td><td>409</td><td>409</td><td>0</td><td>0</td><td>0</td><td>817</td><td>25.0</td><td>0</td><td>—</td></tr><tr><td>Mon</td><td>6</td><td>2,186</td><td>437</td><td>437</td><td>437</td><td>0</td><td>0</td><td>0</td><td>874</td><td>25.0</td><td>0</td><td>—</td></tr><tr><td>Mon</td><td>7</td><td>2,227</td><td>445</td><td>445</td><td>445</td><td>0</td><td>0</td><td>0</td><td>891</td><td>25.1</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>8</td><td>2,152</td><td>430</td><td>430</td><td>430</td><td>104</td><td>0</td><td>0</td><td>757</td><td>25.3</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>9</td><td>2,194</td><td>439</td><td>439</td><td>439</td><td>200</td><td>0</td><td>0</td><td>678</td><td>25.6</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>10</td><td>2,035</td><td>407</td><td>407</td><td>407</td><td>283</td><td>0</td><td>0</td><td>531</td><td>26.0</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>11</td><td>1,916</td><td>383</td><td>383</td><td>383</td><td>346</td><td>0</td><td>0</td><td>420</td><td>26.6</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>12</td><td>1,832</td><td>366</td><td>366</td><td>366</td><td>386</td><td>0</td><td>0</td><td>346</td><td>27.2</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>13</td><td>1,521</td><td>304</td><td>304</td><td>304</td><td>400</td><td>0</td><td>0</td><td>208</td><td>28.0</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>14</td><td>1,543</td><td>309</td><td>309</td><td>309</td><td>386</td><td>0</td><td>0</td><td>231</td><td>28.8</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>15</td><td>1,326</td><td>265</td><td>265</td><td>265</td><td>346</td><td>0</td><td>0</td><td>184</td><td>29.7</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>16</td><td>1,155</td><td>231</td><td>231</td><td>231</td><td>283</td><td>0</td><td>0</td><td>179</td><td>30.7</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>17</td><td>1,140</td><td>228</td><td>228</td><td>228</td><td>200</td><td>0</td><td>0</td><td>256</td><td>31.8</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>18</td><td>973</td><td>195</td><td>195</td><td>195</td><td>104</td><td>0</td><td>0</td><td>286</td><td>33.0</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>19</td><td>1,098</td><td>220</td><td>220</td><td>220</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>259</td><td>34.2</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>20</td><td>1,036</td><td>207</td><td>207</td><td>207</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>234</td><td>35.5</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>21</td><td>1,052</td><td>210</td><td>210</td><td>210</td><td>0</td><td>0</td><td>0</td><td>421</td><td>36.8</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>22</td><td>1,229</td><td>246</td><td>246</td><td>246</td><td>0</td><td>0</td><td>0</td><td>491</td><td>38.1</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>23</td><td>1,288</td><td>258</td><td>258</td><td>258</td><td>0</td><td>0</td><td>0</td><td>515</td><td>39.5</td><td>3</td><td>—</td></tr><tr><td>Mon</td><td>24</td><td>1,380</td><td>276</td><td>276</td><td>276</td><td>0</td><td>0</td><td>0</td><td>552</td><td>40.9</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>1</td><td>1,649</td><td>330</td><td>330</td><td>330</td><td>0</td><td>0</td><td>0</td><td>659</td><td>42.3</td><td>0</td><td>—</td></tr><tr><td>Tue</td><td>2</td><td>1,665</td><td>333</td><td>333</td><td>333</td><td>0</td><td>0</td><td>0</td><td>666</td><td>43.6</td><td>0</td><td>—</td></tr><tr><td>Tue</td><td>3</td><td>1,964</td><td>393</td><td>393</td><td>393</td><td>0</td><td>200</td><td>0</td><td>986</td><td>45.0</td><td>0</td><td>—</td></tr><tr><td>Tue</td><td>4</td><td>1,975</td><td>395</td><td>395</td><td>395</td><td>0</td><td>200</td><td>0</td><td>990</td><td>46.4</td><td>0</td><td>—</td></tr><tr><td>Tue</td><td>5</td><td>2,147</td><td>429</td><td>429</td><td>429</td><td>0</td><td>0</td><td>0</td><td>859</td><td>47.7</td><td>0</td><td>—</td></tr><tr><td>Tue</td><td>6</td><td>2,276</td><td>455</td><td>455</td><td>455</td><td>0</td><td>0</td><td>0</td><td>911</td><td>48.9</td><td>0</td><td>—</td></tr><tr><td>Tue</td><td>7</td><td>2,217</td><td>443</td><td>443</td><td>443</td><td>0</td><td>0</td><td>0</td><td>887</td><td>50.2</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>8</td><td>2,212</td><td>442</td><td>442</td><td>442</td><td>104</td><td>0</td><td>0</td><td>781</td><td>51.3</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>9</td><td>2,082</td><td>416</td><td>416</td><td>416</td><td>200</td><td>0</td><td>0</td><td>633</td><td>52.4</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>10</td><td>1,925</td><td>385</td><td>385</td><td>385</td><td>283</td><td>0</td><td>0</td><td>487</td><td>53.5</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>11</td><td>1,807</td><td>361</td><td>361</td><td>361</td><td>346</td><td>0</td><td>0</td><td>376</td><td>54.4</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>12</td><td>1,685</td><td>337</td><td>337</td><td>337</td><td>386</td><td>0</td><td>0</td><td>288</td><td>55.2</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>13</td><td>1,623</td><td>325</td><td>325</td><td>325</td><td>400</td><td>0</td><td>0</td><td>249</td><td>56.0</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>14</td><td>1,431</td><td>286</td><td>286</td><td>286</td><td>386</td><td>0</td><td>0</td><td>186</td><td>56.7</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>15</td><td>1,303</td><td>261</td><td>261</td><td>261</td><td>346</td><td>0</td><td>0</td><td>175</td><td>57.2</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>16</td><td>1,255</td><td>251</td><td>251</td><td>251</td><td>283</td><td>0</td><td>0</td><td>219</td><td>57.7</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>17</td><td>1,007</td><td>201</td><td>201</td><td>201</td><td>200</td><td>0</td><td>0</td><td>203</td><td>58.0</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>18</td><td>966</td><td>193</td><td>193</td><td>193</td><td>104</td><td>0</td><td>0</td><td>283</td><td>58.2</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>19</td><td>1,031</td><td>206</td><td>206</td><td>206</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>232</td><td>58.3</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>20</td><td>925</td><td>185</td><td>185</td><td>185</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>190</td><td>58.3</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>21</td><td>981</td><td>196</td><td>196</td><td>196</td><td>0</td><td>0</td><td>0</td><td>392</td><td>58.2</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>22</td><td>1,147</td><td>229</td><td>229</td><td>229</td><td>0</td><td>0</td><td>0</td><td>459</td><td>58.0</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>23</td><td>1,221</td><td>244</td><td>244</td><td>244</td><td>0</td><td>0</td><td>0</td><td>489</td><td>57.6</td><td>3</td><td>—</td></tr><tr><td>Tue</td><td>24</td><td>1,416</td><td>283</td><td>283</td><td>283</td><td>0</td><td>0</td><td>0</td><td>566</td><td>57.1</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>1</td><td>1,545</td><td>309</td><td>309</td><td>309</td><td>0</td><td>0</td><td>0</td><td>618</td><td>56.6</td><td>0</td><td>—</td></tr><tr><td>Wed</td><td>2</td><td>1,772</td><td>354</td><td>354</td><td>354</td><td>0</td><td>0</td><td>0</td><td>709</td><td>55.9</td><td>0</td><td>—</td></tr><tr><td>Wed</td><td>3</td><td>1,918</td><td>384</td><td>384</td><td>384</td><td>0</td><td>200</td><td>0</td><td>967</td><td>55.1</td><td>0</td><td>—</td></tr><tr><td>Wed</td><td>4</td><td>1,965</td><td>393</td><td>393</td><td>393</td><td>0</td><td>200</td><td>0</td><td>986</td><td>54.3</td><td>0</td><td>—</td></tr><tr><td>Wed</td><td>5</td><td>2,144</td><td>429</td><td>429</td><td>429</td><td>0</td><td>0</td><td>0</td><td>858</td><td>53.3</td><td>0</td><td>—</td></tr><tr><td>Wed</td><td>6</td><td>2,175</td><td>435</td><td>435</td><td>435</td><td>0</td><td>0</td><td>0</td><td>870</td><td>52.3</td><td>0</td><td>—</td></tr><tr><td>Wed</td><td>7</td><td>2,127</td><td>425</td><td>425</td><td>425</td><td>0</td><td>0</td><td>0</td><td>851</td><td>51.2</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>8</td><td>2,267</td><td>453</td><td>453</td><td>453</td><td>104</td><td>0</td><td>0</td><td>803</td><td>50.0</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>9</td><td>2,068</td><td>414</td><td>414</td><td>414</td><td>200</td><td>0</td><td>0</td><td>627</td><td>48.8</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>10</td><td>1,954</td><td>391</td><td>391</td><td>391</td><td>283</td><td>0</td><td>0</td><td>499</td><td>47.5</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>11</td><td>1,819</td><td>364</td><td>364</td><td>364</td><td>346</td><td>0</td><td>0</td><td>381</td><td>46.2</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>12</td><td>1,783</td><td>357</td><td>357</td><td>357</td><td>386</td><td>0</td><td>0</td><td>327</td><td>44.8</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>13</td><td>1,674</td><td>335</td><td>335</td><td>335</td><td>400</td><td>0</td><td>0</td><td>270</td><td>43.4</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>14</td><td>1,501</td><td>300</td><td>300</td><td>300</td><td>386</td><td>0</td><td>0</td><td>214</td><td>42.0</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>15</td><td>1,280</td><td>256</td><td>256</td><td>256</td><td>346</td><td>0</td><td>0</td><td>166</td><td>40.7</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>16</td><td>1,129</td><td>226</td><td>226</td><td>226</td><td>283</td><td>0</td><td>0</td><td>169</td><td>39.3</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>17</td><td>983</td><td>197</td><td>197</td><td>197</td><td>200</td><td>0</td><td>0</td><td>193</td><td>37.9</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>18</td><td>1,049</td><td>210</td><td>210</td><td>210</td><td>104</td><td>0</td><td>0</td><td>316</td><td>36.6</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>19</td><td>1,012</td><td>202</td><td>202</td><td>202</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>225</td><td>35.3</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>20</td><td>991</td><td>198</td><td>198</td><td>198</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>216</td><td>34.0</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>21</td><td>1,110</td><td>222</td><td>222</td><td>222</td><td>0</td><td>0</td><td>0</td><td>444</td><td>32.8</td><td>3</td><td>9</td></tr><tr><td>Wed</td><td>22</td><td>1,164</td><td>233</td><td>233</td><td>233</td><td>0</td><td>0</td><td>0</td><td>466</td><td>31.7</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>23</td><td>1,387</td><td>277</td><td>277</td><td>277</td><td>0</td><td>0</td><td>0</td><td>555</td><td>30.6</td><td>3</td><td>—</td></tr><tr><td>Wed</td><td>24</td><td>1,491</td><td>298</td><td>298</td><td>298</td><td>0</td><td>0</td><td>0</td><td>597</td><td>29.6</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>1</td><td>1,550</td><td>310</td><td>310</td><td>310</td><td>0</td><td>0</td><td>0</td><td>620</td><td>28.7</td><td>0</td><td>—</td></tr><tr><td>Thu</td><td>2</td><td>1,836</td><td>367</td><td>367</td><td>367</td><td>0</td><td>0</td><td>0</td><td>734</td><td>27.9</td><td>0</td><td>—</td></tr><tr><td>Thu</td><td>3</td><td>1,809</td><td>362</td><td>362</td><td>362</td><td>0</td><td>200</td><td>0</td><td>924</td><td>27.1</td><td>0</td><td>—</td></tr><tr><td>Thu</td><td>4</td><td>2,031</td><td>406</td><td>406</td><td>406</td><td>0</td><td>200</td><td>0</td><td>1,012</td><td>26.5</td><td>0</td><td>—</td></tr><tr><td>Thu</td><td>5</td><td>2,101</td><td>420</td><td>420</td><td>420</td><td>0</td><td>0</td><td>0</td><td>840</td><td>26.0</td><td>0</td><td>—</td></tr><tr><td>Thu</td><td>6</td><td>2,127</td><td>425</td><td>425</td><td>425</td><td>0</td><td>0</td><td>0</td><td>851</td><td>25.6</td><td>0</td><td>—</td></tr><tr><td>Thu</td><td>7</td><td>2,112</td><td>422</td><td>422</td><td>422</td><td>0</td><td>0</td><td>0</td><td>845</td><td>25.3</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>8</td><td>2,235</td><td>447</td><td>447</td><td>447</td><td>104</td><td>0</td><td>0</td><td>791</td><td>25.1</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>9</td><td>2,022</td><td>404</td><td>404</td><td>404</td><td>200</td><td>0</td><td>0</td><td>609</td><td>25.0</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>10</td><td>2,034</td><td>407</td><td>407</td><td>407</td><td>283</td><td>0</td><td>0</td><td>531</td><td>25.0</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>11</td><td>1,988</td><td>398</td><td>398</td><td>398</td><td>346</td><td>0</td><td>0</td><td>449</td><td>25.2</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>12</td><td>1,684</td><td>337</td><td>337</td><td>337</td><td>386</td><td>0</td><td>0</td><td>287</td><td>25.5</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>13</td><td>1,540</td><td>308</td><td>308</td><td>308</td><td>400</td><td>0</td><td>0</td><td>216</td><td>25.9</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>14</td><td>1,466</td><td>293</td><td>293</td><td>293</td><td>386</td><td>0</td><td>0</td><td>200</td><td>26.4</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>15</td><td>1,301</td><td>260</td><td>260</td><td>260</td><td>346</td><td>0</td><td>0</td><td>174</td><td>27.0</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>16</td><td>1,204</td><td>241</td><td>241</td><td>241</td><td>283</td><td>0</td><td>0</td><td>199</td><td>27.7</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>17</td><td>1,143</td><td>229</td><td>229</td><td>229</td><td>200</td><td>0</td><td>0</td><td>257</td><td>28.5</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>18</td><td>955</td><td>191</td><td>191</td><td>191</td><td>104</td><td>0</td><td>0</td><td>279</td><td>29.4</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>19</td><td>962</td><td>192</td><td>192</td><td>192</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>205</td><td>30.3</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>20</td><td>980</td><td>196</td><td>196</td><td>196</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>212</td><td>31.4</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>21</td><td>990</td><td>198</td><td>198</td><td>198</td><td>0</td><td>0</td><td>0</td><td>396</td><td>32.5</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>22</td><td>1,254</td><td>251</td><td>251</td><td>251</td><td>0</td><td>0</td><td>0</td><td>501</td><td>33.7</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>23</td><td>1,357</td><td>271</td><td>271</td><td>271</td><td>0</td><td>0</td><td>0</td><td>543</td><td>35.0</td><td>3</td><td>—</td></tr><tr><td>Thu</td><td>24</td><td>1,488</td><td>298</td><td>298</td><td>298</td><td>0</td><td>0</td><td>0</td><td>595</td><td>36.2</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>1</td><td>1,501</td><td>300</td><td>300</td><td>300</td><td>0</td><td>0</td><td>0</td><td>601</td><td>37.6</td><td>0</td><td>—</td></tr><tr><td>Fri</td><td>2</td><td>1,824</td><td>365</td><td>365</td><td>365</td><td>0</td><td>0</td><td>0</td><td>730</td><td>38.9</td><td>0</td><td>—</td></tr><tr><td>Fri</td><td>3</td><td>1,949</td><td>390</td><td>390</td><td>390</td><td>0</td><td>200</td><td>0</td><td>980</td><td>40.3</td><td>0</td><td>—</td></tr><tr><td>Fri</td><td>4</td><td>2,017</td><td>403</td><td>403</td><td>403</td><td>0</td><td>200</td><td>0</td><td>1,007</td><td>41.7</td><td>0</td><td>—</td></tr><tr><td>Fri</td><td>5</td><td>2,168</td><td>434</td><td>434</td><td>434</td><td>0</td><td>0</td><td>0</td><td>867</td><td>43.1</td><td>0</td><td>—</td></tr><tr><td>Fri</td><td>6</td><td>2,170</td><td>434</td><td>434</td><td>434</td><td>0</td><td>0</td><td>0</td><td>868</td><td>44.5</td><td>0</td><td>—</td></tr><tr><td>Fri</td><td>7</td><td>2,145</td><td>429</td><td>429</td><td>429</td><td>0</td><td>0</td><td>0</td><td>858</td><td>45.8</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>8</td><td>2,101</td><td>420</td><td>420</td><td>420</td><td>104</td><td>0</td><td>0</td><td>737</td><td>47.2</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>9</td><td>2,066</td><td>413</td><td>413</td><td>413</td><td>200</td><td>0</td><td>0</td><td>626</td><td>48.4</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>10</td><td>1,932</td><td>386</td><td>386</td><td>386</td><td>283</td><td>0</td><td>0</td><td>490</td><td>49.7</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>11</td><td>1,867</td><td>373</td><td>373</td><td>373</td><td>346</td><td>0</td><td>0</td><td>400</td><td>50.9</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>12</td><td>1,805</td><td>361</td><td>361</td><td>361</td><td>386</td><td>0</td><td>0</td><td>336</td><td>52.0</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>13</td><td>1,639</td><td>328</td><td>328</td><td>328</td><td>400</td><td>0</td><td>0</td><td>256</td><td>53.1</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>14</td><td>1,514</td><td>303</td><td>303</td><td>303</td><td>386</td><td>0</td><td>0</td><td>219</td><td>54.0</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>15</td><td>1,342</td><td>268</td><td>268</td><td>268</td><td>346</td><td>0</td><td>0</td><td>191</td><td>54.9</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>16</td><td>1,129</td><td>226</td><td>226</td><td>226</td><td>283</td><td>0</td><td>0</td><td>169</td><td>55.7</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>17</td><td>1,091</td><td>218</td><td>218</td><td>218</td><td>200</td><td>0</td><td>0</td><td>236</td><td>56.4</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>18</td><td>1,008</td><td>202</td><td>202</td><td>202</td><td>104</td><td>0</td><td>0</td><td>300</td><td>57.0</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>19</td><td>1,058</td><td>212</td><td>212</td><td>212</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>243</td><td>57.5</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>20</td><td>1,025</td><td>205</td><td>205</td><td>205</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>230</td><td>57.9</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>21</td><td>1,033</td><td>207</td><td>207</td><td>207</td><td>0</td><td>0</td><td>0</td><td>413</td><td>58.1</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>22</td><td>1,204</td><td>241</td><td>241</td><td>241</td><td>0</td><td>0</td><td>0</td><td>482</td><td>58.3</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>23</td><td>1,393</td><td>279</td><td>279</td><td>279</td><td>0</td><td>0</td><td>0</td><td>557</td><td>58.3</td><td>3</td><td>—</td></tr><tr><td>Fri</td><td>24</td><td>1,388</td><td>278</td><td>278</td><td>278</td><td>0</td><td>0</td><td>0</td><td>555</td><td>58.3</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>1</td><td>1,676</td><td>335</td><td>335</td><td>335</td><td>0</td><td>0</td><td>0</td><td>670</td><td>58.1</td><td>0</td><td>—</td></tr><tr><td>Sat</td><td>2</td><td>1,658</td><td>332</td><td>332</td><td>332</td><td>0</td><td>0</td><td>0</td><td>663</td><td>57.8</td><td>0</td><td>—</td></tr><tr><td>Sat</td><td>3</td><td>1,852</td><td>370</td><td>370</td><td>370</td><td>0</td><td>200</td><td>0</td><td>941</td><td>57.3</td><td>0</td><td>—</td></tr><tr><td>Sat</td><td>4</td><td>1,971</td><td>394</td><td>394</td><td>394</td><td>0</td><td>200</td><td>0</td><td>989</td><td>56.8</td><td>0</td><td>—</td></tr><tr><td>Sat</td><td>5</td><td>2,168</td><td>434</td><td>434</td><td>434</td><td>0</td><td>0</td><td>0</td><td>867</td><td>56.2</td><td>0</td><td>—</td></tr><tr><td>Sat</td><td>6</td><td>2,268</td><td>454</td><td>454</td><td>454</td><td>0</td><td>0</td><td>0</td><td>907</td><td>55.4</td><td>0</td><td>—</td></tr><tr><td>Sat</td><td>7</td><td>2,249</td><td>450</td><td>450</td><td>450</td><td>0</td><td>0</td><td>0</td><td>900</td><td>54.6</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>8</td><td>2,145</td><td>429</td><td>429</td><td>429</td><td>104</td><td>0</td><td>0</td><td>754</td><td>53.7</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>9</td><td>2,196</td><td>439</td><td>439</td><td>439</td><td>200</td><td>0</td><td>0</td><td>678</td><td>52.7</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>10</td><td>1,990</td><td>398</td><td>398</td><td>398</td><td>283</td><td>0</td><td>0</td><td>513</td><td>51.6</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>11</td><td>1,848</td><td>370</td><td>370</td><td>370</td><td>346</td><td>0</td><td>0</td><td>393</td><td>50.5</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>12</td><td>1,837</td><td>367</td><td>367</td><td>367</td><td>386</td><td>0</td><td>0</td><td>348</td><td>49.3</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>13</td><td>1,626</td><td>325</td><td>325</td><td>325</td><td>400</td><td>0</td><td>0</td><td>250</td><td>48.0</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>14</td><td>1,483</td><td>297</td><td>297</td><td>297</td><td>386</td><td>0</td><td>0</td><td>207</td><td>46.7</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>15</td><td>1,333</td><td>267</td><td>267</td><td>267</td><td>346</td><td>0</td><td>0</td><td>187</td><td>45.3</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>16</td><td>1,272</td><td>254</td><td>254</td><td>254</td><td>283</td><td>0</td><td>0</td><td>226</td><td>44.0</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>17</td><td>1,074</td><td>215</td><td>215</td><td>215</td><td>200</td><td>0</td><td>0</td><td>230</td><td>42.6</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>18</td><td>1,088</td><td>218</td><td>218</td><td>218</td><td>104</td><td>0</td><td>0</td><td>332</td><td>41.2</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>19</td><td>1,040</td><td>208</td><td>208</td><td>208</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>236</td><td>39.8</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>20</td><td>1,092</td><td>218</td><td>218</td><td>218</td><td>0</td><td>0</td><td class="ghp-neg">−180</td><td>257</td><td>38.5</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>21</td><td>1,068</td><td>214</td><td>214</td><td>214</td><td>0</td><td>0</td><td>0</td><td>427</td><td>37.1</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>22</td><td>1,221</td><td>244</td><td>244</td><td>244</td><td>0</td><td>0</td><td>0</td><td>488</td><td>35.8</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>23</td><td>1,314</td><td>263</td><td>263</td><td>263</td><td>0</td><td>0</td><td>0</td><td>526</td><td>34.5</td><td>3</td><td>—</td></tr><tr><td>Sat</td><td>24</td><td>1,406</td><td>281</td><td>281</td><td>281</td><td>0</td><td>0</td><td>0</td><td>563</td><td>33.3</td><td>3</td><td>—</td></tr><tr class="ghp-foot"><td>Total</td><td></td><td>268,695</td><td>53,739</td><td>53,739</td><td>53,739</td><td>21,268</td><td>2,800</td><td>−2,520</td><td>86,490</td><td>33.3</td><td>378</td><td>9</td></tr></tbody></table></div><div class="ghp-h3">Summary</div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>METRIC</th><th>REPRESENTATIVE DAY</th><th>WEEK</th><th>YEAR, 8,760 H</th></tr></thead><tbody><tr class="ghp-sect"><td colspan="4">Energy</td></tr><tr><td>Site load (kWh)</td><td class="ghp-key">38,370</td><td class="ghp-key">268,695</td><td class="ghp-key">14,009,317</td></tr><tr><td>PV production (kWh)</td><td>3,038</td><td>21,268</td><td>1,108,980</td></tr><tr><td>Fuel-fired production (kWh)</td><td>23,022</td><td>161,217</td><td>8,405,590</td></tr><tr><td>Battery charged (kWh)</td><td>400</td><td>2,800</td><td>146,000</td></tr><tr><td>Battery discharged (kWh)</td><td>360</td><td>2,520</td><td>131,400</td></tr><tr><td>Grid purchase (kWh)</td><td>12,350</td><td>86,490</td><td>4,509,347</td></tr><tr><td>Spill (kWh)</td><td>—</td><td>9</td><td>792</td></tr><tr class="ghp-sect"><td colspan="4">Power and operation</td></tr><tr><td>Peak grid purchase (kW)</td><td>1,007</td><td>1,032</td><td>1,049</td></tr><tr><td>Grid share of load (%)</td><td>32.2</td><td>32.2</td><td>32.2</td></tr><tr><td>Fleet running hours</td><td>72</td><td>504</td><td>26,280</td></tr><tr><td>Starts</td><td>3</td><td>21</td><td>1,095</td></tr><tr><td>Battery full cycles</td><td>0.3</td><td>2.1</td><td>109.5</td></tr><tr class="ghp-sect"><td colspan="4">Cost</td></tr><tr><td>Energy charge ($)</td><td>$1,358</td><td>$9,514</td><td>$496,028</td></tr></tbody></table></div><div class="ghp-h3">Fuel-fired units</div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>UNIT</th><th>TYPE</th><th>SIZE kW</th><th>PRODUCTION kWh</th><th>CAPACITY FACTOR</th><th>RUNNING HOURS</th><th>FUEL MMBTU</th><th>SPILL kWh</th><th>STARTS</th></tr></thead><tbody><tr><td>Engine 1</td><td>CHP</td><td>300</td><td>2,801,863</td><td>60.0%</td><td>6,000</td><td>12,000</td><td class="ghp-neg">900</td><td>120</td></tr><tr><td>Engine 2</td><td>CHP</td><td>300</td><td>2,801,863</td><td>60.0%</td><td>6,000</td><td>12,000</td><td class="ghp-neg">900</td><td>120</td></tr><tr><td>Engine 3</td><td>CHP</td><td>300</td><td>2,801,863</td><td>60.0%</td><td>6,000</td><td>12,000</td><td class="ghp-neg">900</td><td>120</td></tr><tr class="ghp-foot"><td>Fleet</td><td></td><td>900</td><td>8,405,590</td><td></td><td>18,000</td><td>36,000</td><td>2,700</td><td>360</td></tr></tbody></table></div><div class="ghp-h3">Battery units</div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>UNIT</th><th>POWER kW</th><th>ENERGY kWh</th><th>DURATION H</th><th>DISCHARGED kWh/YR</th><th>FULL CYCLES/YR</th></tr></thead><tbody><tr><td>Battery 1</td><td>250</td><td>600</td><td>2.40</td><td>90,000</td><td>150</td></tr><tr><td>Battery 2</td><td>250</td><td>600</td><td>2.40</td><td>90,000</td><td>150</td></tr><tr class="ghp-foot"><td>Bank</td><td>500</td><td>1,200</td><td></td><td>180,000</td><td></td></tr></tbody></table></div><div class="ghp-h3">Monthly peak grid purchase</div><div class="ghp-wrap"><table class="ghp-table"><thead><tr><th>MONTH</th><th>PEAK GRID PURCHASE kW</th><th>GRID ENERGY kWh</th></tr></thead><tbody><tr><td>Jan</td><td>1,048</td><td>382,228</td></tr><tr><td>Feb</td><td>1,043</td><td>345,554</td></tr><tr><td>Mar</td><td>1,045</td><td>383,562</td></tr><tr><td>Apr</td><td>1,049</td><td>369,606</td></tr><tr><td>May</td><td>1,036</td><td>383,483</td></tr><tr><td>Jun</td><td>1,049</td><td>370,445</td></tr><tr><td>Jul</td><td>1,049</td><td>383,867</td></tr><tr><td>Aug</td><td>1,044</td><td>382,074</td></tr><tr><td>Sep</td><td>1,046</td><td>371,658</td></tr><tr><td>Oct</td><td>1,041</td><td>382,817</td></tr><tr><td>Nov</td><td>1,046</td><td>370,753</td></tr><tr><td>Dec</td><td>1,049</td><td>383,300</td></tr><tr class="ghp-foot"><td>Sum of 12 monthly peaks</td><td>12,547</td><td>4,509,347</td></tr></tbody></table></div></body>
