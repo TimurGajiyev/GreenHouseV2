@@ -419,11 +419,17 @@ def _axis(values=None, title=None, fmt=None, grid=True):
 def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, str, list[float]]],
                    load: list[float], charge: list[float], discharge: list[float],
                    *, ceiling_kw: float | None = None, week: bool = False,
-                   height: int = 340, detail: list[dict] | None = None):
+                   height: int = 340, detail: list[dict] | None = None,
+                   veil: list[float] | None = None):
     """Stacked supply, signed battery bar, load line -- the reference chart.
 
     ``stack`` is a list of ``(name, colour, series)`` built by the caller from
     however many units the result carries, so this function never names a unit.
+
+    ``veil`` is the reference's money band, one height per hour in kW: the
+    hour's saving divided by the price spread, hung from the load line. Its
+    area times the spread is the saving -- green where the hour saves, peach
+    where it costs more.
     """
     n = len(hours)
     bar = 3 if week else 13
@@ -454,12 +460,17 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
             load_tips.append(alt.Tooltip(f"{key}:{kind}", title=key,
                                          **({"format": fmt} if kind == "Q" else {})))
 
-    top = max([sum(v[i] for _, _, v in stack) for i in range(n)] + list(load) + [1.0])
+    top = max([sum(v[i] for _, _, v in stack) for i in range(n)] + list(load) + [1.0]
+              + ([load[i] - veil[i] for i in range(n)] if veil else []))
     if ceiling_kw:
         top = max(top, ceiling_kw)
     top = -(-top * 1.06 // 500) * 500
     bot = max(discharge) if discharge else 0.0
     bot = -max(500.0, -(-bot * 1.25 // 500) * 500) if bot > 0 else 0.0
+    if veil:
+        low = min(load[i] - veil[i] for i in range(n))
+        if low < bot:
+            bot = (low // 500) * 500
     ticks = [v for v in range(int(bot), int(top) + 1, 500)]
     if len(ticks) > 16:
         step = 500 * (len(ticks) // 14 + 1)
@@ -508,6 +519,20 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
               alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(color=INK, strokeWidth=1)
               .encode(y="y:Q"),
               line]
+    if veil:
+        # two bands so each keeps one colour; an hour of the other sign
+        # collapses onto the load line
+        vdf = pd.DataFrame({
+            "h": hours, "load": load,
+            "pos_lo": [load[i] - max(veil[i], 0.0) for i in range(n)],
+            "neg_hi": [load[i] - min(veil[i], 0.0) for i in range(n)],
+        })
+        for lo, hi, col in (("pos_lo", "load", SAVE), ("load", "neg_hi", DISCHARGE)):
+            layers.insert(2, alt.Chart(vdf).mark_area(
+                color=col, opacity=0.2, interpolate="monotone").encode(
+                x=xenc, y=alt.Y(f"{lo}:Q", scale=alt.Scale(domain=[bot, top], nice=False),
+                                axis=_axis(values=ticks, title="kW", fmt=",.0f")),
+                y2=f"{hi}:Q"))
     if ceiling_kw:
         cap = pd.DataFrame({"y": [float(ceiling_kw)],
                             "lab": [f"fleet nameplate {ceiling_kw:,.0f} kW"]})

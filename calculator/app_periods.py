@@ -55,6 +55,12 @@ def _m(x) -> str:
     return f"{'-' if x < 0 else ''}{abs(x):,.0f} {_CUR}"
 
 
+def _signed(x) -> str:
+    """+1,234 / −1,234 in the current currency, as the reference writes savings."""
+    body = _m(abs(x))
+    return ("+" if x > 0.5 else ("−" if x < -0.5 else "")) + body
+
+
 def _n(x) -> str:
     return f"{x:,.0f}"
 
@@ -528,6 +534,31 @@ def render_periods(state: dict) -> None:
 
     rows = _window_rows(series, sh, start, n_h)
 
+    # ---- savings against a base scenario (custom dispatch study) --------
+    # state["savings"]: per-hour money of the base minus this run, split as
+    # the reference splits it -- energy (smooth, drawn as the veil) and
+    # starts plus wear (lumpy, tooltip and totals only) -- plus the SoC each
+    # run leaves in the battery, valued at the grid price it will displace.
+    sav = state.get("savings")
+    veil = save_e = save_s = None
+    if sav:
+        save_e = sav["save_e"][start:start + n_h]
+        save_s = sav["save_s"][start:start + n_h]
+        veil = [x / sav["spread"] for x in save_e]
+
+        def _dsoc(soc: list[float], soc0: float) -> float:
+            if not soc:
+                return 0.0
+            before = soc[start - 1] if start > 0 else soc0
+            return soc[start + n_h - 1] - before
+
+        d_soc = _dsoc(sav["soc_cur"], sav["soc0_cur"]) - _dsoc(sav["soc_base"], sav["soc0_base"])
+        soc_corr = d_soc * sav["eta"] * sav["price_mean"]
+        st_cur = sum(sav["starts_cur"][start:start + n_h])
+        st_base = sum(sav["starts_base"][start:start + n_h])
+        e_tot, s_tot = sum(save_e), sum(save_s)
+        sav_total = e_tot + s_tot + soc_corr
+
     # ---- panel: header, chart, stat strip ------------------------------
     title, strap = _headline(sh, res)
     P.panel_head(title, strap)
@@ -564,6 +595,10 @@ def render_periods(state: dict) -> None:
             d["spill kW"] = sum(r["spill"])
         if sh["any_unserved"]:
             d["unserved kW"] = r["unserved"]
+        if sav:
+            d[f"saving, energy {_CUR}"] = save_e[i]
+            if abs(save_s[i]) > 0.5:
+                d[f"saving, starts and wear {_CUR}"] = save_s[i]
         detail.append(d)
 
     st.altair_chart(
@@ -571,7 +606,7 @@ def render_periods(state: dict) -> None:
             hours, labels, stack,
             [r["load"] for r in rows], [r["ch"] for r in rows], [r["dis"] for r in rows],
             ceiling_kw=(sh["nameplate_kw"] if sh["units"] else None),
-            week=(period == "Week"), detail=detail,
+            week=(period == "Week"), detail=detail, veil=veil,
         ),
         use_container_width=True,
     )
@@ -605,8 +640,15 @@ def render_periods(state: dict) -> None:
     elif sh["units"]:
         cells.append(("Fuel share of load",
                       f"{100.0 * sum(sum(r['units']) for r in rows) / max(1e-9, sum(r['load'] for r in rows)):,.1f}%"))
-    cells.append(("Energy charge", _m(e_charge) if e_charge is not None else "—"))
-    P.stat_strip(cells, highlight={"Energy charge"})
+    if sav:
+        # the reference's last cell: the whole saving of the window
+        key = f"Saving vs {sav['base']}"
+        cells.append((key, (f'<span class="{"ghp-pos" if sav_total >= 0 else "ghp-neg"}">'
+                            f'{_signed(sav_total)}</span>')))
+        P.stat_strip(cells, highlight={key})
+    else:
+        cells.append(("Energy charge", _m(e_charge) if e_charge is not None else "—"))
+        P.stat_strip(cells, highlight={"Energy charge"})
 
     bits = [f"{when}"]
     if sh["units"]:
@@ -625,6 +667,15 @@ def render_periods(state: dict) -> None:
     if un > 0.5:
         bits.append(f'unserved <b class="ghp-neg">{un:,.0f} kWh</b>')
     P.note(bits)
+    if sav:
+        cls = lambda v: "ghp-pos" if v >= 0 else "ghp-neg"
+        P.note([
+            f'vs <b>{sav["base"]}</b>',
+            f'energy <b class="{cls(e_tot)}">{_signed(e_tot)}</b>',
+            f'starts {st_cur} vs {st_base} and wear <b class="{cls(s_tot)}">{_signed(s_tot)}</b>',
+            f'SoC correction {d_soc:+,.0f} kWh <b class="{cls(soc_corr)}">{_signed(soc_corr)}</b>',
+            f'veil height = saving / {sav["spread"]:,.0f} {_CUR}/kWh spread',
+        ])
 
     leg = [(nm, P.unit_color(j)) for j, nm in enumerate(sh["names"])]
     if sh["pv"]:

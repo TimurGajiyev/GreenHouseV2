@@ -159,6 +159,12 @@ class FuelTechInputs:
     # Hours a unit must stay on after a start / off after a stop. 1 = no rule.
     min_up_hours: int = 1
     min_down_hours: int = 1
+    # At most this many starts in any calendar day of the horizon (hours
+    # 0-23, 24-47, ...). OEM maintenance plans cap starts per day; the rule
+    # simulations this project compared (1-minute workbook vs hourly JSX)
+    # disagreed mostly on how often engines start. None = no limit and no
+    # new variables or constraints.
+    max_starts_per_day: int | None = None
     # Let a unit spill output it cannot deliver. It is still paid for (O&M and
     # fuel are charged on rated production) but it does not reach the load.
     # REopt has dvCurtail for every tech (reopt.jl:656); this port had it for PV only.
@@ -404,7 +410,7 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             ic > 0.0 or u.min_turn_down_fraction > 0.0
             or abs(ft_th_icept[g]) > 1.0e-7
             or u.start_cost > 0.0 or u.min_up_hours > 1 or u.min_down_hours > 1
-            or u.om_cost_per_running_hour > 0.0))
+            or u.om_cost_per_running_hour > 0.0 or u.max_starts_per_day is not None))
 
     sts = list(inp.storages) if inp.storages else [inp.storage]
     NB = range(len(sts))
@@ -510,7 +516,8 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
     # su - sd = u[t] - u[t-1] they take integral values at any optimum.
     ft_needs_uc = {g: bool(fts[g].enabled and (fts[g].start_cost > 0.0
                                                or fts[g].min_up_hours > 1
-                                               or fts[g].min_down_hours > 1))
+                                               or fts[g].min_down_hours > 1
+                                               or fts[g].max_starts_per_day is not None))
                    for g in NG}
     ftsu = {g: ({t: pulp.LpVariable(f"ftSU_{g}_{t}", lowBound=0, upBound=1) for t in T}
                 if ft_needs_uc[g] else None) for g in NG}
@@ -614,6 +621,13 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             if MD > 1:
                 m += (1 - ftu[g][t] >= pulp.lpSum(ftsd[g][(t - k) % H] for k in range(MD))
                       ), f"ft_mindown_{g}_{t}"
+        # starts per calendar day. su >= u[t] - u[t-1] >= 0 at every real start,
+        # so capping the sum of su caps the real starts; su stays continuous.
+        if fts[g].max_starts_per_day is not None:
+            cap = max(0, int(fts[g].max_starts_per_day))
+            for d in range((H + 23) // 24):
+                m += (pulp.lpSum(ftsu[g][t] for t in T[d * 24:(d + 1) * 24]) <= cap
+                      ), f"ft_maxstarts_{g}_{d}"
 
     # Land use: REopt adds LandConstraint only alongside CST (tech_constraints.jl:23);
     # for PV alone the space limit is the max size set above (reopt_inputs.jl:620-645),
@@ -1106,6 +1120,11 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             "starts": (sum(1 for t in T
                            if v(ftu[g][t]) > 0.5 and v(ftu[g][(t - 1) % H]) < 0.5)
                        if ft_needs_bin[g] else None),
+            # the same count, per calendar day of the horizon
+            "starts_by_day": ([sum(1 for t in T[d * 24:(d + 1) * 24]
+                                   if v(ftu[g][t]) > 0.5 and v(ftu[g][(t - 1) % H]) < 0.5)
+                               for d in range((H + 23) // 24)]
+                              if ft_needs_bin[g] else None),
         })
     bat_kw, bat_kwh = v(dvStoragePower), v(dvStorageEnergy)
 

@@ -39,7 +39,9 @@ MAX_H = 8760
 # column names of the two editable tables
 U_NAME, U_KW, U_COST, U_START = "Unit", "Rated kW", "Energy cost per kWh", "Start cost"
 U_MIN, U_UP, U_DOWN, U_SPILL = "Min load %", "Min up h", "Min down h", "Spill allowed"
+U_MAXST = "Max starts/day"
 S_NAME, S_MIN, S_BAT, S_SCALE = "Scenario", "Min load % (blank = per unit)", "Battery", "Load scale %"
+S_MAXST = "Max starts/day (blank = per unit)"
 
 # bess_profile_v2.jsx / CHP_BESS_model_v2.xlsx, «Допущения»
 JSX_UNITS = {
@@ -106,16 +108,28 @@ def read_series(upload) -> list[float]:
 
 def default_units(preset: str) -> pd.DataFrame:
     return pd.DataFrame([{U_NAME: n, U_KW: kw, U_COST: 22.0, U_START: 15_000.0, U_MIN: 50.0,
-                          U_UP: 4, U_DOWN: 5, U_SPILL: True} for n, kw in JSX_UNITS[preset]])
+                          U_UP: 4, U_DOWN: 5, U_SPILL: True, U_MAXST: None}
+                         for n, kw in JSX_UNITS[preset]])
 
 
 def default_scenarios() -> pd.DataFrame:
     """The artifact's three rules, A / B / C."""
     return pd.DataFrame([
-        {S_NAME: "A · free from 50%", S_MIN: 50.0, S_BAT: False, S_SCALE: 100.0},
-        {S_NAME: "B · 90% rule", S_MIN: 90.0, S_BAT: False, S_SCALE: 100.0},
-        {S_NAME: "C · 90% + battery", S_MIN: 90.0, S_BAT: True, S_SCALE: 100.0},
+        {S_NAME: "A · free from 50%", S_MIN: 50.0, S_BAT: False, S_SCALE: 100.0, S_MAXST: None},
+        {S_NAME: "B · 90% rule", S_MIN: 90.0, S_BAT: False, S_SCALE: 100.0, S_MAXST: None},
+        {S_NAME: "C · 90% + battery", S_MIN: 90.0, S_BAT: True, S_SCALE: 100.0, S_MAXST: None},
     ])
+
+
+def _opt_int(v) -> int | None:
+    """A blank / NaN cell is "no limit"; anything else is a whole number >= 0."""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(f) else max(0, int(round(f)))
 
 
 # ------------------------------------------------------------------ scenario
@@ -127,6 +141,7 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
     override = sc.get(S_MIN)
     override = None if override is None or (isinstance(override, float) and math.isnan(override)) \
         else float(override)
+    st_over = _opt_int(sc.get(S_MAXST))
     fleet = []
     for _, u in units.iterrows():
         kw = float(u[U_KW] or 0.0)
@@ -142,6 +157,7 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
             start_cost=float(u[U_START] or 0.0),
             min_up_hours=max(1, int(u[U_UP] or 1)), min_down_hours=max(1, int(u[U_DOWN] or 1)),
             can_curtail=bool(u[U_SPILL]),
+            max_starts_per_day=(st_over if st_over is not None else _opt_int(u.get(U_MAXST))),
             macrs_option_years=0, macrs_bonus_fraction=0.0, federal_itc_fraction=0.0))
     on = bool(sc.get(S_BAT)) and bat["kw"] > 0 and bat["kwh"] > 0
     eta = math.sqrt(bat["rte"])
@@ -185,7 +201,15 @@ def account(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> 
     grid_cost = sum(price[t] * grid[t] for t in range(len(grid)))
     dis = sum(ser["battery_discharge_kw"])
     ch = sum(ser["battery_charge_kw"])
+    H = len(grid)
+    days = max(1, (H + 23) // 24)
+    by_day = [0] * days
+    for r in rows:
+        for d, n in enumerate(r.get("starts_by_day") or []):
+            by_day[d] += n
     return dict(
+        starts_day_avg=starts / (H / 24.0), starts_day_max=max(by_day),
+        starts_year=starts * MAX_H / H,
         load=sum(ser["load_kw"]), gen_kwh=gen_kwh, gen_cost=gen_cost, grid_kwh=grid_kwh,
         grid_cost=grid_cost, peak=max(grid, default=0.0), starts=starts, start_cost=start_cost,
         charge=ch, discharge=dis, wear_cost=dis * wear,
@@ -203,10 +227,11 @@ def _money(x: float, cur: str) -> str:
         (f"{'−' if x < 0 else ''}{s} {cur}")
 
 
-def _compare(runs: list[dict], cur: str) -> None:
+def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0) -> None:
     head = ["Metric"] + [r["name"] for r in runs]
     acc = [r["acc"] for r in runs]
     base = acc[0]["total"]
+    k = MAX_H / hours
 
     def line(lab, key, fmt):
         return [lab] + [fmt(a[key]) for a in acc]
@@ -222,7 +247,13 @@ def _compare(runs: list[dict], cur: str) -> None:
         line("Battery discharged (kWh)", "discharge", kwh),
         line("Spill (kWh)", "spill", kwh),
         line("Starts", "starts", lambda v: f"{v:,.0f}"),
+        line("Starts per day, average (fleet)", "starts_day_avg", lambda v: f"{v:,.2f}"),
+        line("Starts on the busiest day (fleet)", "starts_day_max", lambda v: f"{v:,.0f}"),
+        line("Starts per year" + ("" if hours == MAX_H else " (annualised)"), "starts_year",
+             lambda v: f"{v:,.0f}"),
         line("Unit-hours", "unit_hours", lambda v: f"{v:,.0f}"),
+        ["Effective hours (running + starts × " + f"{wear_h:g} h)"]
+        + [f"{a['unit_hours'] + a['starts'] * wear_h:,.0f}" for a in acc],
         line("Generation cost", "gen_cost", money),
         line("Grid cost", "grid_cost", money),
         line("Start cost", "start_cost", money),
@@ -233,11 +264,119 @@ def _compare(runs: list[dict], cur: str) -> None:
                              "ghp-neg" if a["total"] > base + 0.5 else "ghp-pos"))
         for i, a in enumerate(acc)]
     rows.append(delta)
+    rows.append([f"Operating cost per year{'' if hours == MAX_H else f' (× {k:,.2f})'}"]
+                + [money(a["total"] * k) for a in acc])
+    rows.append(["vs first scenario, per year"] + [
+        ("—" if i == 0 else (_money((a["total"] - base) * k, cur),
+                             "ghp-neg" if a["total"] > base + 0.5 else "ghp-pos"))
+        for i, a in enumerate(acc)])
     rows.append(["Solver"] + [
         f"{a['status']}" + (f", gap {100 * a['gap']:.2f}%" if a.get("gap") is not None else "")
         for a in acc])
     P.table(head, rows, ["Operating cost"] + [money(a["total"]) for a in acc],
-            sections={0: "Energy", 9: "Cost", 13: "Comparison"})
+            sections={0: "Energy", 7: "Starts and running", 13: "Cost", 17: "Comparison"})
+
+
+def hourly(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> dict:
+    """Each hour's cost, split the way the reference splits a saving:
+    energy (generation at unit cost plus grid purchase) and operations
+    (start costs and battery wear)."""
+    ser = res["series"]
+    H = len(ser["load_kw"])
+    cost_of = {str(u[U_NAME]): (float(u[U_COST] or 0.0), float(u[U_START] or 0.0))
+               for _, u in units.iterrows()}
+    energy = [price[t] * ser["grid_kw"][t] for t in range(H)]
+    for name, kw in (ser.get("fueltech_unit_kw") or {}).items():
+        c = cost_of.get(name, (0.0, 0.0))[0]
+        for t in range(H):
+            energy[t] += c * kw[t]
+    starts = [0] * H
+    ops = [wear * ser["battery_discharge_kw"][t] for t in range(H)]
+    for name, on in (ser.get("fueltech_unit_on") or {}).items():
+        sc = cost_of.get(name, (0.0, 0.0))[1]
+        for t in range(H):
+            if on[t] > 0.5 and on[t - 1] < 0.5:            # cyclic, as the model counts
+                starts[t] += 1
+                ops[t] += sc
+    return {"energy": energy, "ops": ops, "starts": starts,
+            "soc": list(ser.get("soc_kwh") or [])}
+
+
+def _soc0(run: dict, bat: dict) -> float:
+    """SoC before the first hour: the closing SoC when cyclic, else the fixed start."""
+    soc = run["hourly"]["soc"]
+    if not run["battery"] or not soc:
+        return 0.0
+    return soc[-1] if bat["cyclic"] else bat["soc_init"] * bat["kwh"]
+
+
+def savings(run: dict, base: dict, out: dict) -> dict:
+    """Per-hour saving of ``run`` against ``base`` for the chart's veil and strip."""
+    price, units, bat = out["price"], out["units"], out["bat"]
+    costs = [float(u[U_COST] or 0.0) for _, u in units.iterrows() if float(u[U_KW] or 0.0) > 0]
+    p_mean = sum(price) / max(1, len(price))
+    spread = p_mean - (sum(costs) / len(costs) if costs else 0.0)
+    if spread <= 0:
+        spread = p_mean or 1.0
+    a, b = run["hourly"], base["hourly"]
+    H = len(a["energy"])
+    return {
+        "base": base["name"],
+        "save_e": [b["energy"][t] - a["energy"][t] for t in range(H)],
+        "save_s": [b["ops"][t] - a["ops"][t] for t in range(H)],
+        "starts_cur": a["starts"], "starts_base": b["starts"],
+        "soc_cur": a["soc"] if run["battery"] else [],
+        "soc_base": b["soc"] if base["battery"] else [],
+        "soc0_cur": _soc0(run, bat), "soc0_base": _soc0(base, bat),
+        "eta": math.sqrt(bat["rte"]), "price_mean": p_mean, "spread": spread,
+    }
+
+
+def _default_base(run: dict, others: list[dict]) -> dict:
+    """As the reference: a battery scenario is measured against the scenario with
+    the same rule and no battery; otherwise against the first other scenario."""
+    if run["battery"]:
+        same = [r for r in others if not r["battery"]
+                and r.get("rule") == run.get("rule") and r.get("scale") == run.get("scale")]
+        if same:
+            return same[0]
+        plain = [r for r in others if not r["battery"]]
+        if plain:
+            return plain[-1]
+    return others[0]
+
+
+def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
+    """The reference's savings and payback strip, as one table: this scenario
+    against every other, per window and per year, with the battery CAPEX it
+    adds and the years that CAPEX takes to pay back."""
+    cur, capex = out["currency"], out["bat"].get("capex", 0.0)
+    A._CUR = cur
+    k = MAX_H / hours
+    rows = []
+    for o in others:
+        save = o["acc"]["total"] - run["acc"]["total"]
+        year = save * k
+        extra = (capex if run["battery"] and not o["battery"] else
+                 -capex if o["battery"] and not run["battery"] else 0.0)
+        if extra > 0:
+            pay = (f"{extra / year:,.1f} years", "ghp-pos") if year > 0 else ("never", "ghp-neg")
+        elif extra < 0:
+            pay = ("saves the CAPEX" if year >= 0 else f"{-extra / -year:,.1f} years (the other way)",
+                   "ghp-pos" if year >= 0 else "ghp-neg")
+        else:
+            pay = ("no extra CAPEX", "")
+        cls = "ghp-pos" if save >= 0 else "ghp-neg"
+        rows.append([o["name"], (A._signed(save), cls), (A._signed(year), cls),
+                     _money(extra, cur) if extra else "—", pay])
+    P.table(["Compared with", "Saving over the window", "Saving per year",
+             "Extra battery CAPEX", "Payback"], rows)
+    note = [f"<b>{run['name']}</b> against each other scenario; positive = cheaper to run",
+            f"battery CAPEX <b>{_money(capex, cur)}</b>"]
+    if hours != MAX_H:
+        note.append(f"per year = window × 8,760 / {hours:,} h — an annualisation of this "
+                    f"window, not a full-year run; solve a full year for the JSX's own figures")
+    P.note(note)
 
 
 # ------------------------------------------------------------------ page
@@ -271,12 +410,15 @@ def render() -> None:
         if load:
             n = len(load)
             c1, c2 = st.columns(2)
+            # keyed by source and length, so switching the source (a day, a week, a
+            # new upload) starts from its whole series, not the previous window
+            wk = f"{src}_{n}"
             with c1:
                 start = int(st.number_input("Window start hour (0 = first)", 0, max(0, n - 1), 0,
-                                            key="gd_start"))
+                                            key=f"gd_start_{wk}"))
             with c2:
                 length = int(st.number_input("Window length (hours)", 1, min(MAX_H, n - start),
-                                             min(MAX_H, n - start), key="gd_len"))
+                                             min(MAX_H, n - start), key=f"gd_len_{wk}_{start}"))
             load = load[start:start + length]
             st.caption(f"{len(load):,} hours · {sum(load):,.0f} kWh · peak {max(load):,.0f} kW "
                        f"· minimum {min(load):,.0f} kW")
@@ -324,7 +466,16 @@ def render() -> None:
                 U_DOWN: st.column_config.NumberColumn(min_value=1, step=1),
                 U_SPILL: st.column_config.CheckboxColumn(
                     help="Output above the load may be spilled (paid for, not used)."),
+                U_MAXST: st.column_config.NumberColumn(
+                    min_value=0, step=1, format="%d",
+                    help="At most this many starts in any calendar day. Blank = no limit."),
             })
+        wear_h = st.number_input(
+            "Start wear, equivalent running hours per start (report only)", 0.0, 100.0, 15.0,
+            step=1.0, key="gd_wear_h",
+            help="CHP_BESS_dispatch_sim.xlsx: OEM maintenance plans count a start as 10–20 "
+                 "running hours. Used for the 'effective hours' row; it does not change "
+                 "the dispatch — the start cost does.")
         st.caption("Each unit runs at a fixed nameplate: on/off, a minimum load while on, a "
                    "start cost, and minimum up and down times. Leave a row's rating at 0 to "
                    "drop it; an empty table means grid (and battery) only.")
@@ -343,6 +494,10 @@ def render() -> None:
         with c3:
             wear = st.number_input(f"Wear cost ({cur} per kWh discharged)", 0.0, value=0.5,
                                    step=0.1, key="gd_wear")
+            capex = st.number_input(f"Battery CAPEX ({cur})", 0.0, value=391_000_000.0,
+                                    step=1_000_000.0, format="%.0f", key="gd_capex",
+                                    help="Only for payback: CAPEX divided by the annual saving "
+                                         "against a scenario without the battery.")
             grid_charge = st.checkbox("Allow grid charging", value=False, key="gd_gridchg")
         with c4:
             soc_mode = st.radio("State of charge at the start",
@@ -352,7 +507,7 @@ def render() -> None:
         st.caption("Size is fixed; each scenario below switches the battery on or off.")
     bat = dict(kw=b_kw, kwh=b_kwh, rte=rte / 100.0, soc_min=soc_min / 100.0,
                soc_init=soc_init / 100.0, cyclic=soc_mode.startswith("Cyclic"),
-               wear=wear, grid_charge=grid_charge)
+               wear=wear, grid_charge=grid_charge, capex=capex)
 
     # ---- 5. scenarios ---------------------------------------------------------
     T.panel_head("Scenarios", required=True)
@@ -367,6 +522,9 @@ def render() -> None:
                 S_BAT: st.column_config.CheckboxColumn(),
                 S_SCALE: st.column_config.NumberColumn(
                     min_value=1.0, step=5.0, help="Scales the whole load — for variability."),
+                S_MAXST: st.column_config.NumberColumn(
+                    min_value=0, step=1, format="%d",
+                    help="Overrides every unit's max starts per day for this scenario."),
             })
         st.caption("Each row is solved separately and compared side by side. The JSX's own "
                    "three rules are filled in; add rows to vary the load level, the minimum-load "
@@ -402,9 +560,17 @@ def render() -> None:
                 res = M.solve(inp, time_limit=int(tlim), mip_gap=float(gap) / 100.0)
                 acc = account(res, price, units, bat["wear"] if sc.get(S_BAT) else 0.0)
                 acc["seconds"] = time.time() - t0
-                runs.append({"name": str(sc[S_NAME]), "res": res, "tariff": inp.tariff, "acc": acc})
+                runs.append({"name": str(sc[S_NAME]), "res": res, "tariff": inp.tariff,
+                             "acc": acc, "battery": bool(inp.storage.enabled),
+                             "rule": (None if sc.get(S_MIN) is None or (isinstance(sc.get(S_MIN), float)
+                                                                        and math.isnan(sc[S_MIN]))
+                                      else float(sc[S_MIN])),
+                             "scale": float(sc.get(S_SCALE) or 100.0),
+                             "hourly": hourly(res, price, units,
+                                              bat["wear"] if inp.storage.enabled else 0.0)})
             prog.progress(1.0, text="Done")
-            ss["gd_results"] = {"runs": runs, "currency": cur}
+            ss["gd_results"] = {"runs": runs, "currency": cur, "hours": len(load), "wear_h": wear_h,
+                                "price": price, "units": units, "bat": bat}
         except Exception as exc:  # show the real reason
             prog.empty()
             st.error(f"Run failed: {exc}")
@@ -415,8 +581,24 @@ def render() -> None:
     if not out:
         return
     runs, cur = out["runs"], out["currency"]
+    H = out.get("hours") or len(runs[0]["res"]["series"]["load_kw"])
     T.panel_head("Scenario comparison")
-    _compare(runs, cur)
-    pick = P.switch("Scenario", [r["name"] for r in runs], key="gd_pick")
+    _compare(runs, cur, H, out.get("wear_h", 15.0))
+
+    T.panel_head("Economics of one scenario against the others")
+    names = [r["name"] for r in runs]
+    pick = P.switch("Scenario", names, key="gd_pick")
     run = next((r for r in runs if r["name"] == pick), runs[0])
-    A.render_periods({"res": run["res"], "tariff": run["tariff"], "currency": cur})
+    others = [r for r in runs if r is not run]
+    if others:
+        _economics(run, others, out, H)
+        base_name = st.selectbox(
+            "Veil and savings in the chart below are measured against", [r["name"] for r in others],
+            index=[r["name"] for r in others].index(_default_base(run, others)["name"]),
+            key=f"gd_base_{pick}")
+        base = next(r for r in others if r["name"] == base_name)
+        sav = savings(run, base, out)
+    else:
+        sav = None
+    A.render_periods({"res": run["res"], "tariff": run["tariff"], "currency": cur,
+                      "savings": sav})

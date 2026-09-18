@@ -1219,6 +1219,44 @@ objective:
 | 3 units · B 90 % rule | 1,418,074 | 2,180 |
 | 3 units · C 90 % + battery | 1,259,645 | 0 |
 
+**Economics and the savings veil.** Under the comparison, one scenario is picked and set
+against every other in a single table — saving over the window, saving per year, the extra
+battery CAPEX (an input, 391,000,000 ₸ by default) and the payback in years — which is the
+JSX's "Экономия к B / Окупаемость к B / к A" strip rearranged so every pair reads on one
+row. The chart then carries the JSX's green veil: each hour's energy saving against the
+chosen base, divided by the spread (mean grid price − mean unit cost, 38 ₸/kWh here) and
+hung from the load line, so its area × spread is the money; hours that cost more show in
+peach. The stat strip ends with "Saving vs …" and a line splits it as the JSX does —
+energy, starts and wear, SoC correction. A battery scenario defaults to the base with the
+same rule and load scale and no battery (C against B, as in the JSX).
+
+On the JSX's day: C saves 195,734 ₸ against B and 124,996 ₸ against A; the hourly savings
+add up to those differences exactly (`tools/test_dispatch_study.py`). Per year is the
+window annualised (× 8,760 / 24), so the day gives payback 5.5 years against B and 8.6
+against A; the JSX's 6.3 / 11.5 come from full-year runs, which this section also accepts
+as an 8,760-hour upload.
+
+**Starts per day.** The two workbooks disagree most on how often engines start:
+`CHP_BESS_dispatch_sim.xlsx` (1-minute threshold rules) starts 4 per day with the battery,
+while `CHP_BESS_model_v2.xlsx` / the JSX (hourly) comes to 41–307 starts a year, 0.1–0.8 a
+day; this hourly optimiser, like the JSX, cannot see the minute-scale excursions behind the
+workbook's starts. Starts are now a first-class quantity:
+
+* **a cap** — `FuelTechInputs.max_starts_per_day`: at most N starts per unit in any
+  calendar day of the horizon (hours 0–23, 24–47, …). The start indicator is already bounded
+  below by every real start, so the cap needs no new binaries. Blank means no limit and adds
+  no variables or constraints, so every existing case and validator is unchanged. In the
+  section it is a column of the units table, with a per-scenario override so caps can be
+  compared side by side;
+* **a report** — starts per day (average and busiest day), starts per year, and the
+  workbook's own maintenance measure, effective hours = running hours + starts × the
+  equivalent hours of one start (15 by default, the workbook's placeholder).
+
+On the JSX week with three units and the 90 % rule the optimiser starts engines 14 times,
+up to 3 a day. A cap of one start per unit per day holds on every unit-day and costs
+9,417 ₸ more over the week; a cap of zero forbids starts and costs 745,849 ₸ more; a blank
+cap reproduces the uncapped week to the tenge (`tools/test_dispatch_study.py`).
+
 In the browser the default A / B / C day solves in under a minute; beyond a week, on/off
 units add one binary per unit per hour and a run may stop at its time limit with a small
 remaining gap, which the comparison table shows.
