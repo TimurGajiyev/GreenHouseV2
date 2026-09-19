@@ -1,0 +1,39 @@
+{
+ "provenance_notes": [
+  "electric load: CSV 140-590 kW vs the paper's figure ~0-690 kW (same order, different shape)",
+  "date 2024-10-15: the paper gives no dates; its data 'belongs to a private company'",
+  "currency: CSV says USD, the paper prices in GBP",
+  "read as energy ABOVE the 30% floor the column fits the 0-700 kWh usable band (100-590 kWh) — that reading rescues the SoC window but not the efficiencies",
+  "with Table 4 efficiencies the same commands end the day at 121 kWh instead of 220 kWh (lossless), and run from 92 kWh",
+  "tank: to cover those hours the buffer must start the day holding 609 kWh_th and hold at least 5,279 kWh_th — the paper states no tank capacity, so this is neither confirmed nor refuted",
+  "heat surplus to the tank 5,279 kWh_th — the paper's tank has no stated capacity, so nothing bounds it"
+ ],
+ "failures": [
+  "time resolution: 48 half-hour steps (Section 5)",
+  "tariff: two bands 0.106 / 0.140 (Table 5)",
+  "heat load: flat at ~483 kW_th (Figure 7)",
+  "baseline column respects the no-export rule (Eq 13)",
+  "charge efficiency 90% (Table 4)",
+  "discharge efficiency 90% (Table 4)",
+  "SoC inside the 30-100% window (300-1000 kWh)",
+  "CHP heat covers the heat load every hour (Eq 2, no boiler)"
+ ],
+ "physics": {
+  "deficit_kwh_th": 751.3599999999999,
+  "surplus_kwh_th": 5279.08,
+  "soc_paper_eff_min": 91.5,
+  "soc_paper_eff_end": 121.38888888888891
+ },
+ "csv_optimized": {
+  "chp_fuel": 508.1030825,
+  "grid": 0.0,
+  "boiler": 16.52992,
+  "total": 524.6330025
+ },
+ "csv_baseline": {
+  "chp_fuel": 494.98664,
+  "grid": 58.77,
+  "boiler": 22.68376,
+  "total": 576.4404000000001
+ }
+}

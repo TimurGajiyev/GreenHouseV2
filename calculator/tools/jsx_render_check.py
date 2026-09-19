@@ -25,6 +25,15 @@ import types
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# This report prints the artifact's own headers and totals, which carry the
+# minus sign U+2212, the middle dot and the tenge. Redirected to a file on a
+# Russian Windows, stdout defaults to cp1251 and the first of those raises,
+# so the run fails on a print rather than on anything it checked.
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:                                   # pragma: no cover
+    pass
+
 import jsx_case as J
 import profile_ui as P
 import app_periods as A

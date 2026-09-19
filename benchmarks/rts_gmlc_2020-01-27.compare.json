@@ -1,0 +1,21 @@
+{
+ "instance": "rts_gmlc\\2020-01-27.json",
+ "reference": {
+  "status": "OPTIMAL",
+  "objective": 7647266.298756894,
+  "bound": 7647266.298756894
+ },
+ "ours": {
+  "benchmark_cost": 7647266.298756907,
+  "starts": 53,
+  "generation": 279250.101941,
+  "grid": -1.1368683772161603e-13,
+  "engine_objective": 7647266.298756686,
+  "status": "Optimal"
+ },
+ "difference": 1.30385160446167e-08,
+ "seconds": {
+  "reference": 83.04742741584778,
+  "ours": 13.301753997802734
+ }
+}

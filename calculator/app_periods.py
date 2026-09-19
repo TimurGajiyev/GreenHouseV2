@@ -509,15 +509,28 @@ def render_periods(state: dict) -> None:
     T.panel_head("Dispatch by period", icon="calendar_month")
 
     # ---- switches -------------------------------------------------------
+    # Each switch is drawn only where it has something to switch between. They
+    # used to be drawn always and then overruled a line later, so on a
+    # single-day run -- which is what the dispatch study loads by default --
+    # both took the click, showed themselves pressed, and changed nothing.
+    #
+    #   period   needs more than a day, or "Week" shows the same hours again
+    #   day      needs two whole days, or both positions land on day 0
     H = horizon(series)
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        period = P.switch("Period", ["Day", "Week"], key="ghp_period")
-    with c2:
-        which = P.switch("Day", ["Representative day", "Peak day"], key="ghp_day")
-    day = rep if which == "Representative day" else pk
-    if H <= 24:                        # nothing to pick from inside a single day
-        period, day = "Day", 0
+    period, day = "Day", 0
+    show_period, show_day = H > 24, H // 24 >= 2
+    if show_period or show_day:
+        c1, c2 = st.columns([1, 1])
+        with c1:
+            if show_period:
+                period = P.switch("Period", ["Day", "Week"], key="ghp_period")
+        with c2:
+            if show_day:
+                which = P.switch("Day", ["Representative day", "Peak day"], key="ghp_day")
+                day = rep if which == "Representative day" else pk
+    else:
+        P.note([f"A horizon of <b>{H}</b> hours is a single day: no other day to "
+                f"choose, and no week to widen to."])
 
     if period == "Day":
         start, n_h = day * 24, min(24, H)
@@ -569,36 +582,61 @@ def render_periods(state: dict) -> None:
         stack.append(("PV", P.PV_COLOR, [r["pv"] for r in rows]))
     stack.append(("Grid", P.GRID_COLOR, [r["grid"] for r in rows]))
 
-    # everything the reference puts in its hover panel, per hour
+    # The reference's Tip component, hour by hour: one panel naming every
+    # series, each figure in its series' colour. The row set is identical for
+    # every hour -- a row that does not apply carries an em dash instead of
+    # disappearing -- so the panel does not reflow under the pointer and
+    # profile_ui can colour the figures by position, which is the only handle
+    # CSS has on Vega's tooltip. The saving rows keep the reference's green
+    # and carry their own sign; the veil under the load line is what shows an
+    # hour that costs more.
+    dash = "\u2014"
+
+    def _tip_kw(v: float) -> str:
+        return f"{v:,.0f} kW" if abs(v) > 0.5 else dash
+
     detail = []
     for i, r in enumerate(rows):
-        d: dict = {}
+        d: list[tuple[str, str, str]] = [("Site load", f"{r['load']:,.0f} kW", P.INK)]
         if sh["units"]:
-            d["fleet kW"] = sum(r["units"])
+            d.append(("Fleet output", _tip_kw(sum(r["units"])), P.MUTED))
             for j, nm in enumerate(sh["names"]):
                 share = 100.0 * r["units"][j] / r["load"] if r["load"] > 1e-9 else 0.0
-                d[f"{nm} kW"] = r["units"][j]
-                d[f"{nm} % of load"] = share
+                d.append((f"  {nm}",
+                          (f"{r['units'][j]:,.0f} kW \u00b7 {share:.0f}%"
+                           if r["units"][j] > 0.5 else dash),
+                          P.unit_color(j)))
         if sh["pv"]:
-            d["PV kW"] = r["pv"]
+            d.append(("PV", _tip_kw(r["pv"]), P.PV_COLOR))
         if sh["banks"]:
-            d["charge kW"] = r["ch"]
-            d["discharge kW"] = r["dis"]
-            d["SOC %"] = (r["soc"] / sh["cap_kwh"] * 100.0) if sh["cap_kwh"] > 0 else r["soc"]
-        d["grid kW"] = r["grid"]
-        if sh["any_on"]:
-            d["units running"] = float(sum(1 for v in r["on"] if v > 0.5))
-            prev = rows[i - 1]["on"] if i else rows[-1]["on"]
-            d["starts this hour"] = float(sum(
-                1 for j, v in enumerate(r["on"]) if v > 0.5 and prev[j] <= 0.5))
+            d.append(("Battery charge",
+                      f"+{r['ch']:,.0f} kW" if r["ch"] > 0.5 else dash, P.CHARGE))
+            d.append(("Battery discharge",
+                      f"\u2212{r['dis']:,.0f} kW" if r["dis"] > 0.5 else dash, P.DISCHARGE))
+        d.append(("Grid purchase", _tip_kw(r["grid"]), P.GRID_COLOR))
         if sh["any_spill"]:
-            d["spill kW"] = sum(r["spill"])
+            d.append(("Spill", _tip_kw(sum(r["spill"])), P.DISCHARGE))
         if sh["any_unserved"]:
-            d["unserved kW"] = r["unserved"]
+            d.append(("Unserved", _tip_kw(r["unserved"]), P.DISCHARGE))
+        if sh["any_on"]:
+            prev = rows[i - 1]["on"] if i else rows[-1]["on"]
+            started = sum(1 for j, v in enumerate(r["on"]) if v > 0.5 and prev[j] <= 0.5)
+            d.append(("Units running",
+                      f"{sum(1 for v in r['on'] if v > 0.5)} of {len(sh['names'])}", P.MUTED))
+            d.append(("Starts this hour", str(started) if started else dash, P.DISCHARGE))
+        if sh["banks"]:
+            soc = (r["soc"] / sh["cap_kwh"] * 100.0) if sh["cap_kwh"] > 0 else r["soc"]
+            d.append(("State of charge", f"{soc:,.1f}%", P.MUTED))
         if sav:
-            d[f"saving, energy {_CUR}"] = save_e[i]
-            if abs(save_s[i]) > 0.5:
-                d[f"saving, starts and wear {_CUR}"] = save_s[i]
+            # The reference greens these two. It can afford to: it colours each
+            # figure as it writes it, so a negative hour comes out peach. Here
+            # the colour is set in CSS by row position and cannot change with
+            # the sign, and a loss printed in green would be a lie, so the
+            # figures stay in ink. The sign is on the number, and the veil
+            # under the load line is green or peach for that same hour.
+            d.append(("Saving, energy", _signed(save_e[i]), P.INK))
+            d.append(("Saving, starts and wear",
+                      _signed(save_s[i]) if abs(save_s[i]) > 0.5 else dash, P.INK))
         detail.append(d)
 
     st.altair_chart(

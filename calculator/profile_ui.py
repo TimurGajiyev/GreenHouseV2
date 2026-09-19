@@ -244,28 +244,32 @@ _CSS = f"""
 .ghp-sw-discharge {{ background: {DISCHARGE}; }}
 .ghp-sw-load {{ background: {INK}; }}
 
-/* ---- Vega's tooltip is created outside the chart, so only CSS can reach it.
-   Same box as the reference: white panel, 1px rule, mono 12px, muted keys. */
+/* ---- Vega's tooltip is built outside the chart, in one element hung off
+   the page body, so CSS is the only thing that can reach it. Streamlit ships
+   vega-tooltip's own stylesheet, and its own theme on top of that, from the
+   document head; both address the cells as `#id table tr td.value`, so this
+   sheet has to say exactly that too and win on document order. Anything
+   shorter loses -- their rule sets the value cell to display block, aligned
+   left and clamped to five lines, which is why the figures used to sit under
+   their labels instead of forming a column.
+
+   Layout follows the reference's Tip component: white panel, 1px rule, mono
+   12px, muted label on the left, figure right-aligned on tabular numerals,
+   line-height 1.7, 230px floor, and the hour as a heading with a rule under
+   it -- vega-tooltip promotes the field named `title` to a heading.
+
+   Never write an HTML tag in here, not even inside a comment: st.html
+   sanitises the string it is given and one stray tag costs the whole sheet. */
 #vg-tooltip-element {{
     background: {PANEL};
     border: 1px solid {RULE};
     border-radius: 0;
-    box-shadow: none;
+    box-shadow: 0 2px 10px rgba(23, 36, 47, 0.10);
     padding: 10px 12px;
     font-family: {MONO};
     font-size: 12px;
     color: {INK};
-}}
-#vg-tooltip-element table td.key {{
-    color: {MUTED};
-    font-weight: 400;
-    text-align: left;
-    padding-right: 16px;
-}}
-#vg-tooltip-element table td.value {{
-    color: {INK};
-    text-align: right;
-    font-variant-numeric: tabular-nums;
+    max-width: none;
 }}
 #vg-tooltip-element h2 {{
     font-family: {MONO};
@@ -273,7 +277,37 @@ _CSS = f"""
     font-weight: 600;
     letter-spacing: 0.04em;
     color: {INK};
-    margin: 0 0 6px;
+    margin: 0 0 7px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid {RULE};
+}}
+#vg-tooltip-element table {{
+    border-spacing: 0;
+    min-width: 230px;
+    width: 100%;
+}}
+#vg-tooltip-element table tr td {{
+    padding: 0;
+    line-height: 1.7;
+    overflow: visible;
+    text-overflow: clip;
+}}
+#vg-tooltip-element table tr td.key {{
+    color: {MUTED};
+    font-weight: 400;
+    text-align: left;
+    max-width: none;
+    padding-right: 18px;
+    /* the reference indents its per-unit lines with two spaces */
+    white-space: pre;
+}}
+#vg-tooltip-element table tr td.value {{
+    display: table-cell;
+    color: {INK};
+    text-align: right;
+    max-width: none;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
 }}
 
 /* ---- segmented switches in the profiling block only ----
@@ -355,11 +389,18 @@ def legend(items: list[tuple[str, str]]) -> None:
 
 
 def switch(label: str, options: list[str], *, key: str, default: str | None = None) -> str:
-    """A segmented control wearing the reference's switch styling."""
+    """A segmented control wearing the reference's switch styling.
+
+    `required=True` matters: without it a segmented control lets the reader
+    click the option that is already chosen and turn it OFF. The call then
+    returns None, this function quietly falls back to the default, and the
+    buttons are left showing nothing selected while the page is drawn for
+    something -- a switch that lies about its own position.
+    """
     st.html('<span class="ghp-switch-scope"></span>')
     picked = st.segmented_control(
         label, options, default=default or options[0], key=key,
-        label_visibility="collapsed",
+        required=True, label_visibility="collapsed",
     )
     return picked or (default or options[0])
 
@@ -401,12 +442,14 @@ def table(head: list[str], rows: list[list[Cell]], foot: list[Cell] | None = Non
 
 
 # ------------------------------------------------------------------- chart
-def _axis(values=None, title=None, fmt=None, grid=True):
+def _axis(values=None, title=None, fmt=None, grid=True, domain=True):
+    # The reference's axes: no tick marks on either, a rule under the hours and
+    # none beside the kW, and a grid of horizontal dashes 2 on 4 off.
     # Altair rejects an explicit None for these, so only pass what is set
     kw = dict(labelFont=MONO, labelFontSize=11, labelColor=MUTED,
               titleFont=MONO, titleFontSize=11.5, titleColor=MUTED,
-              titleFontWeight=400, domainColor=RULE, tickColor=RULE,
-              gridColor="#E7ECF0", grid=grid)
+              titleFontWeight=400, domain=domain, domainColor=RULE,
+              ticks=False, gridColor=RULE, gridDash=[2, 4], grid=grid)
     if values is not None:
         kw["values"] = values
     if title is not None:
@@ -416,15 +459,38 @@ def _axis(values=None, title=None, fmt=None, grid=True):
     return alt.Axis(**kw)
 
 
+def _tooltip_palette(colors: list[str]) -> None:
+    """Colour the hover panel's figures, one rule per row.
+
+    Vega's tooltip is plain escaped text in an element of its own, so a mark
+    cannot colour its own row and no class can be attached to one. What *is*
+    fixed is the order: the rows come out in the order of the tooltip channel,
+    identically for every hour, so position addresses them. That is why the
+    panel carries a dash rather than dropping a row that does not apply -- a
+    reflowing table would break both the colours and the reading.
+
+    One dispatch chart is drawn per page, so this global sheet is unambiguous.
+    """
+    rules = "".join(
+        f"#vg-tooltip-element table tr:nth-child({i}) td.value{{color:{c};}}"
+        for i, c in enumerate(colors, start=1))
+    st.html(f"<style>{rules}</style>")
+
+
 def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, str, list[float]]],
                    load: list[float], charge: list[float], discharge: list[float],
                    *, ceiling_kw: float | None = None, week: bool = False,
-                   height: int = 340, detail: list[dict] | None = None,
+                   height: int | None = None,
+                   detail: list[list[tuple[str, str, str]]] | None = None,
                    veil: list[float] | None = None):
     """Stacked supply, signed battery bar, load line -- the reference chart.
 
     ``stack`` is a list of ``(name, colour, series)`` built by the caller from
     however many units the result carries, so this function never names a unit.
+
+    ``detail`` is the reference's hover panel: for each hour, the rows of its
+    Tip component as ``(label, text, colour)``, already formatted. Every hour
+    must give the same labels in the same order.
 
     ``veil`` is the reference's money band, one height per hour in kW: the
     hour's saving divided by the price spread, hung from the load line. Its
@@ -433,6 +499,8 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
     """
     n = len(hours)
     bar = 3 if week else 13
+    if height is None:
+        height = 420 if week else 380
 
     rows = []
     for name, color, vals in stack:
@@ -448,17 +516,6 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
                             "sgn": ["charge" if v >= 0 else "discharge" for v in bess]})
     bess_df = bess_df[bess_df["kw"].abs() > 1e-9]
     load_df = pd.DataFrame({"h": hours, "kw": load, "t": labels})
-    # the reference reads the whole hour in one tooltip panel rather than one
-    # box per bar, so every per-hour quantity rides on the load line
-    load_tips = [alt.Tooltip("t:N", title=""),
-                 alt.Tooltip("kw:Q", title="site load kW", format=",.0f")]
-    if detail:
-        for key in detail[0]:
-            load_df[key] = [d.get(key) for d in detail]
-            fmt = ",.1f" if key.endswith("%") else ",.0f"
-            kind = "Q" if isinstance(detail[0][key], (int, float)) else "N"
-            load_tips.append(alt.Tooltip(f"{key}:{kind}", title=key,
-                                         **({"format": fmt} if kind == "Q" else {})))
 
     top = max([sum(v[i] for _, _, v in stack) for i in range(n)] + list(load) + [1.0]
               + ([load[i] - veil[i] for i in range(n)] if veil else []))
@@ -476,36 +533,78 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
         step = 500 * (len(ticks) // 14 + 1)
         ticks = [v for v in range(int(bot), int(top) + 1, step)]
 
+    # the reference labels every second hour counting from the first
     xticks = ([1] + list(range(24, n + 1, 24)) if week
-              else [h for h in hours if h % 2 == 0])
+              else [h for h in hours if h % 2 == 1])
     xtitle = "hour of week" if week else "hour of day"
     # horizontal rules only, as in the reference grid
-    xenc = alt.X("h:Q", axis=_axis(values=xticks, title=xtitle, grid=False),
-                 scale=alt.Scale(domain=[hours[0] - 0.5, hours[-1] + 0.5], nice=False))
-    yenc = alt.Y("kw:Q", axis=_axis(values=ticks, title="kW", fmt=",.0f"),
-                 scale=alt.Scale(domain=[bot, top], nice=False))
+    xscale = alt.Scale(domain=[hours[0] - 0.5, hours[-1] + 0.5], nice=False)
+    yscale = alt.Scale(domain=[bot, top], nice=False)
+    xenc = alt.X("h:Q", axis=_axis(values=xticks, title=xtitle, grid=False), scale=xscale)
+    yenc = alt.Y("kw:Q", axis=_axis(values=ticks, title="kW", fmt=",.0f", domain=False), scale=yscale)
 
     names = [nm for nm, _, _ in stack]
     colors = [c for _, c, _ in stack]
+
+    # ---- the hover panel -------------------------------------------------
+    # Recharts gives a whole category one tooltip and lays a translucent cursor
+    # over the hovered column. The same thing in Vega-Lite is a transparent
+    # rect per hour, on top of every other layer so it takes the pointer
+    # wherever in the column it is -- over a bar, over the line, or over empty
+    # space -- carrying that hour's panel as one tooltip object.
+    hover = alt.selection_point(name="ghhover", on="pointerover", clear="pointerout",
+                                fields=["h"], empty=False)
+    tip_df = pd.DataFrame({"h": hours, "title": labels,
+                           "x0": [h - 0.5 for h in hours],
+                           "x1": [h + 0.5 for h in hours],
+                           "y0": bot, "y1": top})
+    # vega-tooltip renders the field called `title` as the panel's heading
+    tips = [alt.Tooltip("title:N", title="title")]
+    palette: list[str] = []
+    if detail:
+        used: set[str] = set()
+        for k, (lab, _, col) in enumerate(detail[0]):
+            key = lab
+            while key in used:          # the labels become object keys
+                key += "\u2009"
+            used.add(key)
+            tip_df[f"f{k}"] = [d[k][1] for d in detail]
+            tips.append(alt.Tooltip(f"f{k}:N", title=key))
+            palette.append(col)
+    else:
+        tip_df["f0"] = [f"{v:,.0f} kW" for v in load]
+        tips.append(alt.Tooltip("f0:N", title="site load"))
+        palette.append(INK)
+    # the same axis definitions as every other layer, so Vega-Lite merges them
+    # into the one pair of axes; an `axis=None` on either drops both
+    _band = alt.Chart(tip_df).mark_rect().encode(
+        x=alt.X("x0:Q", scale=xscale,
+                axis=_axis(values=xticks, title=xtitle, grid=False)), x2="x1:Q",
+        y=alt.Y("y0:Q", scale=yscale,
+                axis=_axis(values=ticks, title="kW", fmt=",.0f", domain=False)), y2="y1:Q")
+    # Recharts paints its cursor behind the marks, so the wash and the surface
+    # that catches the pointer are two layers: the wash at the very bottom, the
+    # catcher on top of everything, transparent but still hit-tested.
+    wash = _band.mark_rect(fill=INK).encode(
+        fillOpacity=alt.when(hover).then(alt.value(0.05)).otherwise(alt.value(0.0)))
+    cursor = _band.mark_rect(fill=INK, fillOpacity=0.0).encode(
+        tooltip=tips).add_params(hover)
+
     # Recharts draws the BESS bar beside the stack, not on top of it; in
     # Vega-Lite that is a pixel offset on each mark
     off = bar / 2.0 + 0.5
     supply = alt.Chart(stack_df).mark_bar(size=bar, fillOpacity=0.85,
                                           xOffset=-off).encode(
-        x=xenc, y=alt.Y("kw:Q", stack="zero", axis=_axis(values=ticks, title="kW", fmt=",.0f"),
-                        scale=alt.Scale(domain=[bot, top], nice=False)),
+        x=xenc, y=alt.Y("kw:Q", stack="zero",
+                        axis=_axis(values=ticks, title="kW", fmt=",.0f", domain=False), scale=yscale),
         color=alt.Color("src:N", scale=alt.Scale(domain=names, range=colors),
                         legend=None),
         order=alt.Order("o:Q", sort="ascending"),
-        tooltip=[alt.Tooltip("t:N", title=""), alt.Tooltip("src:N", title="source"),
-                 alt.Tooltip("kw:Q", title="kW", format=",.0f")],
     )
     battery = alt.Chart(bess_df).mark_bar(size=bar, xOffset=off).encode(
         x=xenc, y=yenc,
         color=alt.Color("sgn:N", scale=alt.Scale(domain=["charge", "discharge"],
                                                  range=[CHARGE, DISCHARGE]), legend=None),
-        tooltip=[alt.Tooltip("t:N", title=""), alt.Tooltip("sgn:N", title="battery"),
-                 alt.Tooltip("kw:Q", title="kW", format=",.0f")],
     )
     # a day gets the reference's hollow markers, a week a fine ink dot
     point = (alt.OverlayMarkDef(color=INK, size=6, filled=True) if week
@@ -513,41 +612,50 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
                                      size=26, filled=False))
     line = alt.Chart(load_df).mark_line(
         color=INK, strokeWidth=1.1 if week else 1.6, point=point,
-    ).encode(x=xenc, y=yenc, tooltip=load_tips)
+    ).encode(x=xenc, y=yenc)
+    # the reference's activeDot: the hovered hour's marker fills in and swells
+    active = alt.Chart(load_df).mark_point(
+        size=80, filled=True, fill=INK, stroke=PANEL, strokeWidth=2,
+    ).encode(x=xenc, y=yenc,
+             opacity=alt.when(hover).then(alt.value(1.0)).otherwise(alt.value(0.0)))
 
-    layers = [supply, battery,
-              alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(color=INK, strokeWidth=1)
-              .encode(y="y:Q"),
-              line]
+    layers = [wash]
+    if week:
+        seps = pd.DataFrame({"x": list(range(24, n, 24))})
+        layers.append(alt.Chart(seps).mark_rule(color=RULE, strokeWidth=1).encode(x="x:Q"))
     if veil:
-        # two bands so each keeps one colour; an hour of the other sign
-        # collapses onto the load line
+        # beneath the bars, as in the reference, and straight-edged: the band's
+        # area is the money, so a smoothing curve would misstate it
         vdf = pd.DataFrame({
             "h": hours, "load": load,
             "pos_lo": [load[i] - max(veil[i], 0.0) for i in range(n)],
             "neg_hi": [load[i] - min(veil[i], 0.0) for i in range(n)],
         })
+        # two bands so each keeps one colour; an hour of the other sign
+        # collapses onto the load line
         for lo, hi, col in (("pos_lo", "load", SAVE), ("load", "neg_hi", DISCHARGE)):
-            layers.insert(2, alt.Chart(vdf).mark_area(
-                color=col, opacity=0.2, interpolate="monotone").encode(
-                x=xenc, y=alt.Y(f"{lo}:Q", scale=alt.Scale(domain=[bot, top], nice=False),
-                                axis=_axis(values=ticks, title="kW", fmt=",.0f")),
+            layers.append(alt.Chart(vdf).mark_area(
+                color=col, opacity=0.2, interpolate="linear").encode(
+                x=xenc, y=alt.Y(f"{lo}:Q", scale=yscale,
+                                axis=_axis(values=ticks, title="kW", fmt=",.0f", domain=False)),
                 y2=f"{hi}:Q"))
+    layers += [supply, battery,
+               alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(color=INK, strokeWidth=1)
+               .encode(y="y:Q")]
     if ceiling_kw:
         cap = pd.DataFrame({"y": [float(ceiling_kw)],
-                            "lab": [f"fleet nameplate {ceiling_kw:,.0f} kW"]})
-        layers.insert(2, alt.Chart(cap).mark_rule(
+                            "lab": [f"fleet nameplate {ceiling_kw:,.0f} kW"],
+                            "x": [float(hours[-1])]})
+        layers.append(alt.Chart(cap).mark_rule(
             color=CEILING, strokeDash=[6, 4], strokeWidth=1.25).encode(y="y:Q"))
         # alt.value() on x would be a pixel offset; anchor the caption to the
         # last hour instead so it sits at the right edge of the plotting area
-        cap["x"] = float(hours[-1])
-        layers.insert(3, alt.Chart(cap).mark_text(
+        layers.append(alt.Chart(cap).mark_text(
             align="right", baseline="bottom", dy=-4, color=CEILING,
             font=MONO, fontSize=11).encode(y="y:Q", x="x:Q", text="lab:N"))
-    if week:
-        seps = pd.DataFrame({"x": list(range(24, n, 24))})
-        layers.insert(0, alt.Chart(seps).mark_rule(color=RULE, strokeWidth=1).encode(x="x:Q"))
+    layers += [line, active, cursor]
 
+    _tooltip_palette(palette)
     return (alt.layer(*layers)
             .properties(height=height, background=PANEL, padding={"left": 4, "right": 8,
                                                                   "top": 6, "bottom": 2})

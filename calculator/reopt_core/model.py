@@ -159,6 +159,9 @@ class FuelTechInputs:
     # Hours a unit must stay on after a start / off after a stop. 1 = no rule.
     min_up_hours: int = 1
     min_down_hours: int = 1
+    # Only read when ScenarioInputs.cyclic_commitment is False: the unit's state
+    # in the hour before the horizon starts.
+    initial_on: bool = False
     # At most this many starts in any calendar day of the horizon (hours
     # 0-23, 24-47, ...). OEM maintenance plans cap starts per day; the rule
     # simulations this project compared (1-minute workbook vs hourly JSX)
@@ -225,7 +228,21 @@ class ScenarioInputs:
     # multiplies by the unit's rated kW, which is the physically consistent form
     # for a fleet of fixed-size machines but is NOT what REopt computes.
     # Irrelevant at REopt defaults, where the intercept is 0 either way.
+    # "reopt" follows REopt per technology: the CHP fuel y-intercept scales with
+    # the unit's size (chp_constraints.jl:34), the generator's does not
+    # (generator_constraints.jl:11). "rated" is the older fixed-size shortcut,
+    # kept so earlier scenarios reproduce; it needs min_kw == max_kw.
     fuel_intercept_basis: str = "reopt"
+    # Commitment across the seam of the horizon. True (the default) wraps it:
+    # hour 0 follows hour H-1, so a run of 8,760 hours reads as a repeating year
+    # and a short window as a repeating window -- no free start at hour 0, no
+    # forgotten shutdown at the end. False states a finite horizon instead: each
+    # unit begins in FuelTechInputs.initial_on and the minimum up/down windows
+    # only look back inside the horizon, which is the unit-commitment
+    # convention. The wrap costs nothing when the minimum times are short next
+    # to the horizon; when they are comparable to it, it is a real restriction
+    # (a unit stopped near the end cannot run near the start).
+    cyclic_commitment: bool = True
     off_grid_flag: bool = False
     land_acres: float | None = None
     roof_squarefeet: float | None = None
@@ -407,7 +424,7 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
         # At REopt defaults ic == 0.0 and turndown == 0, so none is created and
         # the model stays a pure LP -- identical to the pre-curve formulation.
         ft_needs_bin[g] = bool(u.enabled and (
-            ic > 0.0 or u.min_turn_down_fraction > 0.0
+            abs(ic) > 1.0e-7 or u.min_turn_down_fraction > 0.0
             or abs(ft_th_icept[g]) > 1.0e-7
             or u.start_cost > 0.0 or u.min_up_hours > 1 or u.min_down_hours > 1
             or u.om_cost_per_running_hour > 0.0 or u.max_starts_per_day is not None))
@@ -470,9 +487,13 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             # REopt only restricts "both" when BOTH areas are given
             pv_space_max = min(pv_space_max, roof_max + land_max)
 
-    dvPVsize = pulp.LpVariable("dvSize_PV", lowBound=inp.pv.min_kw,
+    # a technology that is switched off carries no size floor: its minimum is a
+    # sizing bound on a tech being considered, not a commitment to build it
+    dvPVsize = pulp.LpVariable("dvSize_PV", lowBound=inp.pv.min_kw if inp.pv.enabled else 0.0,
                                upBound=pv_space_max if inp.pv.enabled else 0.0)
-    ftsize = {g: pulp.LpVariable(f"dvSize_FT_{g}", lowBound=fts[g].existing_kw + fts[g].min_kw,
+    ftsize = {g: pulp.LpVariable(f"dvSize_FT_{g}",
+                                 lowBound=(fts[g].existing_kw + fts[g].min_kw)
+                                 if fts[g].enabled else 0.0,
                                  upBound=(fts[g].existing_kw + fts[g].max_kw)
                                  if fts[g].enabled else 0.0)
               for g in NG}
@@ -611,16 +632,23 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             continue
         MU = max(1, int(fts[g].min_up_hours))
         MD = max(1, int(fts[g].min_down_hours))
+        cyc = inp.cyclic_commitment
         for t in T:
-            # cyclic, like the state-of-charge balance: the period is closed
-            prev = ftu[g][T[-1]] if t == 0 else ftu[g][t - 1]
+            # cyclic: the period is closed, like the state-of-charge balance.
+            # finite: the unit enters the horizon in its stated initial state and
+            # the look-back windows stop at hour 0 (uc convention).
+            if t == 0:
+                prev = ftu[g][T[-1]] if cyc else (1.0 if fts[g].initial_on else 0.0)
+            else:
+                prev = ftu[g][t - 1]
             m += ftsu[g][t] - ftsd[g][t] == ftu[g][t] - prev, f"ft_switch_{g}_{t}"
+            back = (lambda k: (t - k) % H) if cyc else (lambda k: t - k)
             if MU > 1:
-                m += (ftu[g][t] >= pulp.lpSum(ftsu[g][(t - k) % H] for k in range(MU))
-                      ), f"ft_minup_{g}_{t}"
+                m += (ftu[g][t] >= pulp.lpSum(ftsu[g][back(k)] for k in range(MU)
+                                              if cyc or t - k >= 0)), f"ft_minup_{g}_{t}"
             if MD > 1:
-                m += (1 - ftu[g][t] >= pulp.lpSum(ftsd[g][(t - k) % H] for k in range(MD))
-                      ), f"ft_mindown_{g}_{t}"
+                m += (1 - ftu[g][t] >= pulp.lpSum(ftsd[g][back(k)] for k in range(MD)
+                                                  if cyc or t - k >= 0)), f"ft_mindown_{g}_{t}"
         # starts per calendar day. su >= u[t] - u[t-1] >= 0 at every real start,
         # so capping the sum of su caps the real starts; su stays continuous.
         if fts[g].max_starts_per_day is not None:
@@ -940,10 +968,35 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
     TotalPerUnitProdOMCosts = pwf_om * pulp.lpSum(
         fts[g].om_cost_per_kwh * _rated_sum(g) for g in NG)
 
-    # Fuel, per unit: generator_constraints.jl:8-12
-    #     usage = slope * production + intercept * on
-    # At REopt's default (half == full load) intercept is 0 and slope is exactly
-    # 1/(eff*HHV), so this reduces to the previous linear term term-for-term.
+    # Fuel, per unit. REopt writes the y-intercept of the fuel curve two ways,
+    # and the difference is a whole factor of the unit's size:
+    #
+    #   Generator  generator_constraints.jl:8-12
+    #              usage = slope * production + intercept * binGenIsOnInTS
+    #   CHP        chp_constraints.jl:18-34
+    #              usage = slope * production + dvFuelBurnYIntercept, with
+    #              dvFuelBurnYIntercept >= intercept * dvSize - max_size * (1 - bin)
+    #
+    # fuel_slope_and_intercept (utils.jl:645) returns that intercept per kW of
+    # RATED capacity, which is why CHP scales it by dvSize and the generator
+    # does not. Here the product size x on is linearised exactly (dvOnCapacity),
+    # so the term is right whether the unit is fixed or being sized, and for a
+    # negative intercept too -- REopt's own condition is abs(intercept) > 1e-7
+    # (chp_constraints.jl:18), not intercept > 0. At REopt's default (half ==
+    # full load) the intercept is 0 and both forms collapse to the linear term.
+    ft_on_kw = {}
+    for g in NG:
+        u = fts[g]
+        if (u.enabled and u.kind == "CHP" and ft_needs_bin[g]
+                and abs(ft_icept[g]) > 1.0e-7 and inp.fuel_intercept_basis != "rated"):
+            _M = ft_M[g]
+            ft_on_kw[g] = {t: pulp.LpVariable(f"dvOnCapacity_{g}_{t}", lowBound=0,
+                                              upBound=_M) for t in T}
+            for t in T:
+                z, on = ft_on_kw[g][t], ftu[g][t]
+                m += z <= ftsize[g], f"onkw_a_{g}_{t}"
+                m += z <= _M * on, f"onkw_b_{g}_{t}"
+                m += z >= ftsize[g] - _M * (1 - on), f"onkw_c_{g}_{t}"
     ft_fuel_units = {}
     TotalFuelCosts = 0.0
     for g in NG:
@@ -952,7 +1005,9 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             ft_fuel_units[g] = 0.0
             continue
         usage = ft_slope_fuel[g] * pulp.lpSum(ftgen[g][t] for t in T)
-        if ft_needs_bin[g] and ft_icept[g] > 0.0:
+        if g in ft_on_kw:
+            usage = usage + ft_icept[g] * pulp.lpSum(ft_on_kw[g][t] for t in T)
+        elif ft_needs_bin[g] and abs(ft_icept[g]) > 1.0e-7:
             coef = ft_icept[g]
             if inp.fuel_intercept_basis == "rated":
                 if u.min_kw != u.max_kw:
@@ -967,7 +1022,9 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             # "CHP fuel cost varies by month?" -- each hour priced at its month
             _mp = [u.fuel_cost_per_mmbtu_monthly[_MONTH_OF_HOUR[t]] for t in T]
             _hourly = (pulp.lpSum(_mp[t] * ft_slope_fuel[g] * ftgen[g][t] for t in T))
-            if ft_needs_bin[g] and ft_icept[g] > 0.0:
+            if g in ft_on_kw:
+                _hourly = _hourly + pulp.lpSum(_mp[t] * ft_icept[g] * ft_on_kw[g][t] for t in T)
+            elif ft_needs_bin[g] and abs(ft_icept[g]) > 1.0e-7:
                 _c = ft_icept[g] * (u.max_kw if inp.fuel_intercept_basis == "rated" else 1.0)
                 _hourly = _hourly + pulp.lpSum(_mp[t] * _c * ftu[g][t] for t in T)
             TotalFuelCosts = TotalFuelCosts + _pwf * _hourly
@@ -1092,6 +1149,12 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
            + sts[b].installed_cost_per_kwh * v(ben[b])
            + (sts[b].installed_cost_constant if v(ben[b]) > 1e-6 else 0.0))
         for b in NB if sts[b].enabled)
+    def _was_off(g, t):
+        """State in the hour before t, on the same seam rule the model used."""
+        if t == 0 and not inp.cyclic_commitment:
+            return not fts[g].initial_on
+        return v(ftu[g][(t - 1) % H]) < 0.5
+
     ft_unit_rows = []
     for g in NG:
         if not fts[g].enabled:
@@ -1117,12 +1180,11 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             "unavailable_hours": (sum(1 for t in T if ft_pf[g][t] <= 0.0)
                                   if ft_pf[g] is not None else 0),
             "production_incentive": 0.0,
-            "starts": (sum(1 for t in T
-                           if v(ftu[g][t]) > 0.5 and v(ftu[g][(t - 1) % H]) < 0.5)
+            "starts": (sum(1 for t in T if v(ftu[g][t]) > 0.5 and _was_off(g, t))
                        if ft_needs_bin[g] else None),
             # the same count, per calendar day of the horizon
             "starts_by_day": ([sum(1 for t in T[d * 24:(d + 1) * 24]
-                                   if v(ftu[g][t]) > 0.5 and v(ftu[g][(t - 1) % H]) < 0.5)
+                                   if v(ftu[g][t]) > 0.5 and _was_off(g, t))
                                for d in range((H + 23) // 24)]
                               if ft_needs_bin[g] else None),
         })

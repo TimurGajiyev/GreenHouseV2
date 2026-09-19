@@ -270,9 +270,14 @@ def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0) -> No
         ("—" if i == 0 else (_money((a["total"] - base) * k, cur),
                              "ghp-neg" if a["total"] > base + 0.5 else "ghp-pos"))
         for i, a in enumerate(acc)])
-    rows.append(["Solver"] + [
-        f"{a['status']}" + (f", gap {100 * a['gap']:.2f}%" if a.get("gap") is not None else "")
-        for a in acc])
+    # HiGHS reports an infinite MIP gap for a model with no integers in it at
+    # all -- a scenario with no fuel-fired units is a plain LP -- and "gap inf%"
+    # is not a thing to show anybody. There is no gap to report, so report none.
+    def _gap(a: dict) -> str:
+        g = a.get("gap")
+        return "" if g is None or g != g or g in (float("inf"), float("-inf"))             else f", gap {100 * g:.2f}%"
+
+    rows.append(["Solver"] + [f"{a['status']}{_gap(a)}" for a in acc])
     P.table(head, rows, ["Operating cost"] + [money(a["total"]) for a in acc],
             sections={0: "Energy", 7: "Starts and running", 13: "Cost", 17: "Comparison"})
 

@@ -1,0 +1,21 @@
+{
+ "instance": "ferc/2015-07-01_lw.json",
+ "reference": {
+  "status": "OPTIMAL",
+  "objective": 9005380.752428155,
+  "bound": 9005380.752428155
+ },
+ "ours": {
+  "benchmark_cost": 9005380.75242812,
+  "starts": 77,
+  "generation": 200824.81544499996,
+  "grid": 0.0,
+  "engine_objective": 9005380.75242813,
+  "status": "Optimal"
+ },
+ "difference": -3.5390257835388184e-08,
+ "seconds": {
+  "reference": 36.53101348876953,
+  "ours": 2.9320545196533203
+ }
+}

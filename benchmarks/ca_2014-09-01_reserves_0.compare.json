@@ -1,0 +1,21 @@
+{
+ "instance": "ca/2014-09-01_reserves_0.json",
+ "reference": {
+  "status": "OPTIMAL",
+  "objective": 9297.688775292729,
+  "bound": 9297.688775292729
+ },
+ "ours": {
+  "benchmark_cost": 9297.68877529284,
+  "starts": 58,
+  "generation": 240940.61152199996,
+  "grid": 0.0,
+  "engine_objective": 9297.688775292996,
+  "status": "Optimal"
+ },
+ "difference": 1.1095835361629725e-10,
+ "seconds": {
+  "reference": 81.16415238380432,
+  "ours": 3.6099088191986084
+ }
+}

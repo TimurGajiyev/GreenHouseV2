@@ -59,6 +59,18 @@ Package depot is **`D:\JuliaDepot`** (C: is short on space) — always set
    the disclosure arrows, and the raw HTML contains their content regardless.
 4. Always check code-fence parity; an odd count means a stray fence is eating content.
 
+## Streamlit design layer
+
+`calculator/profile_ui.py` holds the whole design layer (palette, stylesheet, tables,
+dispatch chart). Two traps, both of which fail silently:
+
+- **`st.html` sanitises.** One HTML tag anywhere in the string — including inside a CSS
+  comment — drops the entire `<style>` block. The page then renders unstyled with no error.
+  Never write a tag name in angle brackets in that file.
+- **Streamlit styles Vega's tooltip first**, from the document head, as
+  `#vg-tooltip-element table tr td.value`. Any rule of ours must repeat that selector
+  exactly; a shorter one loses on specificity. Ours wins only because it sits in the body.
+
 ## Project report
 
 `REPORT.md` at the repo root is the single consolidated document: what the calculator is,

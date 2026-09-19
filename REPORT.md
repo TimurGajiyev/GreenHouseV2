@@ -25,7 +25,9 @@ the limits are.
 - [Part 11 — The profiling view](#part-11--the-profiling-view)
 - [Part 12 — CHP and Battery, field for field with the web tool](#part-12--chp-and-battery-field-for-field-with-the-web-tool)
 - [Part 13 — Custom dispatch study (not REopt)](#part-13--custom-dispatch-study-not-reopt)
-- [Part 14 — Repository layout and how to reproduce](#part-14--repository-layout-and-how-to-reproduce)
+- [Part 14 — An outside case: Sigalo et al. 2023](#part-14--an-outside-case-sigalo-et-al-2023)
+- [Part 15 — IEEE PES pglib-uc: the commitment maths, cross-validated](#part-15--ieee-pes-pglib-uc-the-commitment-maths-cross-validated)
+- [Part 16 — Repository layout and how to reproduce](#part-16--repository-layout-and-how-to-reproduce)
 
 ---
 
@@ -701,9 +703,75 @@ keep the REopt-orange Streamlit styling and only the profiling switches change: 
 the live page, the four form controls still read Roboto 14px with 6px/9999px radii while the
 two profiling switches read mono 12px with square corners.
 
-Vega draws its tooltip outside the chart DOM, so it is reached through `#vg-tooltip-element`
-in the same stylesheet — otherwise the one element a reader hovers would be the only one not
-wearing the design.
+## The hover panel
+
+The reference is Recharts, where one `<Tooltip>` serves a whole category: point anywhere in
+an hour's column and a single panel names every series at once — the load, the fleet, each
+engine with its share, the battery, the grid, the units running, the state of charge, the
+starts, the money. That panel is most of what the chart is for, so it was rebuilt exactly.
+
+Three things had to be solved, none of them obvious.
+
+**One panel for the column, not one per mark.** Vega-Lite gives the tooltip to the topmost
+mark under the pointer, so a stacked bar answered with its own three fields and the full
+panel appeared only if the pointer found the 1.6px load line. The fix is the shape Recharts
+draws anyway: a transparent rect per hour, spanning the plot from `bot` to `top`, laid over
+every other layer. It takes the pointer wherever in the column it is and carries the hour as
+one tooltip object. A point selection on it (`on="pointerover"`, `clear="pointerout"`) then
+drives two more things for free — the column washes `rgba(23,36,47,0.05)` under the pointer,
+which is Recharts' `cursor`, and the hovered hour's marker fills in and swells, which is its
+`activeDot`.
+
+**The panel is plain text.** vega-tooltip escapes what it is given and builds a fixed
+`<h2>` plus `<tr><td class="key">…<td class="value">` table, so a mark cannot colour its own
+row and no class can be attached to one. What is fixed is the order: rows come out in the
+order of the tooltip channel, identically for every hour. So the rows are addressed by
+position — one `tr:nth-child(k) td.value { color: … }` rule per row, written next to the
+chart from the same `(label, text, colour)` list that fills it. This is why a row that does
+not apply carries an em dash instead of disappearing, as it does in the reference: a table
+that reflowed under the pointer would break both the colours and the reading. The one field
+named `title` becomes the heading — that is vega-tooltip's own rule, not a trick.
+
+**Streamlit styles it first.** Streamlit ships vega-tooltip's stylesheet and its own theme
+on top, both from the document head, and both address the cells as `#vg-tooltip-element
+table tr td.value`. The old sheet said `#vg-tooltip-element table td.value` — one element
+short, so it lost, and their `display: block; text-align: left; -webkit-line-clamp: 5` won:
+the figures sat under their labels instead of forming a column. Repeating their exact
+selector is enough, because this sheet is in the body and wins on document order.
+
+Measured on the live page with `getComputedStyle`, hovering hour 08:00 of the JSX case:
+
+| Element | Specification | Measured |
+| --- | --- | --- |
+| panel | white, 1px rule `#CBD5DC`, square, padding 10px 12px, mono 12px | `rgb(255,255,255)`, `1px solid rgb(203,213,220)`, `0px`, `10px 12px`, `ui-monospace`, `12px` |
+| heading | mono 12px, weight 600, letter-spacing .04em, 1px rule under | `12px`, `600`, `0.48px`, `1px solid rgb(203,213,220)` |
+| label cell | muted, left, `white-space: pre` so the per-unit rows keep their indent | `rgb(92,107,121)`, `left`, `pre` |
+| figure cell | table-cell, right, tabular figures, no wrap | `table-cell`, `right`, `tabular-nums`, `nowrap` |
+| row | line-height 1.7 | `20.4px` on 12px |
+| table | 230px floor | `230px`, drawn at 262px for a 12-row panel |
+
+The figures wear their series' colour: ink for the load, muted for the fleet total and the
+counts, each engine its own bar colour, teal for charge, peach for discharge and starts,
+grey for the grid. The two money rows are the one departure from the reference. It colours
+them green because it colours each figure as it writes it, so a negative hour comes out
+peach; here the colour is fixed per row and cannot follow the sign, and a loss printed in
+green would be a lie. They stay in ink, carry their own `+`/`−`, and the veil under the load
+line is green or peach for that same hour.
+
+**A trap worth naming.** `st.html` sanitises the string it is given, and one HTML tag
+anywhere in it — even inside a CSS comment — costs the whole `<style>` block silently. A
+comment that mentioned `<h2>` while explaining the heading rule deleted the entire profiling
+stylesheet; the page still rendered, just undesigned. There are no tags in that file now and
+a note in it says why.
+
+## The axes
+
+Matched to the reference in the same pass: no tick marks on either axis, a rule under the
+hours and none beside the kW, a grid of horizontal dashes 2 on 4 off in the rule colour, and
+hours labelled from the first (1, 3, 5 …) rather than the second. The chart is 380px for a
+day and 420px for a week, as the reference sizes it. The saving veil now draws beneath the
+bars with straight edges: its area times the price spread is the money, so the smoothing
+curve it had been given was quietly misstating it.
 
 ## Dynamic asset variability
 
@@ -737,11 +805,11 @@ Each field was checked against what this block renders, and the gaps closed:
 | Reference field | Here | Note |
 | --- | --- | --- |
 | `load` | `LOAD` | same |
-| `chp` | one column per unit, plus `fleet kW` in the tooltip | finer than the reference, which prints the fleet total |
+| `chp` | one column per unit, plus `Fleet output` in the hover panel | finer than the reference, which prints the fleet total |
 | `ch` / `dis` | `CHARGE +` / `DISCHARGE −` | prints a figure, and `−` on discharge, as the reference does |
 | `soc` | `SOC %` | stored as kWh, shown as a share of installed capacity |
 | `grid` | `GRID` | same |
-| `starts` | `STARTS` on the weekly table, `starts this hour` in the tooltip | same |
+| `starts` | `STARTS` on the weekly table, `Starts this hour` in the hover panel | same |
 | `uon` | `ON` | added; was missing |
 | `spill` | `SPILL`, per unit in the result | same |
 | — | `PV`, `EXPORT`, `UNSERVED` | this model has them, the reference has no PV and no unserved load |
@@ -1263,7 +1331,145 @@ remaining gap, which the comparison table shows.
 
 ---
 
-# Part 14 — Repository layout and how to reproduce
+# Part 14 — An outside case: Sigalo et al. 2023
+
+*Real-Time Economic Dispatch of CHP Systems with Battery Energy Storage for Behind-the-Meter
+Applications*, Energies **16**(1274), 2023 — a 2 × 250 kW<sub>e</sub> CHP plant with a
+1,000 kWh battery at an animal-feed factory, solved by MILP with an LSTM forecast and a
+receding horizon. It is the first case posed to this calculator that comes from neither
+REopt nor a vendor, so it tests the engine rather than the port.
+
+## A reverse-engineered CSV, audited
+
+A day-long CSV circulated as "digitised from the paper". `tools/audit_paper_csv.py` checks
+it three ways (provenance, physics, economics) and keeps them apart:
+
+* **Provenance fails.** Its time step is 1 h (the paper runs 48 half-hour steps), its tariff
+  is a smooth 0.040–0.185 USD curve over 23 values (the paper's Table 5 has two bands,
+  £0.106 / £0.140), and its heat load swings 170–460 kW<sub>th</sub> in anti-phase with the
+  electric load (the paper's Figure 7 is flat at ≈483). Only the equipment is the paper's.
+* **Physics, mostly.** Balance, the 500 kW fleet cap, the 50 % minimum load and the 250 kW
+  battery limit all hold. Two do not: the SoC trace implies a **lossless battery** (Table 4
+  says 90 % each way), and the baseline column **over-generates up to 90 kW in 6 hours**
+  with no import and no export permitted. Its SoC column fits the 30–100 % window only if
+  read as energy *above* the floor.
+* **Economics: not an optimum.** Priced with the paper's own Table 3 curve, its "optimised"
+  column costs 524.63/day against this calculator's 514.46 on the same inputs — 1.94 %
+  cheaper here. Ignoring heat the gap is 5.17 %, because at a 0.040 night tariff buying is
+  cheaper than running the engines; the night-time CHP output is justified by heat alone.
+
+## The paper's own case, rebuilt
+
+`tools/paper_case.py` builds the day from the tables (Table 2 efficiencies, Table 3 fuel
+curve, Table 4 battery, Table 5 tariff, flat 483 kW<sub>th</sub>, 48 half-hour steps, no
+export) and marks its four assumptions in the source: the electric load is unpublished
+(two profiles are run — a reconstruction of Figure 6 and the CSV's day — and only agreeing
+conclusions are reported), a 90 % boiler stands in for the tank whose capacity the paper
+never gives, the start-up cost of Eq (19) has no published value, and the day closes on SoC.
+
+**Half-hour steps on an hourly engine.** `reopt_core.model` integrates one hour per step.
+The transformation — keep every kW rate, multiply every per-kWh price by Δt, divide the
+battery's kWh by Δt — is exact, and `--check-dt` proves it on one physical day held constant
+inside each hour: 24 × 1 h and 48 × 30 min give 528.1455 vs 528.1509 and identical CHP, grid,
+discharge and boiler energies.
+
+| Scenario (CSV load / Figure-6 load) | Total | CHP kWh | Grid kWh | Starts |
+| --- | ---: | ---: | ---: | ---: |
+| grid only | 1,470 / 1,706 | 0 | 9,005 / 10,934 | 0 |
+| CHP, no battery | 574 / 706 | 8,635 / 10,038 | 370 / 896 | 9 / 2 |
+| **CHP + battery** | **529 / 617** | 9,152 / 11,106 | 0 | 7 / 0 |
+| battery with no losses (the CSV's assumption) | 523 / 609 | 9,005 / 10,934 | 0 | 0 |
+| start cost 100, or max 1 start/day | 528 / 617 | 9,153 / 11,106 | 0 | 0 |
+| heat ignored | 502 / 617 | 9,092 / 11,106 | 0 | 5 / 4 |
+
+Holding on both profiles: savings against grid-only **64 %** (the paper's ideal Scenario 1
+gives 54.4 %, and ours carries neither forecast error nor start cost); the battery removes
+grid import entirely and is worth **46–89 per day** over CHP alone; **heat is what keeps the
+engines on** — with the thermal load the optimum starts nothing, without it 4–5 times, which
+is the paper's qualitative claim in numbers; and the caps on starts never bind because the
+optimum has none.
+
+**Table 6 is not reproducible, as Part 12's reading predicted.** At the paper's own tariff
+and a load of Figure 6's magnitude, grid-only must cost 1,470–1,706/day; Table 6 prints
+731.98. The factor of ≈2 matches Eq (19)'s missing Δt. Percentages compare; absolute figures
+do not.
+
+**Limits this exposed.** The engine optimises an *affine* fuel curve built from the 100 %
+and 50 % efficiencies and is re-priced on Table 3's quadratic; the gap is 1.2–1.6 % (it was
+2.1–2.5 % before Part 15's fuel-intercept fix), so
+scenario differences smaller than that are approximation, not dispatch (the constraint
+monotonicity check is therefore run on the engine objective, where it holds exactly).
+REopt's piecewise fuel curve of Eq (5)–(8) is not implemented, there is no thermal store,
+and there is no receding horizon — this calculator is always the paper's "ideal" scenario.
+
+**One engine defect, found and fixed.** A *disabled* technology kept its `min_kw` as a size
+floor while its upper bound went to zero, so any scenario that switched PV or a fuel tech
+off with a non-zero minimum came back Infeasible (model.py:475). Both bounds are now zero
+when the tech is off; the enabled path is untouched, and TC1 23/23, TC2 15/15, G1/G2 24/24,
+PT2 22/24, all nine REopt.jl groups, the dispatch study and the field checks are unchanged.
+
+---
+
+# Part 15 — IEEE PES pglib-uc: the commitment maths, cross-validated
+
+[pglib-uc](https://github.com/power-grid-lib/pglib-uc) is the unit-commitment benchmark
+library curated by the IEEE PES Task Force on Benchmarks for Validation of Emerging Power
+System Algorithms: real instances (CAISO, FERC, RTS-GMLC) under CC-BY **and the task
+force's own reference model**, `uc_model.jl`. That model is the ground truth here.
+`benchmarks/uc_reference_highs.jl` is their file with one edit — Cbc and JuMP 0.19 syntax
+swapped for HiGHS and JuMP 1.x, plus a JSON dump of the solution. No constraint or
+objective term is touched.
+
+pglib-uc models more than this calculator does, so `tools/pglib_uc_case.py` states a
+*derived* instance and lists every change in its header: reserves to zero, ramp limits
+made non-binding, one startup category, the piecewise cost collapsed to its two end points,
+renewables removed, every unit starting off, a tail of zero-demand periods, and demand
+scaled to the chosen subset. What remains is exactly what this engine claims: commitment
+with minimum up and down times, start costs, minimum stable load, an affine cost curve and
+an equality demand balance with no grid.
+
+| Instance | Units | Periods | IEEE PES reference | This calculator | Difference |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| RTS-GMLC 2020-01-27 | 73 | 54 | 7,647,266.30 | 7,647,266.30 | 0.0000 % |
+| CAISO 2014-09-01 | 60 | 54 | 9,297.69 | 9,297.69 | 0.0000 % |
+| FERC 2015-07-01 (lw) | 80 | 28 | 9,005,380.75 | 9,005,380.75 | 0.0000 % |
+
+Exact on all three, and faster (13 s against 83 s on RTS-GMLC). Start counts match on two;
+on FERC 77 against 75 at the same cost, where units with a zero start cost leave equal
+optima.
+
+**Three engine defects had to be fixed to get there, and no earlier test could have caught
+them** — REopt has no minimum up or down time, and every case posed here before had a
+horizon far longer than those times.
+
+1. **The fuel curve's y-intercept did not scale with unit size.**
+   `fuel_slope_and_intercept` (utils.jl:645) returns it per kW of *rated* capacity. REopt
+   multiplies it by `dvSize` for CHP (chp_constraints.jl:34) and does not for the generator
+   (generator_constraints.jl:11); this port multiplied by 1 in both cases, so a CHP with a
+   part-load efficiency curve burned too little fuel — 24.6 kW/h per engine, about 3.5 %,
+   on Part 14's case. The product size × on is now linearised exactly, so it is right
+   whether the unit is fixed or being sized.
+2. **A negative y-intercept was silently dropped** (`ic > 0`), where REopt's own condition
+   is `abs(ic) > 1e-7`. Four of RTS-GMLC's 73 units and 23 of FERC's 80 have a cost curve
+   whose first point sits below the linear extension; their cost was overstated.
+3. **Minimum up and down times wrapped around the horizon.** Hour 0 followed hour H−1, so a
+   unit stopped near the end could not run near the start. That is right for a repeating
+   day and remains the default; it is wrong for a finite horizon with a stated initial
+   state. RTS-GMLC's minimum down times reach 48 h and FERC's 84 h against a 28-period
+   horizon, which made RTS-GMLC 13.3 % too expensive and left FERC unable to serve its
+   demand at all. `ScenarioInputs.cyclic_commitment = False` with
+   `FuelTechInputs.initial_on` now states the finite-horizon convention.
+
+After the fixes: TC1 23/23, TC2 15/15, G1/G2 24/24, PT2 22/24, off-grid and V1–V4 unchanged,
+all nine REopt.jl groups, the profiling, field, dispatch-study and JSX checks all pass. The
+only figures that moved are Part 14's, and in the direction the first fix predicts: the gap
+between the affine fuel curve and Table 3's quadratic fell from 2.1–2.5 % to 1.2–1.6 %, and
+the CHP + battery day on the CSV load went from 528.15 to 528.64 with 7 starts instead of 0,
+because an engine's hourly intercept is now actually charged.
+
+---
+
+# Part 16 — Repository layout and how to reproduce
 
 ```
 GreenHouseV2/
@@ -1271,6 +1477,7 @@ GreenHouseV2/
   CLAUDE.md                    project instructions
   REopt/                       REopt.jl v0.61.1 source + data
   reopt_jl/                    local Julia env running that source (setup.jl, run.jl)
+  benchmarks/                  pglib-uc clone (gitignored) + uc_reference_highs.jl
   docs/reopt-jl/               offline docs capture (14 pages, INDEX.md is the map)
   calculator/
     streamlit_app.py           steps 1-5 UI
@@ -1310,11 +1517,15 @@ python calculator/tools/validate_parity.py   # PT2   22/24
 python calculator/tools/yemen_case.py        # Sana'a vendor case
 python calculator/tools/test_periods.py         # period-view data functions
 python calculator/tools/test_profile_render.py  # profiling render path + HTML
+python calculator/tools/test_dispatch_chart.py  # chart layers, hover panel, colour sheet
 python calculator/tools/test_chp_bess_fields.py # CHP + Battery vs the live tool
 python calculator/tools/chp_bess_reopt_case.py  # CHP + Battery cases posed as on the site
 python calculator/tools/test_reopt_jl_suite.py  # REopt.jl's own tests, 9 groups
 python calculator/tools/check_reopt_jl.py      # local REopt.jl vs runtests vs this calculator
 python calculator/tools/test_dispatch_study.py # custom dispatch study vs the validated JSX runner
+python calculator/tools/audit_paper_csv.py     # audit a reverse-engineered day against the paper
+python calculator/tools/paper_case.py          # the paper's own case (--check-dt for the dt proof)
+python calculator/tools/pglib_uc_case.py       # IEEE PES pglib-uc vs its own reference model
 python calculator/tools/reopt_jl.py <scenario.json>  # any REopt JSON through the local REopt.jl
 ```
 
