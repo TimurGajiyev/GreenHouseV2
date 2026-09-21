@@ -29,12 +29,16 @@ import streamlit as st
 import app_periods as A
 import profile_ui as P
 import ui_theme as T
+import year_study as Y
+from reopt_core import data_sources as ds
 from reopt_core import model as M
 from reopt_core.tariff import flat_tariff
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 JSX = os.path.join(ROOT, "bess_profile_v2.jsx")
 MAX_H = 8760
+# HiGHS takes a number, not a flag: a limit no run will ever reach is "none".
+NO_LIMIT = 10 ** 9
 
 # column names of the two editable tables
 U_NAME, U_KW, U_COST, U_START = "Unit", "Rated kW", "Energy cost per kWh", "Start cost"
@@ -42,6 +46,10 @@ U_MIN, U_UP, U_DOWN, U_SPILL = "Min load %", "Min up h", "Min down h", "Spill al
 U_MAXST = "Max starts/day"
 S_NAME, S_MIN, S_BAT, S_SCALE = "Scenario", "Min load % (blank = per unit)", "Battery", "Load scale %"
 S_MAXST = "Max starts/day (blank = per unit)"
+
+# the two ways a horizon can be covered
+COVER_WINDOW = "Solve the window as posed"
+COVER_DAYS = "A year from typical days (weighted)"
 
 # bess_profile_v2.jsx / CHP_BESS_model_v2.xlsx, «Допущения»
 JSX_UNITS = {
@@ -63,6 +71,60 @@ def _jsx_loads() -> dict[str, list[float]]:
     d = json.loads(m.group(1))["chp2"]
     return {"day": [float(r[0]) for r in d["day"]["A"]["rows"]],
             "week": [float(r[0]) for r in d["week"]["A"]["rows"]]}
+
+
+# A year's worth of hours that is not simply one week said 52 times.
+#
+# The artifact carries a day and a week. Neither holds a season, so a year made
+# by repeating them has none either -- and an optimiser handed the same week 52
+# times re-derives the same answer 52 times. Measured on this app: a 30-day
+# window annualised came within 0.5 % of "solving" the tiled year, for 15 s of
+# work against 225 s. The extra 8,040 hours bought nothing.
+#
+# So the shape comes from a real hourly year -- the DOE commercial reference
+# buildings REopt itself ships, which carry a genuine season and a genuine
+# weekday/weekend -- and only the LEVEL comes from the example week. The pairing
+# below is by shape, not by the name of the building: the artifact's factory
+# runs round the clock at a peak of 1.9 times its mean and never drops below
+# half of it, and the DOE hospital is the reference building that behaves like
+# that. The name is stated anyway, because a reader is entitled to know what the
+# numbers are really made of.
+YEAR_CITY = "Chicago"
+YEAR_SHAPES: dict[str, tuple[str, str]] = {
+    "Continuous, mild seasonal swing": ("Hospital", "crb"),
+    "Continuous with a daily peak": ("Supermarket", "crb"),
+    "Office hours, strong seasonal swing": ("LargeOffice", "crb"),
+    "Deep nights and weekends": ("Warehouse", "crb"),
+    "Two shifts, five days — no climate assumed": ("FlatLoad_16_5", "flat"),
+    "Round the clock, five days — no climate assumed": ("FlatLoad_24_5", "flat"),
+}
+
+
+def build_year(spec: tuple[str, str], week: list[float]) -> tuple[list[float], str]:
+    """A full hourly year in the example week's units, and a line saying what it is.
+
+    The level is matched on the MEAN, not the peak: the operating cost this
+    study reports is driven by energy, so the year is made to carry the same
+    average kilowatt as the week the plant was drawn around. Its peak then comes
+    from the real shape and is reported, because it may well differ.
+    """
+    name, kind = spec
+    norm = (ds.custom_normalized_flatload(name) if kind == "flat"
+            else ds.load_crb_profile(name, YEAR_CITY))
+    mean_week = sum(week) / len(week)
+    mean_norm = sum(norm) / len(norm)
+    year = [v * mean_week / mean_norm for v in norm]
+    peak, low = max(year), min(year)
+    months = [sum(year[i * 730:(i + 1) * 730]) / 730 for i in range(12)]
+    swing = max(months) / max(1e-9, min(months))
+    where = ("procedural, no climate in it" if kind == "flat"
+             else f"DOE reference building in {YEAR_CITY}, a US climate")
+    return year, (
+        f"{len(year):,} real hours — {name} ({where}) — scaled so the year averages "
+        f"{mean_week:,.0f} kW, the example week's own average. Peak {peak:,.0f} kW, "
+        f"quietest hour {low:,.0f} kW, busiest month {swing:.2f}\u00d7 the quietest. "
+        f"Cut the window you want below."
+    )
 
 
 def _num(cell: str, decimal_comma: bool) -> float | None:
@@ -370,7 +432,7 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
             pay = ("saves the CAPEX" if year >= 0 else f"{-extra / -year:,.1f} years (the other way)",
                    "ghp-pos" if year >= 0 else "ghp-neg")
         else:
-            pay = ("no extra CAPEX", "")
+            pay = ("—", "")
         cls = "ghp-pos" if save >= 0 else "ghp-neg"
         rows.append([o["name"], (A._signed(save), cls), (A._signed(year), cls),
                      _money(extra, cur) if extra else "—", pay])
@@ -379,9 +441,90 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
     note = [f"<b>{run['name']}</b> against each other scenario; positive = cheaper to run",
             f"battery CAPEX <b>{_money(capex, cur)}</b>"]
     if hours != MAX_H:
+        # How good that scaling is, measured rather than assumed: tools/
+        # test_year_horizon.py cut a solved year 52 ways and annualised each week.
         note.append(f"per year = window × 8,760 / {hours:,} h — an annualisation of this "
-                    f"window, not a full-year run; solve a full year for the JSX's own figures")
+                    f"window, not a full-year run. Measured against a solved year "
+                    f"(REPORT.md Part 16): a single week lands between −15% and +23% of "
+                    f"it, a single month up to +18%. The payback below carries that error")
     P.note(note)
+
+
+def _pay(simple: float | None, disc: float | None, tail: str = "") -> tuple[str, str]:
+    """Simple and discounted payback in one cell, or the honest word for neither.
+
+    One cell rather than two columns: the table already carries five, and a
+    seventh would fall off the right edge of the panel at the design's width.
+    """
+    if simple is None:
+        return ("never", "ghp-neg")
+    d = f"{disc:,.1f}" if disc is not None else "never"
+    return (f"{simple:,.1f} / {d} yr{tail}", "ghp-pos")
+
+
+def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
+    """The same comparison carried out to the end of the analysis period.
+
+    Nothing here re-solves anything: it takes the annual operating cost each
+    scenario already reported and applies REopt's own present-worth factor, the
+    one ``reopt_core.finance.annuity`` builds. See ``year_study.lifecycle``.
+    """
+    cur, capex = out["currency"], out["bat"].get("capex", 0.0)
+    A._CUR = cur                 # _signed() formats in it; do not inherit it by luck
+    life = out.get("life") or {}
+    years = int(life.get("years", 25))
+    esc, disc = float(life.get("escalation", 0.0)), float(life.get("discount", 0.0))
+    own = Y.lifecycle(Y.annualise(run["acc"]["total"], hours),
+                      years=years, escalation=esc, discount=disc)
+
+    rows = []
+    for o in others:
+        year = Y.annualise(o["acc"]["total"] - run["acc"]["total"], hours)
+        extra = (capex if run["battery"] and not o["battery"] else
+                 -capex if o["battery"] and not run["battery"] else 0.0)
+        lc = Y.lifecycle(Y.annualise(run["acc"]["total"], hours), years=years,
+                         escalation=esc, discount=disc, annual_saving=year,
+                         capex=max(0.0, extra))
+        cls = "ghp-pos" if year >= 0 else "ghp-neg"
+        # Net present value of choosing this scenario over that one: the present
+        # value of what it saves, less the capital it has to spend to save it. A
+        # negative ``extra`` means the OTHER scenario is the one spending, so not
+        # spending it counts in this scenario's favour -- hence minus extra, not
+        # minus max(0, extra).
+        net = lc.saving_present_value - extra
+        if extra > 0:
+            pay = _pay(lc.simple_payback_years, lc.discounted_payback_years)
+        elif extra < 0:
+            # The comparison read from the other side, the way the savings strip
+            # above words it: it is that scenario's CAPEX being repaid, or not.
+            back = Y.lifecycle(0.0, years=years, escalation=esc, discount=disc,
+                               annual_saving=-year, capex=-extra)
+            pay = _pay(back.simple_payback_years, back.discounted_payback_years,
+                       " reversed")
+        else:
+            pay = ("—", "")
+        rows.append([
+            o["name"],
+            (A._signed(year), cls),
+            (A._signed(lc.saving_present_value), cls),
+            _money(extra, cur) if extra else "—",
+            (A._signed(net), "ghp-pos" if net >= 0 else "ghp-neg"),
+            pay,
+        ])
+    P.table(["Compared with", "Saving per year", f"Present value, {years} yr",
+             "Extra CAPEX", "Net present value", "Payback"], rows,
+            [f"{run['name']} — operating cost", _money(own.annual_cost, cur) + " / yr",
+             _money(own.present_value, cur), "", "", ""])
+    P.note([
+        f"present worth factor <b>{own.pwf:.4f}</b> over <b>{years}</b> years "
+        f"at {100 * esc:.2f}% escalation and {100 * disc:.2f}% discount",
+        "the factor is REopt's own <b>annuity</b> (utils.jl:11), which charges year 1 "
+        "already escalated once",
+        "payback reads <b>simple / discounted</b>: undiscounted CAPEX ÷ year-one saving, "
+        "then the year in which the discounted savings have repaid it",
+        "<b>reversed</b> marks a row where it is the other scenario's CAPEX being repaid",
+        "one year repeated with escalation — REopt's own lifetime convention",
+    ])
 
 
 # ------------------------------------------------------------------ page
@@ -400,8 +543,10 @@ def render() -> None:
     T.panel_head("Load", required=True)
     with st.expander("Hourly load", expanded=True):
         ex = _jsx_loads()
+        FREE = "Free mode: a real year, no file needed"
         sources = ["Upload hourly CSV"] + (["Example: bess_profile_v2.jsx day (24 h)",
-                                            "Example: bess_profile_v2.jsx week (168 h)"] if ex else [])
+                                            "Example: bess_profile_v2.jsx week (168 h)",
+                                            FREE] if ex else [])
         src = st.radio("Source", sources, index=1 if ex else 0, key="gd_src", horizontal=True)
         load: list[float] = []
         if src.startswith("Upload"):
@@ -410,6 +555,13 @@ def render() -> None:
                                   type=["csv", "txt"], key="gd_load_up")
             if up is not None:
                 load = read_series(up)
+        elif src == FREE:
+            shape = st.selectbox("Annual shape", list(YEAR_SHAPES), key="gd_shape",
+                                 help="What the year's hour-to-hour and season-to-season "
+                                      "shape is taken from. The level is set by the example "
+                                      "week, so the plant you already have still fits it.")
+            load, note = build_year(YEAR_SHAPES[shape], ex["week"])
+            st.caption(note)
         else:
             load = list(ex["day" if "day" in src else "week"])
         if load:
@@ -536,14 +688,65 @@ def render() -> None:
                    "rule or the battery.")
         c1, c2 = st.columns(2)
         with c1:
-            tlim = st.number_input("Time limit per scenario (s)", 10, 3600, 120, step=10,
-                                   key="gd_tlim")
+            tlim = st.number_input("Time limit per scenario (s) — 0 for none", 0, 86_400, 120,
+                                   step=10, key="gd_tlim",
+                                   help="0 lets the solver run until it proves the optimum. "
+                                        "A year of commitment can take a long time; the page "
+                                        "waits for it.")
         with c2:
             gap = st.number_input("Optimality gap (%)", 0.0, 10.0, 0.5, step=0.1, key="gd_gap")
-        if len(load) > 168 and len(units.index):
+
+    # ---- 6. how a year is covered, and what 25 of them are worth ----------------
+    T.panel_head("A year, and twenty-five of them")
+    with st.expander("Coverage and lifetime", expanded=True):
+        whole = len(load) % 24 == 0 and len(load) // 24 >= 4
+        cover = st.radio(
+            "How to cover the horizon",
+            [COVER_WINDOW, COVER_DAYS], key="gd_cover", horizontal=True,
+            help="A full year of on/off units is 8,760 hours of binaries and does not "
+                 "solve. Clustering the days into a few typical ones and weighting them "
+                 "by how many real days each stands for is the standard answer "
+                 "(Kotzur et al., Applied Energy 213 (2018) 123-135). Measured on this "
+                 "calculator: 12 typical days reproduced a solved year to 0.01 %.")
+        year_mode = cover == COVER_DAYS and whole
+        if cover == COVER_DAYS and not whole:
+            st.warning(f"Typical days need at least four whole days of load; this horizon "
+                       f"is {len(load):,} hours. Solving the window as posed instead.",
+                       icon=":material/warning:")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            # A fixed default, not one derived from the load: a widget whose
+            # default moves with the page keeps whatever number the first render
+            # happened to produce, and the first render carries the 24-hour day.
+            kdays = st.number_input("Typical days", 2, 60, Y.suggest_k(365),
+                                    step=1, key="gd_kdays", disabled=not year_mode,
+                                    help="Each one is solved once, then laid down on every "
+                                         "real day of its cluster. 4 already lands within "
+                                         "0.5 %, 8 within 0.02 %, 12 within 0.01 %.")
+        with c2:
+            yrs = st.number_input("Analysis period (years)", 1, 40, 25, step=1, key="gd_years",
+                                  help="REopt's own default is 25 years.")
+        with c3:
+            esc = st.number_input("Operating cost escalation (%/yr)", 0.0, 20.0, 3.4, step=0.1,
+                                  key="gd_esc",
+                                  help="REopt's default fuel escalation is 3.4 %/yr and its "
+                                       "electricity escalation 1.66 %/yr. One rate is used "
+                                       "here because the study prices one operating cost.")
+        disc = st.number_input("Discount rate (%/yr)", 0.0, 30.0, 6.24, step=0.01,
+                               key="gd_disc",
+                               help="REopt's own offtaker default is 6.24 %/yr, nominal.")
+        if year_mode:
+            _kk = max(1, min(int(kdays), len(load) // 24))
+            st.caption(f"{_kk} typical days × 24 h = {_kk * 24:,} hours to solve per scenario "
+                       f"instead of {len(load):,}. Annual energy is preserved exactly; the "
+                       f"year's peak is smoothed by the clustering; the starts created where "
+                       f"two unlike days meet are counted and charged, but a minimum up or "
+                       f"down time spanning that join is not enforced.")
+        elif len(load) > 168 and len(units.index):
             st.info(f"{len(load):,} hours with on/off units means "
                     f"{len(load) * len(units.index):,} commitment binaries per scenario; "
-                    "expect the time limit to be reached and a small remaining gap.")
+                    "expect the time limit to be reached and a small remaining gap. "
+                    f"'{COVER_DAYS}' above solves the same year in a fraction of the time.")
 
     # ---- run --------------------------------------------------------------------
     missing = []
@@ -558,12 +761,42 @@ def render() -> None:
         prog = st.progress(0.0, text="Solving")
         rows = [r for r in scen.to_dict("records") if str(r.get(S_NAME) or "").strip()]
         try:
+            # One clustering for the whole study: the typical days come from the
+            # load, not from the operating rule, so every scenario is compared on
+            # the same calendar. The load scale of a scenario is applied inside
+            # build(), after the day has been chosen.
+            # Never ask for more typical days than the load has days to give.
+            kk = max(1, min(int(kdays), len(load) // 24))
+            typ = Y.cluster(load, price, kk) if year_mode else None
+            price_used = list(price)
+            if typ is not None:
+                price_used = [p for c in typ.day_of for p in typ.price[c]]
             for i, sc in enumerate(rows):
                 prog.progress(i / len(rows), text=f"Solving {sc[S_NAME]} ({i + 1} of {len(rows)})")
                 inp = build(load, price, units, bat, sc)
+                if typ is not None:
+                    # The year the design will show is the typical days replayed,
+                    # so the tariff it prices hours with has to be the replayed
+                    # price too -- otherwise the energy charge in the period view
+                    # would be computed on hours that were never solved. Identical
+                    # to the original series whenever the price is flat.
+                    inp.tariff.energy_cost_per_kwh = (
+                        list(price_used) + [0.0] * max(0, MAX_H - len(price_used)))
                 t0 = time.time()
-                res = M.solve(inp, time_limit=int(tlim), mip_gap=float(gap) / 100.0)
-                acc = account(res, price, units, bat["wear"] if sc.get(S_BAT) else 0.0)
+                # 0 means "no limit": HiGHS wants a number, not a flag, so it
+                # is handed one no run will ever reach.
+                lim = NO_LIMIT if int(tlim) == 0 else int(tlim)
+                if typ is not None:
+                    res = Y.solve_year(
+                        lambda dl, dp, _sc=sc: build(dl, dp, units, bat, _sc),
+                        load, price, kk, typical=typ,
+                        time_limit=lim, mip_gap=float(gap) / 100.0,
+                        on_day=lambda c, k, _n=sc[S_NAME], _i=i: prog.progress(
+                            (i + c / k) / len(rows),
+                            text=f"Solving {_n}: typical day {c + 1} of {k}"))
+                else:
+                    res = M.solve(inp, time_limit=lim, mip_gap=float(gap) / 100.0)
+                acc = account(res, price_used, units, bat["wear"] if sc.get(S_BAT) else 0.0)
                 acc["seconds"] = time.time() - t0
                 runs.append({"name": str(sc[S_NAME]), "res": res, "tariff": inp.tariff,
                              "acc": acc, "battery": bool(inp.storage.enabled),
@@ -571,11 +804,16 @@ def render() -> None:
                                                                         and math.isnan(sc[S_MIN]))
                                       else float(sc[S_MIN])),
                              "scale": float(sc.get(S_SCALE) or 100.0),
-                             "hourly": hourly(res, price, units,
+                             "hourly": hourly(res, price_used, units,
                                               bat["wear"] if inp.storage.enabled else 0.0)})
             prog.progress(1.0, text="Done")
-            ss["gd_results"] = {"runs": runs, "currency": cur, "hours": len(load), "wear_h": wear_h,
-                                "price": price, "units": units, "bat": bat}
+            ss["gd_results"] = {"runs": runs, "currency": cur, "wear_h": wear_h,
+                                "hours": len(runs[0]["res"]["series"]["load_kw"]),
+                                "price": price_used, "units": units, "bat": bat,
+                                "typical": (None if typ is None else
+                                            {"k": typ.k, "weights": list(typ.weights)}),
+                                "life": {"years": int(yrs), "escalation": float(esc) / 100.0,
+                                         "discount": float(disc) / 100.0}}
         except Exception as exc:  # show the real reason
             prog.empty()
             st.error(f"Run failed: {exc}")
@@ -588,6 +826,14 @@ def render() -> None:
     runs, cur = out["runs"], out["currency"]
     H = out.get("hours") or len(runs[0]["res"]["series"]["load_kw"])
     T.panel_head("Scenario comparison")
+    if out.get("typical"):
+        t = out["typical"]
+        P.note([f"a year from <b>{t['k']}</b> typical days, weighted "
+                f"{' + '.join(str(w) for w in t['weights'])} = <b>{sum(t['weights'])}</b> days",
+                "every figure below is the weighted year, so nothing needs annualising",
+                "annual energy is exact; the peak is smoothed by the clustering; the starts "
+                "the joins between unlike days create are counted and charged, a minimum up "
+                "or down time spanning a join is not (method: Kotzur et al. 2018)"])
     _compare(runs, cur, H, out.get("wear_h", 15.0))
 
     T.panel_head("Economics of one scenario against the others")
@@ -597,6 +843,8 @@ def render() -> None:
     others = [r for r in runs if r is not run]
     if others:
         _economics(run, others, out, H)
+        T.panel_head(f"Over {int((out.get('life') or {}).get('years', 25))} years")
+        _lifecycle(run, others, out, H)
         base_name = st.selectbox(
             "Veil and savings in the chart below are measured against", [r["name"] for r in others],
             index=[r["name"] for r in others].index(_default_base(run, others)["name"]),

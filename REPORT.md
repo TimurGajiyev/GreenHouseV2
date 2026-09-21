@@ -27,7 +27,8 @@ the limits are.
 - [Part 13 — Custom dispatch study (not REopt)](#part-13--custom-dispatch-study-not-reopt)
 - [Part 14 — An outside case: Sigalo et al. 2023](#part-14--an-outside-case-sigalo-et-al-2023)
 - [Part 15 — IEEE PES pglib-uc: the commitment maths, cross-validated](#part-15--ieee-pes-pglib-uc-the-commitment-maths-cross-validated)
-- [Part 16 — Repository layout and how to reproduce](#part-16--repository-layout-and-how-to-reproduce)
+- [Part 16 — A year, and twenty-five of them: the methodology re-checked](#part-16--a-year-and-twenty-five-of-them-the-methodology-re-checked)
+- [Part 17 — Repository layout and how to reproduce](#part-17--repository-layout-and-how-to-reproduce)
 
 ---
 
@@ -1265,6 +1266,7 @@ is not REopt and cannot be checked against the site.
 | Fuel-fired units | one row per unit: rated kW, energy cost per kWh (on rated output, spill included), start cost, minimum load %, minimum up / down hours, spill allowed; presets for the JSX's 2- and 3-unit fleets |
 | Battery | power, energy, round-trip efficiency, minimum SoC, wear cost per kWh discharged, grid charging, cyclic or fixed starting SoC |
 | Scenarios | any number of rows, each solved separately: minimum-load override, battery on / off, **load scale %** — the variability axis; the JSX's A / B / C are filled in |
+| Coverage and lifetime | solve the window as posed, or **a year from k typical days** (weighted, k = 12 by default); analysis period, operating-cost escalation and discount rate for the 25-year table |
 
 The engine is the same MILP with the finance switched off (one period, no discounting,
 tax or capital cost), so the objective is the plain operating cost of the horizon — the
@@ -1324,6 +1326,63 @@ On the JSX week with three units and the 90 % rule the optimiser starts engines 
 up to 3 a day. A cap of one start per unit per day holds on every unit-day and costs
 9,417 ₸ more over the week; a cap of zero forbids starts and costs 745,849 ₸ more; a blank
 cap reproduces the uncapped week to the tenge (`tools/test_dispatch_study.py`).
+
+**A year, and twenty-five of them.** A sixth panel, *Coverage and lifetime*, decides how the
+horizon is covered and what a lifetime of it is worth. Two choices:
+
+* **Solve the window as posed** — the original behaviour, unchanged, down to the tenge
+  (`tools/test_year_cases.py` case 5).
+* **A year from typical days (weighted)** — the load's days are clustered into *k* typical
+  ones (k-means++ on each day's 24 load hours beside its 24 price hours, each part
+  normalised by its own maximum), each typical day is solved **by the core, as an ordinary
+  24-hour horizon**, and the answers are laid back down on every real day of their cluster.
+  `calculator/year_study.py` holds all of it; no formula in `reopt_core` is touched. The
+  method and its one real limitation are Kotzur, Markewitz, Robinius and Stolten, *Time
+  series aggregation for energy system design: Modeling seasonal storage*, Applied Energy
+  **213** (2018) 123–135, whose own words for the limitation are that typical periods "are
+  modeled independently and cannot exchange energy".
+
+Why it is worth a panel: 8,760 hours with on/off units is 17,520 commitment binaries and the
+run stops at its time limit with a gap, while 12 typical days is 288 hours and solves in
+about a second per scenario. Measured against years that *can* be solved whole, 12 typical
+days land within 0.02 % (Part 16).
+
+Three properties are exact rather than approximate, and the tests check each one:
+
+* **annual energy** — the representative is the cluster's centroid, so the weighted sum of
+  the typical days is the sum of every real day to the last kWh;
+* **the accounting** — every linear quantity of the replayed year is the weighted sum of the
+  typical days' by construction (each day is laid down exactly as many times as its weight),
+  so `account()` reproduces the objective exactly;
+* **the price** — the year is priced with the replayed price series, the one actually solved,
+  and the period view's energy charge is the study's own grid cost to the tenge.
+
+Two are not, and are said so on the page:
+
+* **the peak** is smoothed by clustering — a centroid day has no single hour's extreme in it;
+* **the joins.** A day solved alone wraps at midnight, so its start count covers a day
+  followed by *itself*; put two unlike days next to each other and the join creates or
+  removes a start neither day could see. Those joins are counted with the core's own cyclic
+  rule (`model.py:_was_off`) and the start cost they carry is added, so the cost table and
+  the period view report one start count and not two. Measured on the factory year: 352
+  starts inside the typical days, 54 more from the joins, 810,000 ₸. What is still not
+  enforced is a minimum up or down time spanning a join — the clustered year is an estimate
+  of the year, not a dispatch plan for it.
+
+**Over N years.** A second new table takes the annual operating cost each scenario reported
+and carries it to the end of the analysis period: present value, the extra CAPEX, net
+present value, simple payback and **discounted payback**. The present-worth factor is
+`reopt_core.finance.annuity` — REopt's own geometric sum from `utils.jl:11`, which charges
+year 1 already escalated once — so the study's 25-year figures rest on the same arithmetic as
+the REopt panels'. This is also REopt's own lifetime convention, in NREL's words: it "uses
+one year of resource and cost data with present worth factors to account for life-time costs,
+assuming that one year repeats with degradation and escalation factors". Analysis period
+(25 yr), escalation (3.4 %/yr, REopt's fuel default) and discount rate (6.24 %/yr, REopt's
+offtaker default) are inputs, because this section is not REopt and says so. Simple payback
+is undiscounted CAPEX ÷ year-one saving; discounted payback is the year in which the
+discounted savings have repaid the CAPEX, interpolated inside that year, and "never" when
+they do not. Read from the other side of a comparison the table mirrors itself and says "(the
+other way)", as the savings strip above it already does.
 
 In the browser the default A / B / C day solves in under a minute; beyond a week, on/off
 units add one binary per unit per hour and a run may stop at its time limit with a small
@@ -1469,7 +1528,212 @@ because an engine's hourly intercept is now actually charged.
 
 ---
 
-# Part 16 — Repository layout and how to reproduce
+# Part 16 — A year, and twenty-five of them: the methodology re-checked
+
+The calculator is asked for two things a single solved window cannot give on its own: a
+**year**, and **twenty-five** of them. This part re-derives both from the definitions and
+measures every shortcut the app takes on the way. Three test files, none of which import
+the design layer:
+
+| File | What it settles | Solver |
+| --- | --- | --- |
+| `tools/test_year_finance.py` | every 25-year formula, rebuilt year by year from its definition and against REopt.jl's own convention | none |
+| `tools/test_year_horizon.py` | what the length of the horizon does to the answer, and how well a window stands in for a year | HiGHS |
+| `tools/test_year_profile.py` | whether the year free mode builds is a year at all | none |
+
+## The 25-year chain is exact
+
+The lifecycle cost the solver minimises and the 25 cash flows the pro-forma discounts are
+separate code reaching the same money. On a full year with a fixed battery and a
+demand-charge tariff:
+
+| | |
+| --- | --- |
+| capital, after ITC and MACRS | 617,695 |
+| year-1 utility bill × pwf_e 14.8203 × (1 − 0.26) | 1,426,356 |
+| year-1 storage O&M × pwf_om 16.2186 | 30,303 |
+| **rebuilt lifecycle cost** | **16,624,220** |
+| **solver objective** | **16,624,220** |
+| NPV as `lcc_bau − lcc` | −614,604 |
+| NPV from the 25 cash flows | −614,604 |
+
+Present-worth factors, the PV levelization factor, `effective_cost` (ITC at end of year 1,
+MACRS with and without bonus, replacement discounted to its year) and the BAU identity
+`lifecycle = pwf_e × year1 × (1 − tax)` all reproduce their year-by-year sums. Nothing in
+the 25-year machinery is approximated.
+
+Two deviations from REopt.jl are printed rather than failed, both in the finance port:
+
+- **`proforma.pv_lcoe`** escalates O&M as `(1+e)^(y-1)`; `financial.jl:268` uses `(1+e)^y`.
+  Worth −0.47 % on the whole LCOE. Part 10 already records PV LCOE running 1–4 % *above*
+  the live tool, so matching the Julia source here would widen that gap, not close it. The
+  decision belongs against reopt.nlr.gov, not against the source, so it is left alone and
+  recorded.
+- **`proforma.build`** carries the same off-by-one. It is dead code: the app's payback and
+  IRR come from the `Metrics` / `add_tech` port, which is faithful.
+
+## A horizon shorter than a year is not a year divided
+
+Capital, per-kW O&M and the fixed monthly charge are quantities **per year**. Energy, fuel
+and per-kWh O&M are quantities **per hour solved**. The core multiplies both by the same
+present-worth factors and scales neither by the horizon, so a short window puts a full year
+of standing costs against a week of energy. Measured on a 1,000 kW flat load, $0.12/kWh and
+a $100/month fixed charge, with no technologies at all:
+
+| horizon | lifecycle cost | × 8,760/H | vs the year |
+| --- | --- | --- | --- |
+| 8,760 h | 11,541,663 | 11,541,663 | — |
+| 4,380 h | 5,777,412 | 11,554,823 | +0.1 % |
+| 730 h | 973,869 | 11,686,427 | +1.3 % |
+| 168 h | 234,255 | 12,214,723 | **+5.8 %** |
+| 24 h | 44,745 | 16,332,045 | **+41.5 %** |
+
+`fixed_cost = fixed_monthly_charge * 12` regardless of how many hours are solved, so a day
+annualised bills 365 years of standing charge. The same distortion decides what gets built:
+a 1,000 kW load on a $0.34/kWh grid with a generator at $800/kW burning $0.172/kWh of fuel
+builds the full 1,000 kW from a quarter, a month or a year — and **nothing at all from a
+week**, because one week of fuel saving cannot repay a whole year's capital.
+
+This is not reached by the app today: the Custom dispatch study switches finance off
+(`analysis_years=1`, every rate zero, no capital, no fixed charge), so its objective is a
+pure window operating cost and the mixing cannot occur. It is a property of the **core**,
+and it is what makes "solve a week, then annualise" unsafe the moment any per-year cost
+enters. The neighbouring project guards exactly this with an explicit
+`year_fraction = n·Δt / 8760` on every capital term (`D:/Greenhouse/src/optimize.py:235`,
+after Calliope's `annualisation_weight`) and warns in the same place that monthly charges
+on short horizons are "непропорционально тяжёлыми".
+
+## A window, annualised, is a poor estimate of a year
+
+The study reports "per year = window × 8,760 / H". Against a real solved year — the DOE
+hospital shape free mode builds, scaled to the example week's 2,194 kW average, the JSX
+fleet with the commitment rules off so the full year is an honest LP (473,489,871 in 6.4 s):
+
+| estimator | error against the solved year |
+| --- | --- |
+| one calendar week × 8,760/168, best of the 52 | −0.19 % |
+| one calendar week, worst of the 52 | **+22.66 %** |
+| one calendar week, median | −2.56 % |
+| spread across the 52 weeks | **37.4 percentage points** |
+| one calendar month × 8,760/H, worst of the 12 | **+18.08 %** |
+| the example week tiled into a year | −5.08 % |
+| 4 weighted representative days | −0.50 % |
+| 8 weighted representative days | −0.02 % |
+| **12 weighted representative days** | **−0.01 %, in 0.2 s** |
+| 24 weighted representative days | −0.03 % |
+
+A single week is a lottery: which week you cut decides a 37-point range. Twelve clustered
+days — k-means on the day vectors, centroids as representatives, weights summing to 365,
+the method in `D:/Greenhouse/src/aggregate.py` — reproduce the year to a hundredth of a
+percent for a thirtieth of the work.
+
+An earlier note in `app_dispatch.py` said a 30-day window annualised came within 0.3–0.5 %.
+That was measured against the **tiled** year, which has no season in it; against a real
+year a month is out by up to 18 %.
+
+### With the integer rules on
+
+The comparison above is an LP, because only an LP lets a whole year be solved as the truth.
+Repeated on one month of the DOE warehouse shape — which falls to 0.15 × its mean at night,
+below one engine's minimum load — with the real 3-unit fleet, 50 % floor, 15,000 per start
+and 4/5 h minimum up/down (744 h solved whole to optimality in 10.6 s, 45,369,136, 4 starts):
+
+| estimator | cost | starts |
+| --- | --- | --- |
+| the month solved whole | 45,369,136 | 4 |
+| 4 weighted representative days | −0.07 % | 0 |
+| 8 weighted representative days | −0.06 % | 0 |
+| 31 days, each solved separately | −0.06 % | 0 |
+| the first week × 744/168 | **+5.00 %** | — |
+
+The cost survives clustering; **the starts do not**. Cutting a month into days and wrapping
+each one cyclically loses every start that happens at a day boundary — 4 became 0 here. For
+a study whose whole subject is start cost, that is the limitation to state out loud: a
+representative-day year can be trusted for money and energy, not for the "Starts per year"
+row. The same table shows k=31 is no better than k=8, which locates the whole error in the
+day boundary rather than in the clustering.
+
+## The year free mode builds
+
+Every one of the six shapes is 8,760 real hours carrying the example week's own energy
+(19.223 GWh, mean 2,194 kW, identical to the kWh across all six). A week said 52 times has a
+monthly swing of 1.014× — arithmetic from the tiling phase, not weather. The real shapes
+swing 1.19× to 1.38×, and their weekday/weekend split runs from 1.24× to "total" for the
+two procedural FlatLoad shapes, which are idle at weekends (4,600 and 2,520 zero hours in
+the year — disclosed in the caption as "quietest hour 0 kW").
+
+The default shape is the closest to the example week on peak/mean and min/mean of the six,
+which is what its comment claims:
+
+| shape | peak/mean | min/mean |
+| --- | --- | --- |
+| the example week itself | 1.87 | 0.51 |
+| Continuous, mild seasonal swing (default) | 1.71 | 0.57 |
+| Continuous with a daily peak | 2.02 | 0.35 |
+| Two shifts, five days | 2.11 | 0.00 |
+| Office hours, strong seasonal swing | 2.67 | 0.31 |
+| Deep nights and weekends | 3.08 | 0.15 |
+
+The level is the plant's own; the shape is a US reference building. A site with a different
+season gets a different answer, and the caption says so.
+
+The day and week the Dispatch Period view shows are slices of that year and nothing else:
+365 day-slices sum to the year exactly, the peak day contains the year's peak hour, the
+representative day is the median-energy day, and it carries 1.026 × (1/365) of the year.
+
+## Five cases, from an hourly load to a payback
+
+`tools/test_year_cases.py` carries five unlike cases through the **app's own path** —
+`app_dispatch.build`, `year_study.solve_year`, `app_dispatch.account` and the real
+`app_periods` view rendered headlessly — and checks each against the core by recomputing
+the same quantity a second way. 60 checks, all passing.
+
+| Case | Load | Plant | What it proves | Simple / discounted payback |
+| --- | --- | --- | --- | ---: |
+| 1 Factory on an expensive grid | DOE hospital year, 2,194 kW mean, 19.223 GWh | 3 engines (1,067 + 1,200 + 1,100 kW), 90 % floor, 15,000 ₸/start, BESS 2,500 kW / 5,500 kWh | the app's weighted year equals the core solved day by day, to the tenge | **9.57 / 11.26 yr** |
+| 2 Cold store, deep nights | DOE warehouse year, peak 6,763 kW, quietest hour 330 kW | 2 × 900 kW, BESS 1,500 kW / 6,000 kWh with grid charging | a two-zone price survives clustering exactly, and the period view's energy charge is the study's own grid cost | **3.76 / 4.02 yr** |
+| 3 Data centre, flat | 4,200 kW every hour, 36.8 GWh; price 0.14 before 07:00, 0.38 after | 1 × 3,000 kW, BESS 1,200 kW / 4,800 kWh | a year of identical days clusters to **one** typical day and reproduces the whole solved year to the cent, 20× faster | **6.41 / 7.15 yr**, identical both ways |
+| 4 Island, no usable grid | DOE large-office year, peak 5,863 kW | 3 × 2,000 kW diesel, no commitment rules, BESS 2,000 kW / 8,000 kWh | the clustering error, measured against a year that can be solved whole | **260 yr / never** — the battery does not pay here |
+| 5 The JSX week, window mode | the artifact's own 168 hours | 2 engines + BESS | the old path is untouched, and what annualising one week does | **6.38 / 7.11 yr** against **6.14 / 6.82** from the year |
+
+Case 4 is the measurement that matters, because both routes are available on it:
+
+| | operating cost | error | seconds | speed-up |
+| --- | ---: | ---: | ---: | ---: |
+| the year solved whole (LP) | 669,721,953 | — | 6.4 | — |
+| 4 typical days | 669,401,733 | −0.048 % | 0.2 | 27× |
+| 8 typical days | 669,480,021 | −0.036 % | 0.6 | 12× |
+| 12 typical days | 669,585,947 | −0.020 % | 0.7 | 9× |
+| 24 typical days | 669,663,406 | −0.009 % | 1.6 | 4× |
+
+With the battery — 8,760 coupled state-of-charge equations and a cyclic closing condition —
+the whole year comes to 668,757,031 and 12 typical days to 668,625,580, again −0.020 %.
+
+Case 5 puts a number on the old shortcut on a case where the plant is the same and only the
+basis differs: one week annualised gives an operating cost 5.60 % below the year's, a saving
+3.62 % low and a payback 3.76 % long (6.38 against 6.14 years). That is the same defect Part
+16 measured in the abstract, arriving in the one figure a reader acts on.
+
+One trap found while building these cases and worth leaving written down: asking for a
+0.001 % optimality gap on a battery scenario ran for over 13 minutes without returning,
+because enabling storage creates one binary (the cost constant, `model.py:517`) and HiGHS
+then chases a gap the relaxation cannot close. At the app's own default of 0.5 % the same
+model solves in 8 seconds.
+
+## What this means for a 25-year answer over a custom dispatch
+
+The REopt path already does 25 years correctly, but it needs a full 8,760-hour year and a
+tariff. The Custom dispatch study now has both halves of the answer: a year it can actually
+solve (k weighted typical days, `calculator/year_study.py`) and a 25-year table built on
+`finance.annuity` — the same present-worth factor the REopt panels use — with simple and
+discounted payback. Part 13 describes the panel; the five cases above are the evidence that
+the numbers reaching the design are the numbers the core produced. The window path is still
+there and still honest about what it is: an annualisation of one window, now with the size
+of that error printed next to it.
+
+---
+
+# Part 17 — Repository layout and how to reproduce
 
 ```
 GreenHouseV2/
@@ -1487,6 +1751,7 @@ GreenHouseV2/
     profile_ui.py              profiling palette, tables and dispatch chart
     app_chp_bess.py            REopt's CHP, Battery, fuel and heating inputs, field for field
     app_dispatch.py            custom dispatch study (not REopt): any load, units, rules
+    year_study.py              typical days -> a year, and a year -> 25 of them (not REopt)
     reopt_core/
       finance.py               verbatim ports of the REopt.jl financial formulas
       defaults.py              defaults from REopt.jl structs
@@ -1526,6 +1791,10 @@ python calculator/tools/test_dispatch_study.py # custom dispatch study vs the va
 python calculator/tools/audit_paper_csv.py     # audit a reverse-engineered day against the paper
 python calculator/tools/paper_case.py          # the paper's own case (--check-dt for the dt proof)
 python calculator/tools/pglib_uc_case.py       # IEEE PES pglib-uc vs its own reference model
+python calculator/tools/test_year_finance.py    # 25-year formulas, rebuilt year by year
+python calculator/tools/test_year_horizon.py    # horizon vs year; window annualisation error
+python calculator/tools/test_year_profile.py    # the year free mode builds, and the day/week slices
+python calculator/tools/test_year_cases.py      # five cases end to end, each to a payback
 python calculator/tools/reopt_jl.py <scenario.json>  # any REopt JSON through the local REopt.jl
 ```
 

@@ -1,0 +1,137 @@
+{
+ "csv": "microgrid_energy_dataset (1).csv",
+ "cases": {
+  "auto": {
+   "profile": {
+    "scale": 97.80671916996826,
+    "record_hours": 1447,
+    "record_days": 60.291666666666664,
+    "tiles": 6.053904630269523,
+    "gross_mean_kw": 43670.10501609308,
+    "gross_peak_kw": 72209.48749037925,
+    "net_mean_kw": 8000.0,
+    "net_peak_kw": 45716.93047245743,
+    "renewable_mean_kw": 38828.14788489565,
+    "renewable_used_kwh": 312470119.94097537,
+    "renewable_spill_kwh": 27664455.53071052,
+    "spill_hours_fraction": 0.3469246717346234,
+    "annual_net_kwh": 70080000.0,
+    "rate_mean": 0.0750276632932924,
+    "rate_min": 0.03790392509766163,
+    "rate_max": 0.11526917516779916
+   },
+   "summary": {
+    "bau_opex": {
+     "utility": 4857714.45,
+     "fuel": 324518.07,
+     "chp_om": 41609.0,
+     "total": 5223841.5200000005
+    },
+    "opt_opex": {
+     "utility": 4776200.12,
+     "fuel": 226797.23,
+     "chp_om": 29080.0,
+     "total": 5032077.350000001
+    },
+    "savings_year_one": 191764.16999999993,
+    "savings_utility": 81514.33000000007,
+    "savings_fuel": 97720.84,
+    "savings_chp_om": 12529.0,
+    "bess_capex": 3300000.0,
+    "simple_payback_years": 17.208637046221938,
+    "reopt_npv": -1330566.44,
+    "reopt_simple_payback_years": 0.0,
+    "reopt_irr": 0.0,
+    "reopt_never_pays_back": true,
+    "reopt_lcc": 58782747.6535,
+    "reopt_lcc_bau": 57452181.2169,
+    "reopt_initial_capital_costs": 3300000.0,
+    "bau_grid_kwh": 65967711.68,
+    "opt_grid_kwh": 68369571.09,
+    "bau_chp_kwh": 4160925.0,
+    "opt_chp_kwh": 2907962.0,
+    "bau_fuel_mmbtu": 40564.76,
+    "opt_fuel_mmbtu": 28349.65,
+    "bess_size_kw": 5500.0,
+    "bess_size_kwh": 11000.0,
+    "chp_size_kw": 8000.0,
+    "chp_size_kw_bau": 8000.0,
+    "bess_discharge_kwh": 10207813.653,
+    "bess_charge_kwh": 11356710.049,
+    "bess_cycles": 927.9830593636365,
+    "bess_roundtrip": 0.8988354557752256
+   },
+   "bau_cross_check": {
+    "bau_lcc_ours": 57452181.2169,
+    "bau_lcc_reopt": 57452181.2169,
+    "bau_lcc_rel": 0.0
+   }
+  },
+  "1.0": {
+   "profile": {
+    "scale": 1.0,
+    "record_hours": 1447,
+    "record_days": 60.291666666666664,
+    "tiles": 6.053904630269523,
+    "gross_mean_kw": 446.49391561947067,
+    "gross_peak_kw": 738.2875951998124,
+    "net_mean_kw": 81.79397149696455,
+    "net_peak_kw": 467.42116349911163,
+    "renewable_mean_kw": 396.9885526721349,
+    "renewable_used_kwh": 3194771.510513154,
+    "renewable_spill_kwh": 282848.2108947474,
+    "spill_hours_fraction": 0.3469246717346234,
+    "annual_net_kwh": 716515.1903134094,
+    "rate_mean": 0.0750276632932924,
+    "rate_min": 0.03790392509766163,
+    "rate_max": 0.11526917516779916
+   },
+   "summary": {
+    "bau_opex": {
+     "utility": 46166.45,
+     "fuel": 6143.78,
+     "chp_om": 788.0,
+     "total": 53098.229999999996
+    },
+    "opt_opex": {
+     "utility": 35736.03,
+     "fuel": 0.0,
+     "chp_om": 0.0,
+     "total": 35736.03
+    },
+    "savings_year_one": 17362.199999999997,
+    "savings_utility": 10430.419999999998,
+    "savings_fuel": 6143.78,
+    "savings_chp_om": 788.0,
+    "bess_capex": 3300000.0,
+    "simple_payback_years": 190.06807893008954,
+    "reopt_npv": -3289054.9,
+    "reopt_simple_payback_years": 0.0,
+    "reopt_irr": 0.0,
+    "reopt_never_pays_back": true,
+    "reopt_lcc": 3874453.5909,
+    "reopt_lcc_bau": 585398.6947,
+    "reopt_initial_capital_costs": 3300000.0,
+    "bau_grid_kwh": 638237.75,
+    "opt_grid_kwh": 789969.04,
+    "bau_chp_kwh": 78775.0,
+    "opt_chp_kwh": 0.0,
+    "bau_fuel_mmbtu": 767.97,
+    "opt_fuel_mmbtu": 0.0,
+    "bess_size_kw": 5500.0,
+    "bess_size_kwh": 11000.0,
+    "chp_size_kw": 8000.0,
+    "chp_size_kw_bau": 8000.0,
+    "bess_discharge_kwh": 677090.0009999999,
+    "bess_charge_kwh": 750046.6,
+    "bess_cycles": 61.55363645454545,
+    "bess_roundtrip": 0.9027305783400658
+   },
+   "bau_cross_check": {
+    "bau_lcc_ours": 585398.6947,
+    "bau_lcc_reopt": 585398.6947,
+    "bau_lcc_rel": 0.0
+   }
+  }
+ }
+}
