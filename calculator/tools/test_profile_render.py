@@ -127,16 +127,30 @@ def check_charts(where: str) -> None:
 
 
 # ------------------------------------------------------------------ scenarios
-def scenario(n_gen, n_bat, pf, tar, *, commit=False):
+def scenario(n_gen, n_bat, pf, tar, *, commit=False, services=0, interval=0.0):
     load = ds.build_electric_load("Supermarket", 3_000_000.0, LAT, LON)
     if commit:
         gens = [M.FuelTechInputs(
             enabled=True, kind="CHP", label="CHP", name=f"Engine {i + 1}",
             installed_cost_per_kw=0.0, om_cost_per_kw=0.0, om_cost_per_kwh=0.02,
-            fuel_cost_per_mmbtu=8.0, electric_efficiency_full_load=0.35,
+            # the running-hours case needs the engines to actually RUN, or the
+            # maintenance columns never render: at 8/MMBtu they sit on the
+            # margin of this tariff and a 2% gap happily leaves them off
+            fuel_cost_per_mmbtu=(3.0 if interval else 8.0),
+            electric_efficiency_full_load=0.35,
             thermal_efficiency_full_load=0.0,
             min_kw=300.0, max_kw=300.0, min_turn_down_fraction=0.5,
             start_cost=120.0, min_up_hours=2, min_down_hours=2, can_curtail=True,
+            # a real gas-engine minor service: one shift out, evenly spread, so
+            # the units table renders its SERVICES / SERVICE H / AVAILABILITY
+            # columns and the whole page is validated with them present
+            maintenance_events=services, maintenance_duration_hours=8,
+            maintenance_interval_running_hours=interval,
+            # this fixture prices in dollars: 250,000 a service (a tenge figure)
+            # priced the engines out of the dispatch entirely, which is the
+            # service cost working but renders no maintenance columns
+            maintenance_cost_per_event=(2_000.0 if interval else 0.0),
+            maintenance_pu=1.0, maintenance_spacing="even",
             macrs_option_years=0, macrs_bonus_fraction=0.0, federal_itc_fraction=0.0)
             for i in range(n_gen)]
     else:
@@ -195,6 +209,10 @@ def exercise(tag: str, res, tar) -> None:
                   f"{sum(len(h) for h in HTML):,} bytes of HTML")
 
 
+ONLY = next((a.split('=', 1)[1].lower() for a in sys.argv[1:]
+             if a.startswith('--only=')), None)
+
+
 def main():
     pf, _ = ds.call_pvwatts_api(LAT, LON, tilt=20, azimuth=180, array_type=0,
                                 module_type=0, losses=14)
@@ -205,8 +223,21 @@ def main():
         ("fleet   3 gen / 2 batteries", 3, 2, False, dict(time_limit=900)),
         ("commit  2 engines, turndown + starts", 2, 1, True,
          dict(time_limit=240, mip_gap=0.02)),
+        ("service 2 engines + 6 scheduled services", 2, 1, True,
+         dict(time_limit=420, mip_gap=0.03)),
     ):
-        res = M.solve(scenario(ng, nb, pf, tar, commit=commit), **kw)
+        if ONLY and not tag.lower().startswith(ONLY):
+            continue
+        srv = 6 if tag.startswith("service") else 0
+        ivl = 1_500.0 if tag.startswith("runhour") else 0.0
+        res = M.solve(scenario(ng, nb, pf, tar, commit=commit, services=srv,
+                               interval=ivl), **kw)
+        if srv or ivl:
+            r0 = res["sizes"]["fueltech_units"][0]
+            print(f"      trigger {r0['maintenance_trigger']}, "
+                  f"services {len(r0['maintenance_starts'] or [])}, "
+                  f"{r0['maintenance_hours']:.0f} h out, run {r0['running_hours']} h, "
+                  f"availability {100 * (1 - r0['maintenance_hours'] / 8760):.2f}%")
         exercise(tag, res, tar)
 
     print("\n" + "=" * 70)

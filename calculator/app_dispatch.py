@@ -44,6 +44,13 @@ NO_LIMIT = 10 ** 9
 U_NAME, U_KW, U_COST, U_START = "Unit", "Rated kW", "Energy cost per kWh", "Start cost"
 U_MIN, U_UP, U_DOWN, U_SPILL = "Min load %", "Min up h", "Min down h", "Spill allowed"
 U_MAXST = "Max starts/day"
+U_MEV, U_MDUR, U_MPU = "Services/period", "Service h", "Capacity lost %"
+U_MSPACE = "Spread services"
+U_MINT, U_MCOST = "Service every (run h)", "Service cost"
+# PyPSA calls the third one maintenance_pu; here it reads as the capacity the
+# service takes away, so 100% is the unit fully out -- which is what a gas
+# engine service is: it cools down, is worked on, and is started again.
+MSPACE_EVEN, MSPACE_FREE = "Evenly", "Anywhere"
 S_NAME, S_MIN, S_BAT, S_SCALE = "Scenario", "Min load % (blank = per unit)", "Battery", "Load scale %"
 S_MAXST = "Max starts/day (blank = per unit)"
 
@@ -170,8 +177,71 @@ def read_series(upload) -> list[float]:
 
 def default_units(preset: str) -> pd.DataFrame:
     return pd.DataFrame([{U_NAME: n, U_KW: kw, U_COST: 22.0, U_START: 15_000.0, U_MIN: 50.0,
-                          U_UP: 4, U_DOWN: 5, U_SPILL: True, U_MAXST: None}
+                          U_UP: 4, U_DOWN: 5, U_SPILL: True, U_MAXST: None,
+                          U_MEV: 0, U_MDUR: 8, U_MPU: 100.0, U_MSPACE: True,
+                          U_MINT: 0, U_MCOST: 0.0}
                          for n, kw in JSX_UNITS[preset]])
+
+
+def _maint_note(units: pd.DataFrame, hours: int) -> None:
+    """What the service settings mean in the units the OEM writes the plan in.
+
+    A gas engine's interval is in OPERATING hours: TEDOM and Jenbacher minor
+    service is every 1,000-2,000 running hours, one shift (4-8 h) out. Running
+    flat out a unit clocks ~730 h a month, so that falls every 1.5-2.5 months
+    rather than monthly. Two ways to say it here, and the line differs:
+
+      running-hour interval  the honest one. The count of services is an
+                             OUTCOME of how much the unit runs, so it cannot be
+                             stated up front -- only the ceiling can.
+      a count per horizon    a proxy. It is stated up front, so the division is
+                             done here, and a unit that never runs still gets
+                             serviced, which is wrong but cheap.
+    """
+    rows, any_interval = [], False
+    for _, u in units.iterrows():
+        kw = float(u.get(U_KW) or 0.0)
+        D = _opt_int(u.get(U_MDUR)) or 0
+        N = float(u.get(U_MINT) or 0.0)
+        E = _opt_int(u.get(U_MEV)) or 0
+        cost = float(u.get(U_MCOST) or 0.0)
+        if kw <= 0 or D <= 0 or (N <= 0 and E <= 0):
+            continue
+        name = u.get(U_NAME)
+        if N > 0:
+            any_interval = True
+            most = int(hours // (N + D)) + 1
+            rows.append(
+                f"**{name}**: a {D} h service every **{N:,.0f} running hours** — "
+                f"at most {most} of them in {hours:,} h if it runs throughout, "
+                f"fewer if it does not, none if it never starts"
+                + (f"; {cost:,.0f} each" if cost > 0 else
+                   " — **no service cost set**, so an extra service in an idle "
+                   "hour is free and the count may exceed what the interval needs"))
+        else:
+            out = E * D
+            interval = (hours - out) / E
+            flag = ("" if 1_000 <= interval <= 2_000 else
+                    " — tighter than the 1,000–2,000 h minor-service interval"
+                    if interval < 1_000 else
+                    " — looser than the 1,000–2,000 h minor-service interval")
+            rows.append(
+                f"**{name}**: {E} × {D} h = {out} h out of {hours:,} h — "
+                f"availability {100 * (1 - out / hours):.2f} %, one service every "
+                f"~{interval:,.0f} running hours{flag}")
+    if not rows:
+        return
+    st.caption("Service plan — " + "  \n".join(rows))
+    st.caption(
+        "The interval is in **running** hours, which is how INNIO Jenbacher and "
+        "TEDOM write it; at continuous duty a unit clocks about 730 h a month, so "
+        "a 1,000–2,000 h interval falls every 1.5–2.5 months, not monthly. "
+        + ("Setting a running-hour interval overrides the count: the number of "
+           "services becomes an outcome, and a unit that never runs is never "
+           "serviced." if any_interval else
+           "A count is a proxy for that interval — it is fixed up front, so a "
+           "unit that never runs still gets serviced. Set 'Service every (run h)' "
+           "instead to trigger on actual running hours."))
 
 
 def default_scenarios() -> pd.DataFrame:
@@ -220,6 +290,12 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
             min_up_hours=max(1, int(u[U_UP] or 1)), min_down_hours=max(1, int(u[U_DOWN] or 1)),
             can_curtail=bool(u[U_SPILL]),
             max_starts_per_day=(st_over if st_over is not None else _opt_int(u.get(U_MAXST))),
+            maintenance_events=max(0, _opt_int(u.get(U_MEV)) or 0),
+            maintenance_duration_hours=max(0, _opt_int(u.get(U_MDUR)) or 0),
+            maintenance_pu=min(1.0, max(0.0, float(u.get(U_MPU) or 100.0) / 100.0)),
+            maintenance_spacing=("even" if bool(u.get(U_MSPACE, True)) else "free"),
+            maintenance_interval_running_hours=max(0.0, float(u.get(U_MINT) or 0.0)),
+            maintenance_cost_per_event=max(0.0, float(u.get(U_MCOST) or 0.0)),
             macrs_option_years=0, macrs_bonus_fraction=0.0, federal_itc_fraction=0.0))
     on = bool(sc.get(S_BAT)) and bat["kw"] > 0 and bat["kwh"] > 0
     eta = math.sqrt(bat["rte"])
@@ -626,6 +702,36 @@ def render() -> None:
                 U_MAXST: st.column_config.NumberColumn(
                     min_value=0, step=1, format="%d",
                     help="At most this many starts in any calendar day. Blank = no limit."),
+                U_MEV: st.column_config.NumberColumn(
+                    min_value=0, step=1, format="%d",
+                    help="Scheduled services in the horizon. The optimiser picks the "
+                         "hours; 0 = no maintenance modelled."),
+                U_MDUR: st.column_config.NumberColumn(
+                    min_value=0, step=1, format="%d",
+                    help="Hours the unit is out per service. A gas engine's minor "
+                         "service is one shift: TEDOM and Jenbacher practice is 4-8 h."),
+                U_MPU: st.column_config.NumberColumn(
+                    min_value=0.0, max_value=100.0, step=5.0, format="%.0f",
+                    help="Capacity the service takes away. 100% = fully out, which is "
+                         "what a service visit is; below that is a derate."),
+                U_MSPACE: st.column_config.CheckboxColumn(
+                    help="On: one service per equal slice of the horizon, as a service "
+                         "plan reads. Off: the optimiser may put them anywhere, and "
+                         "nothing in the cost stops it bunching them. Unused when a "
+                         "running-hour interval is set."),
+                U_MINT: st.column_config.NumberColumn(
+                    min_value=0, step=100, format="%d",
+                    help="Service every this many RUNNING hours — how INNIO Jenbacher "
+                         "and TEDOM write the interval (minor service 1,000–2,000 h). "
+                         "Set it and the count above is ignored: the number of "
+                         "services becomes an outcome of how much the unit runs, and a "
+                         "unit that never runs is never serviced. 0 = use the count."),
+                U_MCOST: st.column_config.NumberColumn(
+                    min_value=0.0, format="%.0f",
+                    help="Parts and labour for one service. The interval is a ceiling "
+                         "on banked hours, so with no price an extra service in an "
+                         "idle hour is free and the solver may take it. Any positive "
+                         "figure makes the count the minimum the interval requires."),
             })
         wear_h = st.number_input(
             "Start wear, equivalent running hours per start (report only)", 0.0, 100.0, 15.0,
@@ -636,6 +742,7 @@ def render() -> None:
         st.caption("Each unit runs at a fixed nameplate: on/off, a minimum load while on, a "
                    "start cost, and minimum up and down times. Leave a row's rating at 0 to "
                    "drop it; an empty table means grid (and battery) only.")
+        _maint_note(units, len(load))
 
     # ---- 4. battery -----------------------------------------------------------
     T.panel_head("Battery")

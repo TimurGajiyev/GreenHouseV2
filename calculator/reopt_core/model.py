@@ -168,6 +168,62 @@ class FuelTechInputs:
     # disagreed mostly on how often engines start. None = no limit and no
     # new variables or constraints.
     max_starts_per_day: int | None = None
+    # ---- scheduled maintenance, PyPSA's formulation ------------------------
+    # PyPSA (docs.pypsa.org, "Maintenance scheduling") gives a maintainable
+    # component three inputs and lets the SOLVER place the outages: a number of
+    # events, a duration each, and how much capacity is lost while one is on.
+    # REopt has nothing of the sort -- its CHP carries fixed
+    # ``unavailability_periods`` whose timing the user states (utils.jl:349,
+    # reproduced in ``chp_defaults.generate_year_profile_hourly``). Both are
+    # useful and they answer different questions, so this is the optimised one
+    # and ``production_factor_series`` stays the stated-timing one.
+    #
+    # 0 events creates no variables and no constraints, so a scenario without
+    # maintenance is the same model it was before this field existed.
+    maintenance_events: int = 0
+    # Hours per event. A gas engine's minor service is one service shift --
+    # TEDOM and Jenbacher practice is 4-8 h, the unit cooling down, being
+    # worked on and restarted -- so this is hours, not days.
+    maintenance_duration_hours: int = 0
+    # Fraction of capacity lost during an event. PyPSA's ``maintenance_pu``,
+    # default 1.0 = the unit is fully out. Below 1.0 it keeps running derated,
+    # which is a partial outage rather than a service visit.
+    maintenance_pu: float = 1.0
+    # "free"  -- PyPSA's own rule: exactly ``maintenance_events`` starts
+    #            anywhere in the horizon. Nothing stops the solver bunching
+    #            them, because nothing in the objective prefers them spread.
+    # "even"  -- one event per equal segment of the horizon, the solver
+    #            choosing the hour inside its segment. This is what a service
+    #            plan actually looks like; it is a restriction, so it can only
+    #            cost the same or more than "free".
+    # Ignored in the running-hours mode below, where the count is an outcome.
+    maintenance_spacing: str = "free"
+    # ---- the running-hours trigger (HOMER Pro's) ---------------------------
+    # A gas engine's service interval is written in OPERATING hours, not
+    # calendar ones: INNIO Jenbacher and TEDOM publish minor service every
+    # 1,000-2,000 running hours. A fixed count of events is a proxy for that and
+    # a poor one -- it schedules a service on a unit that never ran, which the
+    # four-engine browser run showed happening. HOMER Pro triggers on an
+    # interval in operating hours instead, and so does this when it is set.
+    #
+    # > 0 switches the trigger: the model carries a "running hours since the
+    # last service" counter per unit and never lets it exceed this, so the
+    # NUMBER of services becomes an outcome of how much the unit actually runs.
+    # A unit that never starts accumulates nothing and is never serviced.
+    # ``maintenance_events`` and ``maintenance_spacing`` are then unused.
+    # 0 (the default) keeps the count mode above, unchanged.
+    maintenance_interval_running_hours: float = 0.0
+    # Running hours already on the clock when the horizon opens. Only read in
+    # the running-hours mode with ``cyclic_commitment`` off, where the horizon
+    # has a real beginning; the cyclic case wraps the counter instead.
+    maintenance_hours_at_start: float = 0.0
+    # What one service costs -- parts and labour, HOMER Pro's third maintenance
+    # input beside the interval and the downtime. It is what makes the number of
+    # services determinate: the running-hours rule is a CEILING on banked hours,
+    # so without a price an extra service placed in an hour the unit was idle
+    # anyway is free and the solver may take it. Measured: at 0 a unit needing
+    # two services took four. Any positive figure removes the indifference.
+    maintenance_cost_per_event: float = 0.0
     # Let a unit spill output it cannot deliver. It is still paid for (O&M and
     # fuel are charged on rated production) but it does not reach the load.
     # REopt has dvCurtail for every tech (reopt.jl:656); this port had it for PV only.
@@ -427,7 +483,18 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             abs(ic) > 1.0e-7 or u.min_turn_down_fraction > 0.0
             or abs(ft_th_icept[g]) > 1.0e-7
             or u.start_cost > 0.0 or u.min_up_hours > 1 or u.min_down_hours > 1
-            or u.om_cost_per_running_hour > 0.0 or u.max_starts_per_day is not None))
+            or u.om_cost_per_running_hour > 0.0 or u.max_starts_per_day is not None
+            # a full outage has to show up as off, so the restart after it is
+            # counted and priced like any other start -- which is what it is:
+            # the unit cools, is worked on, and is started again
+            or ((u.maintenance_events > 0
+                 or u.maintenance_interval_running_hours > 0)
+                and u.maintenance_duration_hours > 0
+                and u.maintenance_pu >= 1.0)
+            # the running-hours counter is driven by the on/off binary, so it
+            # needs one whatever the outage does to capacity
+            or (u.maintenance_interval_running_hours > 0
+                and u.maintenance_duration_hours > 0)))
 
     sts = list(inp.storages) if inp.storages else [inp.storage]
     NB = range(len(sts))
@@ -544,6 +611,33 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
                 if ft_needs_uc[g] else None) for g in NG}
     ftsd = {g: ({t: pulp.LpVariable(f"ftSD_{g}_{t}", lowBound=0, upBound=1) for t in T}
                 if ft_needs_uc[g] else None) for g in NG}
+    # ---- scheduled maintenance (PyPSA's two variables) --------------------
+    # A unit is maintainable when it has been given both a number of events and
+    # a duration, and the horizon is long enough to hold one. Everything below
+    # is skipped otherwise, so no variable and no constraint is created.
+    ft_maint = {g: bool(fts[g].enabled
+                        and (fts[g].maintenance_events > 0
+                             or fts[g].maintenance_interval_running_hours > 0)
+                        and fts[g].maintenance_duration_hours > 0
+                        and fts[g].maintenance_duration_hours <= H)
+                for g in NG}
+    # which trigger each maintainable unit is on: running hours, or a count
+    ft_mint = {g: bool(ft_maint[g]
+                       and fts[g].maintenance_interval_running_hours > 0)
+               for g in NG}
+    # binary: an event STARTS in this hour
+    ftms = {g: ({t: pulp.LpVariable(f"ftMS_{g}_{t}", cat="Binary") for t in T}
+                if ft_maint[g] else None) for g in NG}
+    # continuous in [0, 1]: the unit is IN an event this hour. It is pinned to
+    # the starts by the coverage equality below, so it takes integral values.
+    ftm = {g: ({t: pulp.LpVariable(f"ftM_{g}_{t}", lowBound=0, upBound=1) for t in T}
+               if ft_maint[g] else None) for g in NG}
+    # running hours banked since the last service, capped at the interval. Only
+    # the running-hours trigger builds these; the count mode adds no variable.
+    fth = {g: ({t: pulp.LpVariable(
+        f"ftH_{g}_{t}", lowBound=0,
+        upBound=float(fts[g].maintenance_interval_running_hours)) for t in T}
+        if ft_mint[g] else None) for g in NG}
     bchg = {b: {t: pulp.LpVariable(f"chg_{b}_{t}", lowBound=0) for t in T} for b in NB}
     bgchg = {b: {t: pulp.LpVariable(f"gridchg_{b}_{t}", lowBound=0) for t in T} for b in NB}
     bdis = {b: {t: pulp.LpVariable(f"dis_{b}_{t}", lowBound=0) for t in T} for b in NB}
@@ -599,10 +693,16 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             # Rated production never exceeds installed size (tech_constraints.jl).
             # ftgen is what the unit delivers, pf x rated in REopt's terms, so an
             # availability below 1 scales the ceiling and the turndown floor alike.
+            # Maintenance takes maintenance_pu of the ceiling away while an
+            # event is on: at the default 1.0 the unit can produce nothing.
+            # Written against the big-M rather than dvSize so the product stays
+            # linear -- with min_kw == max_kw (a fixed nameplate, which is every
+            # commitment scenario here) the two are the same number.
+            _mnt = (fts[g].maintenance_pu * _M * ftm[g][t]) if ft_maint[g] else 0.0
             if _pf is None:
-                m += ftgen[g][t] <= ftsize[g], f"ft_cap_{g}_{t}"
+                m += ftgen[g][t] <= ftsize[g] - _mnt, f"ft_cap_{g}_{t}"
             else:
-                m += ftgen[g][t] <= _pf * ftsize[g], f"ft_cap_{g}_{t}"
+                m += ftgen[g][t] <= _pf * ftsize[g] - _pf * _mnt, f"ft_cap_{g}_{t}"
             if ft_needs_bin[g]:
                 # generator_constraints.jl:22-24 -- off means exactly zero.
                 # The big-M is the unit's own upper bound, as REopt uses max_sizes.
@@ -622,6 +722,95 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
                         m += (ftgen[g][t] >= (1.0 if _pf is None else _pf)
                               * fts[g].min_turn_down_fraction * _M
                               * ftu[g][t]), f"ft_turndown_tight_{g}_{t}"
+
+    # ---- scheduled maintenance: PyPSA's event count and coverage ----------
+    for g in NG:
+        if not ft_maint[g]:
+            continue
+        u = fts[g]
+        E, D = int(u.maintenance_events), int(u.maintenance_duration_hours)
+        who = u.name or u.label or f"unit {g}"
+        if not ft_mint[g] and E * D > H:
+            # Events cannot overlap: ftm is capped at 1, so two starts inside D
+            # hours of each other would make the coverage equality
+            # unsatisfiable. E events of D hours therefore need E*D hours of
+            # horizon. Said here, with the numbers, rather than surfacing as a
+            # bare "Infeasible".
+            raise ValueError(
+                f"{who}: {E} maintenance events of {D} h need {E * D} h but the "
+                f"horizon is {H} h. Reduce the count or the duration, or solve "
+                f"a longer horizon.")
+        if ft_mint[g]:
+            N = float(u.maintenance_interval_running_hours)
+            # Worst case the unit runs every hour it is not in service, so the
+            # horizon holds at most H/(N+D) whole cycles. Each costs D hours
+            # out. If a cycle cannot fit at all the plan is unsatisfiable, and
+            # saying so with the numbers beats a bare "Infeasible".
+            if N + D > H and D > 0:
+                raise ValueError(
+                    f"{who}: a {N:g} running-hour service interval with a {D} h "
+                    f"service needs {N + D:g} h to complete one cycle, but the "
+                    f"horizon is {H} h. Lengthen the horizon, or raise the "
+                    f"interval, or shorten the service.")
+        # An event started at s occupies s .. s+D-1. The horizon is a closed
+        # period everywhere else in this model (the state of charge wraps, so
+        # does commitment when cyclic_commitment is on), so a window wraps too
+        # rather than being forbidden near the end -- otherwise the last D-1
+        # hours of the year could never hold a service and the count would be
+        # unsatisfiable on a horizon that is an exact multiple of the spacing.
+        wrap = inp.cyclic_commitment
+        for t in T:
+            cover = [ftms[g][(t - k) % H] for k in range(D)
+                     if wrap or t - k >= 0]
+            m += ftm[g][t] == pulp.lpSum(cover), f"ft_mcover_{g}_{t}"
+        if not wrap:
+            # a finite horizon cannot start an event it has no room to finish
+            for t in T[max(0, H - D + 1):]:
+                m += ftms[g][t] == 0, f"ft_mfit_{g}_{t}"
+        if ft_mint[g]:
+            # ---- the running-hours trigger -------------------------------
+            # fth[t] is the running hours banked since the last service, read
+            # at the end of hour t. Its upper bound is the interval itself, so
+            # the cap IS the rule: the unit cannot bank more than N running
+            # hours without a reset, and only a service resets it.
+            #
+            #   fth[t] <= fth[t-1] + u[t]              grows only by running
+            #   fth[t] >= fth[t-1] + u[t] - M*ms[t]    and by exactly that,
+            #                                          unless a service starts
+            #   fth[t] <= M*(1 - ms[t])                a service zeroes it
+            #
+            # Together: ms[t]=0 pins fth[t] = fth[t-1] + u[t]; ms[t]=1 forces
+            # fth[t] = 0. The count of services is whatever that forces -- an
+            # outcome, not an input, which is the whole point. A unit that
+            # never runs banks nothing and is never due.
+            N = float(u.maintenance_interval_running_hours)
+            BM = N + 1.0
+            for t in T:
+                if t > 0:
+                    prev = fth[g][t - 1]
+                elif inp.cyclic_commitment:
+                    prev = fth[g][T[-1]]      # the clock wraps, like the SoC
+                else:
+                    prev = float(u.maintenance_hours_at_start)
+                run = ftu[g][t] if ftu[g] is not None else 1.0
+                m += fth[g][t] <= prev + run, f"ft_hgrow_{g}_{t}"
+                m += (fth[g][t] >= prev + run - BM * ftms[g][t],
+                      f"ft_hkeep_{g}_{t}")
+                m += fth[g][t] <= BM * (1 - ftms[g][t]), f"ft_hreset_{g}_{t}"
+        elif u.maintenance_spacing == "even" and E > 0:
+            # one event per equal segment: a service plan, not a free choice of
+            # E hours. The solver still picks the hour inside each segment.
+            edges = [round(i * H / E) for i in range(E + 1)]
+            for i in range(E):
+                lo, hi = edges[i], edges[i + 1]
+                m += (pulp.lpSum(ftms[g][t] for t in T[lo:hi]) == 1,
+                      f"ft_mseg_{g}_{i}")
+        else:
+            m += pulp.lpSum(ftms[g][t] for t in T) == E, f"ft_mcount_{g}"
+        if u.maintenance_pu >= 1.0 and ft_needs_bin[g]:
+            # fully out means off, so the restart is a start like any other
+            for t in T:
+                m += ftu[g][t] <= 1 - ftm[g][t], f"ft_moff_{g}_{t}"
 
     # ---- beyond REopt: spill, starts, minimum up and down time ----
     for g in NG:
@@ -1067,6 +1256,11 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
     _hour_terms = [fts[g].om_cost_per_running_hour * pulp.lpSum(ftu[g][t] for t in T)
                    for g in NG if ftu[g] is not None and fts[g].om_cost_per_running_hour > 0.0]
     TotalRunHourCosts = pwf_om * pulp.lpSum(_hour_terms) if _hour_terms else 0.0
+    _svc_terms = [fts[g].maintenance_cost_per_event
+                  * pulp.lpSum(ftms[g][t] for t in T)
+                  for g in NG if ftms[g] is not None
+                  and fts[g].maintenance_cost_per_event > 0.0]
+    TotalServiceCosts = pwf_om * pulp.lpSum(_svc_terms) if _svc_terms else 0.0
     _cycle_terms = [sts[b].discharge_cost_per_kwh * pulp.lpSum(bdis[b][t] for t in T)
                     for b in NB if sts[b].enabled and sts[b].discharge_cost_per_kwh > 0.0]
     TotalCyclingCosts = pwf_om * pulp.lpSum(_cycle_terms) if _cycle_terms else 0.0
@@ -1080,7 +1274,8 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
           + TotalFuelCosts * (1 - tax_off)
           + TotalElecBill * (1 - tax_off)
           + ExistingBoilerFuelCost * (1 - tax_off)
-          + (TotalStartCosts + TotalCyclingCosts + TotalRunHourCosts) * (1 - tax_own)
+          + (TotalStartCosts + TotalCyclingCosts + TotalRunHourCosts
+             + TotalServiceCosts) * (1 - tax_own)
           # reopt.jl:525 -- CHP standby charge, deductible for the offtaker
           + TotalCHPStandbyCharges * (1 - tax_off)
           # reopt.jl:531 -- production incentive, taxable to the owner
@@ -1182,6 +1377,21 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             "production_incentive": 0.0,
             "starts": (sum(1 for t in T if v(ftu[g][t]) > 0.5 and _was_off(g, t))
                        if ft_needs_bin[g] else None),
+            # the schedule the solver chose: hours out, and the hour each event
+            # began. None when the unit is not maintainable.
+            "maintenance_hours": (round(sum(v(ftm[g][t]) for t in T), 3)
+                                  if ft_maint[g] else None),
+            "maintenance_starts": ([t for t in T if v(ftms[g][t]) > 0.5]
+                                   if ft_maint[g] else None),
+            # what triggered them, and -- in the running-hours mode, where the
+            # count is an outcome -- how full the clock was left at the end
+            "maintenance_trigger": (("running_hours" if ft_mint[g] else "count")
+                                    if ft_maint[g] else None),
+            "maintenance_interval_running_hours": (
+                float(fts[g].maintenance_interval_running_hours)
+                if ft_mint[g] else None),
+            "maintenance_hours_banked": (round(v(fth[g][T[-1]]), 3)
+                                         if ft_mint[g] else None),
             # the same count, per calendar day of the horizon
             "starts_by_day": ([sum(1 for t in T[d * 24:(d + 1) * 24]
                                    if v(ftu[g][t]) > 0.5 and _was_off(g, t))
@@ -1225,6 +1435,12 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
         "fueltech_unit_on": {
             (fts[g].name or fts[g].label or f"Unit {g + 1}"): [v(ftu[g][t]) for t in T]
             for g in NG if fts[g].enabled and ft_needs_bin[g]
+        },
+        # 1 in every hour the unit is in a maintenance event, so the chosen
+        # schedule can be drawn beside the dispatch
+        "fueltech_unit_maintenance": {
+            (fts[g].name or fts[g].label or f"Unit {g + 1}"): [v(ftm[g][t]) for t in T]
+            for g in NG if ft_maint[g]
         },
     }
 
@@ -1296,6 +1512,9 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
             "year1_storage_cycling": sum(sts[b].discharge_cost_per_kwh
                                          * sum(v(bdis[b][t]) for t in T)
                                          for b in NB if sts[b].enabled),
+            "year1_services": sum(fts[g].maintenance_cost_per_event
+                                  * sum(v(ftms[g][t]) for t in T)
+                                  for g in NG if ftms[g] is not None),
         },
         "thermal": {
             "heating_fuel_mmbtu": _heat_fuel or 0.0,
@@ -1367,7 +1586,8 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
         initial_capital = pv_capex + bat_capex + ft_capex
         y1_om_total = (out["om"]["year1_pv"] + out["om"]["year1_storage"]
                        + out["om"]["year1_fueltech"] + out["om"]["year1_starts"]
-                       + out["om"]["year1_storage_cycling"] + out["om"]["year1_running_hours"])
+                       + out["om"]["year1_storage_cycling"] + out["om"]["year1_running_hours"]
+                       + out["om"]["year1_services"])
         sh_pv = depreciation_tax_shields(pv_capex, inp.pv.federal_itc_fraction,
                                          inp.pv.macrs_option_years, inp.pv.macrs_bonus_fraction,
                                          inp.pv.macrs_itc_reduction, tax_own, f.analysis_years)

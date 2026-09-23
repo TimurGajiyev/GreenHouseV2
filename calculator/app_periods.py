@@ -289,6 +289,42 @@ def unit_frame(sizes: dict) -> pd.DataFrame | None:
     return pd.DataFrame(out)
 
 
+def starts_matrix(units: list[dict], n_days: int) -> list[list[int]] | None:
+    """Per unit, starts in each calendar day of the horizon.
+
+    The core already counts this (``starts_by_day`` per unit, one entry per
+    calendar day of whatever horizon was solved) and the year path recounts it
+    over the replayed year; nothing is recomputed here. ``None`` when no unit
+    tracks starts at all -- a run with no commitment has none to show.
+
+    A unit's list is padded or trimmed to ``n_days`` so a horizon that does not
+    divide into whole days still lines up with the day columns.
+    """
+    if not any(u.get("starts_by_day") for u in units):
+        return None
+    out = []
+    for u in units:
+        by_day = list(u.get("starts_by_day") or [])
+        by_day = (by_day + [0] * n_days)[:n_days]
+        out.append([int(v or 0) for v in by_day])
+    return out
+
+
+def starts_by_weekday(mat: list[list[int]], idx: pd.DatetimeIndex) -> list[list[int]]:
+    """The same counts folded onto Monday..Sunday.
+
+    For a horizon of many days the per-day table stops fitting, and the useful
+    question becomes how often a given unit starts on a given weekday. The
+    weekday comes from the same index every other view here uses.
+    """
+    out = [[0] * 7 for _ in mat]
+    for i, row in enumerate(mat):
+        for d, n in enumerate(row):
+            if d * 24 < len(idx):
+                out[i][idx[d * 24].weekday()] += n
+    return out
+
+
 def storage_frame(sizes: dict) -> pd.DataFrame | None:
     rows = sizes.get("storage_units") or []
     if not rows:
@@ -321,6 +357,9 @@ def _shape(res: dict) -> dict:
         "nameplate_kw": sum(u["size_kw"] for u in units),
         "pv": sizes.get("pv_kw", 0.0) > 1e-6,
         "any_spill": any(u.get("spill_kwh", 0.0) > 1e-6 for u in units),
+        "any_maint": any(u.get("maintenance_hours") is not None for u in units),
+        "any_maint_interval": any(u.get("maintenance_trigger") == "running_hours"
+                                  for u in units),
         "any_on": bool(series.get("fueltech_unit_on")),
         "any_unserved": sum(series.get("unserved_kw") or [0.0]) > 1e-6,
         "any_export": sum(series.get("export_kw") or [0.0]) > 1e-6,
@@ -490,6 +529,79 @@ def _summary_table(series: dict, tariff, rep_day: int, sh: dict,
         head, rows = ([head[0], head[1], last],
                       [[r[0], r[1], r[3]] for r in rows])
     P.table(head, rows, sections=sections)
+
+
+_WD = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+
+
+def _starts_section(sh: dict, series: dict, idx: pd.DatetimeIndex, res: dict) -> None:
+    """Starts per unit AND per day -- the one cut the other tables do not make.
+
+    The unit table above totals each unit's starts over the whole horizon; the
+    summary table splits starts by day, week and horizon but sums the fleet.
+    Neither answers "how many times did this particular engine start on this
+    particular day", which is the number an OEM maintenance plan is written
+    against. The core already carries it per unit (``starts_by_day``); this only
+    lays it out.
+
+    A day column up to a month, a weekday fold beyond that -- 365 columns is
+    not a table anyone reads, and by then the useful question is which weekday
+    a unit keeps cycling on.
+    """
+    H = horizon(series)
+    ndays = max(1, -(-H // 24))
+    mat = starts_matrix(sh["units"], ndays)
+    if mat is None or ndays < 2:
+        return                      # a single-day run: the unit total IS the day
+    names, n_units = sh["names"], len(sh["units"])
+    colors = [P.unit_color(i) for i in range(n_units)]
+    totals = [sum(r) for r in mat]
+
+    P.sub("Starts by unit and day")
+
+    st.altair_chart(
+        P.starts_chart(list(range(1, ndays + 1)),
+                       [_daylabel(idx[d * 24], weekday=True) for d in range(ndays)],
+                       list(zip(names, colors, mat))),
+        use_container_width=True)
+    P.legend(list(zip(names, colors)))
+
+    if ndays <= 31:
+        head = ["UNIT"] + [f"{_WD[idx[d * 24].weekday()]} {idx[d * 24].day}"
+                           for d in range(ndays)] + ["TOTAL"]
+        body = [[names[i]] + [(f"{v:,}", "ghp-neg") if v else "—" for v in mat[i]]
+                + [(f"{totals[i]:,}", "ghp-key")] for i in range(n_units)]
+        foot = ["Fleet"] + [f"{sum(mat[i][d] for i in range(n_units)):,}"
+                            for d in range(ndays)] + [f"{sum(totals):,}"]
+        P.table(head, body, foot)
+    else:
+        wk = starts_by_weekday(mat, idx)
+        head = ["UNIT"] + _WD + ["TOTAL", "PER DAY", "BUSIEST DAY"]
+        body = []
+        for i in range(n_units):
+            worst = max(mat[i]) if mat[i] else 0
+            when = (_daylabel(idx[mat[i].index(worst) * 24]) if worst else "—")
+            body.append([names[i]] + [f"{v:,}" if v else "—" for v in wk[i]]
+                        + [(f"{totals[i]:,}", "ghp-key"),
+                           f"{totals[i] / ndays:,.2f}",
+                           f"{worst:,} · {when}" if worst else "—"])
+        foot = (["Fleet"]
+                + [f"{sum(wk[i][d] for i in range(n_units)):,}" for d in range(7)]
+                + [f"{sum(totals):,}", f"{sum(totals) / ndays:,.2f}",
+                   f"{max((max(mat[i]) for i in range(n_units)), default=0):,}"])
+        P.table(head, body, foot)
+
+    bits = [f"{ndays:,} days", "off-to-on transitions, counted cyclically so a unit "
+            "already running at hour 0 is not charged a start on day 0"]
+    if ndays > 31:
+        bits.insert(1, "folded onto weekdays because the horizon is longer than a month")
+    if res.get("typical"):
+        t = res["typical"]
+        bits.append(f"the year is replayed from {t['k']} typical days, so the per-day "
+                    f"pattern repeats them and the count is a lower bound "
+                    f"({t.get('starts_from_joins', 0):,} of {sum(totals):,} come from "
+                    f"the joins between unlike days)")
+    st.caption("Starts per unit per day — " + "; ".join(bits) + ".")
 
 
 # ----------------------------------------------------------------- render
@@ -786,10 +898,20 @@ def render_periods(state: dict) -> None:
                 "RUNNING HOURS", f"FUEL {u0['fuel_unit_name'].upper()}"]
         show_starts = any(u.get("starts") is not None for u in sh["units"])
         show_spill = sh["any_spill"]
+        show_maint = sh["any_maint"]
         if show_spill:
             head.append("SPILL kWh")
         if show_starts:
             head.append("STARTS")
+        if show_maint:
+            # The complaint this answers: a RUNNING HOURS of 8,760 is only
+            # believable next to the services that made room for it.
+            head += ["SERVICES", "SERVICE H", "AVAILABILITY"]
+            if sh["any_maint_interval"]:
+                # on the running-hours trigger the count is an OUTCOME, so the
+                # interval it came from and the hours still banked are the two
+                # numbers that explain it
+                head += ["EVERY RUN H", "BANKED H"]
         body = []
         for u in sh["units"]:
             r = [u["name"], u["kind"], _n(u["size_kw"]), _n(u["energy_kwh"]),
@@ -800,6 +922,18 @@ def render_periods(state: dict) -> None:
                          if u.get("spill_kwh", 0.0) > 0.5 else "—")
             if show_starts:
                 r.append(f"{u['starts']:,}" if u.get("starts") is not None else "—")
+            if show_maint:
+                mh = u.get("maintenance_hours")
+                ev = u.get("maintenance_starts")
+                if mh is None:
+                    r += ["—", "—", "—"]
+                else:
+                    r += [f"{len(ev or []):,}", (f"{mh:,.0f}", "ghp-neg"),
+                          f"{100 * (1 - mh / horizon(series)):.2f}%"]
+                if sh["any_maint_interval"]:
+                    iv, bk = u.get("maintenance_interval_running_hours"),                         u.get("maintenance_hours_banked")
+                    r += [f"{iv:,.0f}" if iv else "—",
+                          f"{bk:,.0f}" if bk is not None else "—"]
             body.append(r)
         foot = ["Fleet", "", _n(sh["nameplate_kw"]),
                 _n(sum(u["energy_kwh"] for u in sh["units"])), "",
@@ -809,7 +943,33 @@ def render_periods(state: dict) -> None:
             foot.append(_n(sum(u.get("spill_kwh", 0.0) for u in sh["units"])))
         if show_starts:
             foot.append(f"{sum(u['starts'] or 0 for u in sh['units']):,}")
+        if show_maint:
+            _mh = sum(u.get("maintenance_hours") or 0.0 for u in sh["units"])
+            _ev = sum(len(u.get("maintenance_starts") or []) for u in sh["units"])
+            _cap = horizon(series) * len(sh["units"])
+            foot += [f"{_ev:,}", f"{_mh:,.0f}",
+                     f"{100 * (1 - _mh / _cap):.2f}%" if _cap else "—"]
+            if sh["any_maint_interval"]:
+                foot += ["", ""]
         P.table(head, body, foot)
+        if show_maint:
+            st.caption(
+                ("Services are triggered by RUNNING hours, the way a gas engine's "
+                 "plan is actually written: the count is an outcome of how much each "
+                 "unit ran, EVERY RUN H is the interval and BANKED H is what stood on "
+                 "the clock at the end of the horizon. A unit that never runs is never "
+                 "serviced."
+                 if sh["any_maint_interval"] else
+                 "Services are scheduled by the optimiser as a fixed count per horizon "
+                 "(PyPSA's formulation: a count, a duration, and the capacity the "
+                 "service takes away) — a proxy for an interval that is really written "
+                 "in RUNNING hours, so a unit that never runs still gets serviced. "
+                 "Set a running-hour interval per unit to trigger on actual hours.")
+                + " A full outage is recorded as off, so the restart after it counts as "
+                  "a start — which is what it is."
+            )
+
+        _starts_section(sh, series, idx, res)
 
     if sh["banks"]:
         P.sub("Battery units")

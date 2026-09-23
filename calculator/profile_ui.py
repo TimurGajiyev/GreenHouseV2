@@ -665,3 +665,72 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
             .resolve_scale(color="independent")
             .configure_view(stroke=None)
             .configure_axis(labelFont=MONO, titleFont=MONO))
+
+
+def starts_chart(days: list[int], labels: list[str],
+                 stack: list[tuple[str, str, list[float]]], *,
+                 height: int = 200, tick_every: int | None = None):
+    """Starts per calendar day, stacked by unit -- one bar per day of the horizon.
+
+    ``stack`` is a list of ``(name, colour, per-day counts)`` built by the
+    caller from however many units the result carries, so this function never
+    names a unit. Counts are whole numbers, so the y axis is stepped in
+    integers rather than the kW scale the dispatch chart uses.
+
+    A start is an off-to-on transition, and the core counts it cyclically, so a
+    unit already running at hour 0 is not charged a start on day 0.
+    """
+    n = len(days)
+    rows = []
+    for name, color, vals in stack:
+        for i in range(n):
+            if vals[i]:
+                rows.append({"d": days[i], "src": name, "n": vals[i], "t": labels[i]})
+    names = [s[0] for s in stack]
+    colors = [s[1] for s in stack]
+    df = pd.DataFrame(rows or [{"d": days[0], "src": names[0], "n": 0, "t": labels[0]}])
+    order = {name: i for i, name in enumerate(names)}
+    df["o"] = df["src"].map(order).fillna(0)
+
+    top = max([sum(v[i] for _, _, v in stack) for i in range(n)] + [1])
+    step = 1 if top <= 6 else (2 if top <= 12 else max(1, round(top / 6)))
+    ticks = list(range(0, int(top) + step, step))
+    if tick_every is None:
+        tick_every = 1 if n <= 14 else (7 if n <= 70 else 30)
+    xvals = [days[i] for i in range(0, n, tick_every)]
+    # a day's bar keeps a visible body up to a month, then thins to a density plot
+    bar = 15 if n <= 14 else (9 if n <= 40 else (3 if n <= 130 else 1.4))
+
+    # Two Vega traps, both found by rendering this and reading the SVG back.
+    #
+    # The format is ",d" and not "d". A bare "d" makes Vega drop ticks out of an
+    # explicit ``values`` list: on domain [0, 2] with values [0, 1, 2] it draws
+    # 0 and 2 and no line at 1 -- the value most of these bars sit on. ",d",
+    # ".0f" and ",.0f" all keep the three; only "d" loses one. (The hour axis
+    # gets away with "d" because its domain is wider.)
+    #
+    # And one y encoding is reused by every layer, as the dispatch chart does: a
+    # layered chart resolves ONE shared y axis, so a bare ``y="n:Q"`` on the
+    # zero rule would contribute Vega's default ticks, and ``axis=None`` there
+    # removes the axis from the whole chart.
+    yenc = alt.Y("n:Q", title="Starts", stack=True,
+                 scale=alt.Scale(domain=[0, ticks[-1]], nice=False),
+                 axis=_axis(values=ticks, fmt=",d", domain=False))
+    bars = alt.Chart(df).mark_bar(size=bar).encode(
+        x=alt.X("d:Q", title="Day of the horizon", scale=alt.Scale(
+            domain=[days[0] - 0.6, days[-1] + 0.6], nice=False),
+            axis=_axis(values=xvals, fmt=",d", grid=False)),
+        y=yenc,
+        color=alt.Color("src:N", scale=alt.Scale(domain=names, range=colors),
+                        legend=None),
+        order=alt.Order("o:Q", sort="ascending"),
+        tooltip=[alt.Tooltip("t:N", title="Day"), alt.Tooltip("src:N", title="Unit"),
+                 alt.Tooltip("n:Q", title="Starts", format="d")],
+    )
+    base = alt.Chart(pd.DataFrame({"n": [0.0]})).mark_rule(
+        color=INK, strokeWidth=1).encode(y=yenc)
+    return (alt.layer(bars, base)
+            .properties(height=height, background=PANEL,
+                        padding={"left": 4, "right": 8, "top": 6, "bottom": 2})
+            .configure_view(stroke=None)
+            .configure_axis(labelFont=MONO, titleFont=MONO))
