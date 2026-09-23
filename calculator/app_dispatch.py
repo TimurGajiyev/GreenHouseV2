@@ -47,6 +47,13 @@ U_MAXST = "Max starts/day"
 U_MEV, U_MDUR, U_MPU = "Services/period", "Service h", "Capacity lost %"
 U_MSPACE = "Spread services"
 U_MINT, U_MCOST = "Service every (run h)", "Service cost"
+U_OWN, U_CAPEX, U_OM = "Ownership", "Purchase cost", "Variable O&M per kWh"
+OWN_PAID, OWN_BUY = "Paid (owned)", "Purchase"
+# The per-kWh cost was one column doing two jobs. An OEM quotes them apart --
+# gas against стоимость моточаса -- and they move for different reasons, so the
+# UI splits them. The MODEL still takes one number: om_cost_per_kwh is their
+# sum, so nothing in the solver changed and a row left at O&M 0 prices exactly
+# as it did before the column existed.
 # PyPSA calls the third one maintenance_pu; here it reads as the capacity the
 # service takes away, so 100% is the unit fully out -- which is what a gas
 # engine service is: it cools down, is worked on, and is started again.
@@ -96,6 +103,11 @@ def _jsx_loads() -> dict[str, list[float]]:
 # half of it, and the DOE hospital is the reference building that behaves like
 # that. The name is stated anyway, because a reader is entitled to know what the
 # numbers are really made of.
+#
+# The choice between them is no longer offered on the page. YEAR_SHAPES and
+# build_year are kept, and the year-profile tests still exercise them, but the
+# free mode now draws one fixed shape (FREE_SHAPE below) and takes its LEVEL
+# from the Site panel instead of from the example week. See render() for why.
 YEAR_CITY = "Chicago"
 YEAR_SHAPES: dict[str, tuple[str, str]] = {
     "Continuous, mild seasonal swing": ("Hospital", "crb"),
@@ -129,6 +141,48 @@ def build_year(spec: tuple[str, str], week: list[float]) -> tuple[list[float], s
     return year, (
         f"{len(year):,} real hours — {name} ({where}) — scaled so the year averages "
         f"{mean_week:,.0f} kW, the example week's own average. Peak {peak:,.0f} kW, "
+        f"quietest hour {low:,.0f} kW, busiest month {swing:.2f}\u00d7 the quietest. "
+        f"Cut the window you want below."
+    )
+
+
+# The one shape the free mode draws. It was the first entry of YEAR_SHAPES and
+# the dropdown's default, so nothing about the generated year changes by fixing
+# it: round the clock, peak about 1.9 times the mean, never below half of it,
+# which is what the artifact's factory does.
+FREE_SHAPE: tuple[str, str] = ("Hospital", "crb")
+
+# The Site panel's three anchors. They live here because the free year is built
+# before that panel renders and has to read the average out of session state --
+# on the very first pass there is nothing there yet and the default is the only
+# honest answer. The widgets below use the same names, so the two cannot drift.
+SITE_MIN_DEFAULT, SITE_AVG_DEFAULT, SITE_MAX_DEFAULT = 1_200.0, 3_000.0, 5_500.0
+
+
+def free_year(avg_kw: float) -> tuple[list[float], str]:
+    """A full hourly year at the site's own average kilowatt, and a line saying what it is.
+
+    The same hours as build_year and the same mean-matching arithmetic; what
+    differs is where the mean comes from. build_year took it from the example
+    week -- a level nobody chose, carried over from a file that happens to ship
+    with the app. This takes it from the Site panel, which is a number the user
+    typed. The peak and the quietest hour still fall where the shape puts them
+    and are reported as such: until the Site panel is asked to fit, they are
+    whatever the reference year says, not the site's own.
+    """
+    name, kind = FREE_SHAPE
+    norm = (ds.custom_normalized_flatload(name) if kind == "flat"
+            else ds.load_crb_profile(name, YEAR_CITY))
+    mean_norm = sum(norm) / len(norm)
+    year = [v * avg_kw / mean_norm for v in norm]
+    peak, low = max(year), min(year)
+    months = [sum(year[i * 730:(i + 1) * 730]) / 730 for i in range(12)]
+    swing = max(months) / max(1e-9, min(months))
+    where = ("procedural, no climate in it" if kind == "flat"
+             else f"DOE reference building in {YEAR_CITY}, a US climate")
+    return year, (
+        f"{len(year):,} real hours \u2014 {name} ({where}) \u2014 scaled so the year averages "
+        f"{avg_kw:,.0f} kW, the Site panel's own average below. Peak {peak:,.0f} kW, "
         f"quietest hour {low:,.0f} kW, busiest month {swing:.2f}\u00d7 the quietest. "
         f"Cut the window you want below."
     )
@@ -179,8 +233,116 @@ def default_units(preset: str) -> pd.DataFrame:
     return pd.DataFrame([{U_NAME: n, U_KW: kw, U_COST: 22.0, U_START: 15_000.0, U_MIN: 50.0,
                           U_UP: 4, U_DOWN: 5, U_SPILL: True, U_MAXST: None,
                           U_MEV: 0, U_MDUR: 8, U_MPU: 100.0, U_MSPACE: True,
-                          U_MINT: 0, U_MCOST: 0.0}
+                          U_MINT: 0, U_MCOST: 0.0,
+                          # O&M at 0 and the machines already bought: the fleet
+                          # prices exactly as it did before these columns
+                          U_OM: 0.0, U_OWN: OWN_PAID, U_CAPEX: 0.0}
                          for n, kw in JSX_UNITS[preset]])
+
+
+def fit_to_anchors(shape: list[float], lo: float, avg: float,
+                   hi: float) -> tuple[list[float], float, str]:
+    """Refit a load shape onto a site's own minimum, average and maximum.
+
+    Why this is not the straight line the brief asks for
+    ----------------------------------------------------
+    An affine map ``L = a*s + b`` has two free numbers, so it can satisfy two
+    of the three anchors. Pin it to the minimum and the maximum and the mean
+    falls where the shape puts it, which on the profiles this app ships is
+    wrong by a lot: for a 1,200 / 3,000 / 5,500 kW site the JSX week comes out
+    at 2,753 kW and the Chicago supermarket at 3,408 kW -- ‑8 % and +14 % on the
+    one number that sets the fuel bill. Three anchors need a third degree of
+    freedom.
+
+    So the shape is normalised to u in [0, 1] and mapped through
+
+        L[t] = lo + (hi - lo) * u[t] ** gamma
+
+    with a single gamma solved so the mean lands exactly on ``avg``. The map is
+    monotone, so every hour keeps its rank: the quiet hours stay the quiet
+    hours and the peak hour stays the peak. It is exact on all three anchors.
+
+    gamma is returned because it is the honest diagnostic. 1.0 means the shape
+    already had the right fullness and was only stretched; far from 1.0 means
+    the site's average sits well away from where this shape puts it and the
+    curve had to be bent to agree. Measured on the shipped shapes against a
+    1,200 / 3,000 / 5,500 site: JSX day 0.81, JSX week 0.83, Chicago hospital
+    1.23, supermarket 1.54, warehouse 1.06.
+    """
+    n = len(shape)
+    if n == 0:
+        return [], 1.0, "no profile to scale"
+    s_lo, s_hi = min(shape), max(shape)
+    if s_hi - s_lo < 1e-12:
+        # a flat shape carries no information to stretch; the average is all
+        # three anchors at once, and saying so beats dividing by zero
+        return [avg] * n, 1.0, ("the shape is flat, so it cannot be fitted to a "
+                                "minimum and a maximum — every hour is the average")
+    u = [(x - s_lo) / (s_hi - s_lo) for x in shape]
+    want = (avg - lo) / (hi - lo)          # where the mean must sit in [0, 1]
+
+    def mean_pow(g: float) -> float:
+        return sum(x ** g for x in u) / n
+
+    # How far the exponent can actually move the mean. As gamma falls to 0 every
+    # hour above the minimum rises to the maximum, so the mean tends to the
+    # FRACTION of hours above the minimum; as gamma grows every hour below the
+    # maximum falls to the minimum, so it tends to the fraction of hours AT the
+    # maximum. Outside that band no exponent exists, and a shape with only two
+    # distinct levels has no band at all -- there are no middle hours to bend.
+    p_above = sum(1 for x in u if x > 1e-12) / n
+    p_at_max = sum(1 for x in u if x > 1 - 1e-12) / n
+    if not (p_at_max < want < p_above):
+        aff = [lo + (hi - lo) * x for x in u]
+        got_aff = sum(aff) / n
+        levels = len({round(x, 9) for x in u})
+        why = ("the shape has only "
+               f"{levels} distinct level{'s' if levels != 1 else ''}, so there are no "
+               "middle hours to bend" if levels <= 2 else
+               f"this shape can only average between "
+               f"{lo + (hi - lo) * p_at_max:,.0f} and {lo + (hi - lo) * p_above:,.0f} kW "
+               f"once its minimum and maximum are pinned")
+        return aff, 1.0, (
+            f"minimum and maximum hit exactly, but the average came out "
+            f"{got_aff:,.0f} kW against the {avg:,.0f} asked — {why}. "
+            f"Stretched straight instead; change the average, or use a profile with "
+            f"more variation in it.")
+
+    # mean_pow is continuous and strictly decreasing in gamma, from 1 as
+    # gamma -> 0 to 0 as gamma -> inf, so a bisection on log gamma always lands
+    a, b = 1e-6, 1e6
+    for _ in range(200):
+        mid = math.sqrt(a * b)
+        if mean_pow(mid) > want:
+            a = mid
+        else:
+            b = mid
+    gamma = math.sqrt(a * b)
+    out = [lo + (hi - lo) * (x ** gamma) for x in u]
+    got = sum(out) / n
+    note = (f"fitted on {n:,} hours: min {min(out):,.0f} · mean {got:,.0f} · "
+            f"max {max(out):,.0f} kW  (γ {gamma:.3f}"
+            + (", the shape barely bent" if 0.9 <= gamma <= 1.1 else
+               ", the shape was bent to reach the average") + ")")
+    return out, gamma, note
+
+
+def fleet_capex(units: pd.DataFrame) -> float:
+    """What the fleet costs to acquire: the rows marked Purchase, and only those.
+
+    A row marked Paid (owned) contributes nothing -- the machine is already
+    bought, so there is no acquisition to recover. This never reaches the MILP:
+    the dispatch objective in this study is operating cost with the finance
+    switched off, and the battery CAPEX does not enter it either. It is an
+    investment figure, reported beside the battery's.
+    """
+    total = 0.0
+    for _, u in units.iterrows():
+        if float(u.get(U_KW) or 0.0) <= 0:
+            continue
+        if str(u.get(U_OWN) or OWN_PAID) == OWN_BUY:
+            total += float(u.get(U_CAPEX) or 0.0)
+    return total
 
 
 def _maint_note(units: pd.DataFrame, hours: int) -> None:
@@ -266,7 +428,7 @@ def _opt_int(v) -> int | None:
 
 # ------------------------------------------------------------------ scenario
 def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
-          sc: dict) -> M.ScenarioInputs:
+          sc: dict, grid_cap: float | None = None) -> M.ScenarioInputs:
     """One scenario as model inputs. Finance off: the objective is operating cost."""
     scale = float(sc.get(S_SCALE) or 100.0) / 100.0
     loads = [x * scale for x in load]
@@ -282,7 +444,7 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
         td = (override if override is not None else float(u[U_MIN] or 0.0)) / 100.0
         fleet.append(M.FuelTechInputs(
             enabled=True, kind="CHP", label="CHP", name=str(u[U_NAME] or f"Unit {len(fleet) + 1}"),
-            installed_cost_per_kw=0.0, om_cost_per_kw=0.0, om_cost_per_kwh=float(u[U_COST] or 0.0),
+            installed_cost_per_kw=0.0, om_cost_per_kw=0.0, om_cost_per_kwh=(float(u[U_COST] or 0.0) + float(u.get(U_OM) or 0.0)),
             fuel_cost_per_mmbtu=0.0, electric_efficiency_full_load=0.35,
             thermal_efficiency_full_load=0.0,
             min_kw=kw, max_kw=kw, min_turn_down_fraction=td,
@@ -321,6 +483,7 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
         storage=storage,
         fuel_tech=fleet[0] if fleet else M.FuelTechInputs(enabled=False),
         fuel_techs=fleet if len(fleet) > 1 else None,
+        max_grid_import_kw=grid_cap,
         compensation_type="no_compensation")
 
 
@@ -328,7 +491,8 @@ def account(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> 
     """The operating cost, rebuilt line by line from the solution."""
     ser, sz = res["series"], res["sizes"]
     rows = sz.get("fueltech_units") or []
-    cost_of = {str(u[U_NAME]): (float(u[U_COST] or 0.0), float(u[U_START] or 0.0))
+    cost_of = {str(u[U_NAME]): (float(u[U_COST] or 0.0) + float(u.get(U_OM) or 0.0),
+                               float(u[U_START] or 0.0))
                for _, u in units.iterrows()}
     gen_kwh = sum(r["energy_kwh"] for r in rows)
     gen_cost = sum(r["energy_kwh"] * cost_of.get(r["name"], (0.0, 0.0))[0] for r in rows)
@@ -426,7 +590,8 @@ def hourly(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> d
     (start costs and battery wear)."""
     ser = res["series"]
     H = len(ser["load_kw"])
-    cost_of = {str(u[U_NAME]): (float(u[U_COST] or 0.0), float(u[U_START] or 0.0))
+    cost_of = {str(u[U_NAME]): (float(u[U_COST] or 0.0) + float(u.get(U_OM) or 0.0),
+                               float(u[U_START] or 0.0))
                for _, u in units.iterrows()}
     energy = [price[t] * ser["grid_kw"][t] for t in range(H)]
     for name, kw in (ser.get("fueltech_unit_kw") or {}).items():
@@ -620,10 +785,22 @@ def render() -> None:
     with st.expander("Hourly load", expanded=True):
         ex = _jsx_loads()
         FREE = "Free mode: a real year, no file needed"
-        sources = ["Upload hourly CSV"] + (["Example: bess_profile_v2.jsx day (24 h)",
-                                            "Example: bess_profile_v2.jsx week (168 h)",
-                                            FREE] if ex else [])
+        # Free mode used to need the example week for its level, so it was
+        # offered only when that file was present. It takes the level from the
+        # Site panel now and needs nothing, so it always stands. The order is
+        # unchanged where the file does exist.
+        sources = (["Upload hourly CSV"]
+                   + (["Example: bess_profile_v2.jsx day (24 h)",
+                       "Example: bess_profile_v2.jsx week (168 h)"] if ex else [])
+                   + [FREE])
         src = st.radio("Source", sources, index=1 if ex else 0, key="gd_src", horizontal=True)
+        # The Site panel below can refit the level, which makes every level this
+        # panel quotes provisional. It renders after this one, so its checkbox is
+        # read from session state -- present from the previous rerun, absent on
+        # the very first pass, which is the right default either way.
+        _refit = bool(ss.get("gd_site_on"))
+        _prov = (" — provisional: the Site panel below refits this level onto the "
+                 "site's own minimum, average and maximum." if _refit else "")
         load: list[float] = []
         if src.startswith("Upload"):
             up = st.file_uploader("Hourly load, kW — one value per line or the first column of "
@@ -632,12 +809,26 @@ def render() -> None:
             if up is not None:
                 load = read_series(up)
         elif src == FREE:
-            shape = st.selectbox("Annual shape", list(YEAR_SHAPES), key="gd_shape",
-                                 help="What the year's hour-to-hour and season-to-season "
-                                      "shape is taken from. The level is set by the example "
-                                      "week, so the plant you already have still fits it.")
-            load, note = build_year(YEAR_SHAPES[shape], ex["week"])
-            st.caption(note)
+            # ---- Annual shape: retired from the page, kept in the code -------
+            # A dropdown stood here offering the six YEAR_SHAPES, and it settled
+            # two questions at once: which reference year supplied the hours,
+            # and -- through build_year, which matched the example week's mean --
+            # what level those hours carried. The level is the Site panel's job
+            # now. The site states its own minimum, average and maximum, so a
+            # reference building's kilowatt has no standing here, and choosing
+            # between six of them only produced the mismatch the Site panel
+            # exists to remove. The shape is fixed at FREE_SHAPE; the level is
+            # read from the Site panel's average below, on every pass, fit or no
+            # fit. YEAR_SHAPES and build_year stay exported for the year-profile
+            # tests -- nothing on this page calls them any more.
+            #
+            #   shape = st.selectbox("Annual shape", list(YEAR_SHAPES), key="gd_shape",
+            #                        help="What the year's hour-to-hour and season-to-"
+            #                             "season SHAPE is taken from.")
+            #   load, note = build_year(YEAR_SHAPES[shape], ex["week"])
+            _avg = float(ss.get("gd_site_avg") or 0.0) or SITE_AVG_DEFAULT
+            load, note = free_year(_avg)
+            st.caption(note + _prov)
         else:
             load = list(ex["day" if "day" in src else "week"])
         if load:
@@ -654,7 +845,112 @@ def render() -> None:
                                              min(MAX_H, n - start), key=f"gd_len_{wk}_{start}"))
             load = load[start:start + length]
             st.caption(f"{len(load):,} hours · {sum(load):,.0f} kWh · peak {max(load):,.0f} kW "
-                       f"· minimum {min(load):,.0f} kW")
+                       f"· minimum {min(load):,.0f} kW" + _prov)
+
+    # ---- 1b. site -------------------------------------------------------------
+    # The shape above says WHEN the site draws power; this says HOW MUCH. They
+    # are separate questions and the app used to answer only the first, which is
+    # why every figure so far has rested on a reference building's level rather
+    # than the plant's own.
+    T.panel_head("Site")
+    grid_cap = None
+    with st.expander("Site demand", expanded=True):
+        fit_on = st.checkbox(
+            "Scale the profile to this site's own demand", value=False, key="gd_site_on",
+            help="Off: the profile is used at the level it arrives with. On: its shape "
+                 "is kept and refitted onto the three numbers below.")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            s_min = st.number_input(f"Minimum load (kW)", 0.0, value=SITE_MIN_DEFAULT, step=50.0,
+                                    key="gd_site_min",
+                                    help="The floor the site never goes below — its "
+                                         "baseload, not the lowest hour of a quiet day.")
+        with c2:
+            s_avg = st.number_input(f"Average load (kW)", 0.0, value=SITE_AVG_DEFAULT, step=50.0,
+                                    key="gd_site_avg",
+                                    help="Mean demand. This is what sets total energy "
+                                         "over the horizon, so it drives the fuel bill. "
+                                         "In Free mode it also sets the level of the "
+                                         "generated year, whether or not the box above "
+                                         "is ticked.")
+        with c3:
+            s_max = st.number_input(f"Maximum load (kW)", 0.0, value=SITE_MAX_DEFAULT, step=50.0,
+                                    key="gd_site_max",
+                                    help="Peak demand — 5,500 kW for the partner site.")
+        cap_on = st.checkbox(
+            "The grid connection is limited", value=False, key="gd_cap_on",
+            help="A transformer or supply contract ceiling on what may be drawn from "
+                 "the utility, counting battery charging. Off = unlimited, which is "
+                 "what REopt itself assumes.")
+        if cap_on:
+            grid_cap = st.number_input(f"Maximum grid import (kW)", 0.0, value=2_000.0,
+                                       step=100.0, key="gd_cap_kw")
+        # The fit comes BEFORE the connection check on purpose: the check has to
+        # read the peak the solver will actually see. Reading it first reported
+        # the profile's own 4,106 kW and called a 5,500 kW site merely "tight".
+        if fit_on and load:
+            if not (s_min < s_avg < s_max):
+                st.error(
+                    f"The three anchors have to increase: minimum {s_min:,.0f} < average "
+                    f"{s_avg:,.0f} < maximum {s_max:,.0f} kW. No curve passes through "
+                    f"them otherwise, so the profile is left at its own level.")
+            else:
+                load, _g, _note = fit_to_anchors(load, s_min, s_avg, s_max)
+                st.caption(_note)
+                st.caption(
+                    f"{len(load):,} hours · {sum(load):,.0f} kWh · "
+                    f"load factor {100 * s_avg / s_max:.1f} %. The shape is kept and every "
+                    f"hour keeps its rank; only the level is the site's. An affine stretch "
+                    f"would hit the minimum and the maximum and miss the average by up to "
+                    f"14 % on these shapes, which is why a single exponent is solved instead.")
+        elif fit_on:
+            st.caption("Load a profile above and its shape will be refitted onto these three.")
+        else:
+            st.caption(
+                "Not scaling. The profile keeps the level it arrived with — in Free "
+                "mode that is the average above, already applied; for an upload or an "
+                "example week it is the file's own. Tick the box to pin the minimum "
+                "and the maximum as well.")
+
+        # Now that `load` is the series the solver will receive, the connection
+        # can be checked against it. A grid-tied run may not leave load unserved
+        # -- reopt_core pins it to zero unless off_grid_flag -- so a ceiling the
+        # plant cannot make up does not brown the site out, it returns
+        # "Infeasible" with no explanation. Said here instead, with the numbers.
+        if cap_on and load:
+            # The units table renders below this panel, so on the first pass the
+            # fleet is unknown. Claiming infeasibility then would be a guess.
+            #
+            # It is read from gd_fleet_kw, which the units panel writes at the
+            # END of its own render, and NOT from gd_units_df: that frame is the
+            # preset as it shipped and never carries an edit, so a rating typed
+            # into the table was ignored here -- lower a unit to 1,500 kW and
+            # this check went on counting the preset's 2,267 kW. One rerun
+            # behind is the same bargain the fit checkbox above makes, and it is
+            # the honest one: a data editor's edits are only known after it has
+            # rendered.
+            _fleet_kw = ss.get("gd_fleet_kw")
+            if _fleet_kw is None:
+                _fleet_df = ss.get("gd_units_df")
+                _fleet_kw = (float(pd.to_numeric(_fleet_df[U_KW], errors="coerce")
+                                   .fillna(0.0).clip(lower=0).sum())
+                             if _fleet_df is not None and U_KW in _fleet_df else None)
+            _peak = max(load)
+            if _fleet_kw is not None and _peak > 0:
+                _have = grid_cap + _fleet_kw
+                if _have < _peak - 1e-6:
+                    st.error(
+                        f"No answer exists: the peak is {_peak:,.0f} kW but the wire "
+                        f"passes {grid_cap:,.0f} kW and the fleet is rated "
+                        f"{_fleet_kw:,.0f} kW — {_have:,.0f} kW between them. The solver "
+                        f"reports Infeasible rather than shedding load, because a "
+                        f"grid-tied run cannot leave demand unmet. Raise the import "
+                        f"limit, add capacity, or lower the site's maximum.")
+                elif _have < _peak * 1.05:
+                    st.warning(
+                        f"Tight: peak {_peak:,.0f} kW against {_have:,.0f} kW of wire "
+                        f"plus fleet. Take one unit out for a service and the hour "
+                        f"cannot be served.")
 
     # ---- 2. prices ------------------------------------------------------------
     T.panel_head("Grid price", required=True)
@@ -690,8 +986,25 @@ def render() -> None:
             ss["gd_units_df"], num_rows="dynamic", use_container_width=True, key="gd_units",
             column_config={
                 U_KW: st.column_config.NumberColumn(min_value=0.0, step=10.0, format="%.0f"),
-                U_COST: st.column_config.NumberColumn(f"Energy cost ({cur}/kWh)", min_value=0.0,
-                                                      help="Charged on rated output, spill included."),
+                U_COST: st.column_config.NumberColumn(
+                    f"Fuel cost ({cur}/kWh)", min_value=0.0,
+                    help="Gas only. Charged on rated output, spill included."),
+                U_OM: st.column_config.NumberColumn(
+                    f"Variable O&M ({cur}/kWh)", min_value=0.0,
+                    help="Стоимость моточаса per kWh generated — oil, filters, plugs, "
+                         "overhaul reserve. Added to the fuel cost above and charged the "
+                         "same way, on rated output. Leave at 0 and pricing is exactly "
+                         "what it was before this column existed."),
+                U_OWN: st.column_config.SelectboxColumn(
+                    options=[OWN_PAID, OWN_BUY], required=True,
+                    help="Paid (owned): the machine is already bought, so it carries no "
+                         "purchase cost. Purchase: its cost below joins the investment "
+                         "the study pays back."),
+                U_CAPEX: st.column_config.NumberColumn(
+                    f"Purchase cost ({cur})", min_value=0.0, format="%.0f",
+                    help="Only read when Ownership is Purchase. It is an investment "
+                         "figure, not an operating one: it never enters the dispatch "
+                         "objective, exactly as the battery CAPEX does not."),
                 U_START: st.column_config.NumberColumn(f"Start cost ({cur})", min_value=0.0),
                 U_MIN: st.column_config.NumberColumn(min_value=0.0, max_value=100.0,
                                                      help="Minimum load while running, % of rated."),
@@ -743,6 +1056,14 @@ def render() -> None:
                    "start cost, and minimum up and down times. Leave a row's rating at 0 to "
                    "drop it; an empty table means grid (and battery) only.")
         _maint_note(units, len(load))
+        # What the Site panel above will count as the fleet on the next rerun.
+        # The edited frame itself is deliberately NOT written back to
+        # gd_units_df: st.data_editor holds its edits as a delta against the
+        # frame it was handed, and with num_rows="dynamic" a frame written back
+        # with its added rows in it would take them again. A single number
+        # carries no such risk.
+        ss["gd_fleet_kw"] = float(pd.to_numeric(units[U_KW], errors="coerce")
+                                  .fillna(0.0).clip(lower=0).sum()) if len(units.index) else 0.0
 
     # ---- 4. battery -----------------------------------------------------------
     T.panel_head("Battery")
@@ -785,7 +1106,10 @@ def render() -> None:
                                                      help="Overrides every unit's minimum load."),
                 S_BAT: st.column_config.CheckboxColumn(),
                 S_SCALE: st.column_config.NumberColumn(
-                    min_value=1.0, step=5.0, help="Scales the whole load — for variability."),
+                    min_value=1.0, step=5.0,
+                    help="Scales the whole load — for variability. It is applied AFTER "
+                         "the Site panel's fit, so anything but 100 moves the site's "
+                         "minimum, average and maximum by the same factor."),
                 S_MAXST: st.column_config.NumberColumn(
                     min_value=0, step=1, format="%d",
                     help="Overrides every unit's max starts per day for this scenario."),
@@ -793,6 +1117,25 @@ def render() -> None:
         st.caption("Each row is solved separately and compared side by side. The JSX's own "
                    "three rules are filled in; add rows to vary the load level, the minimum-load "
                    "rule or the battery.")
+        # Two levers scale the same series and the scenario one runs last, so a
+        # row at anything but 100 % silently moves the anchors the Site panel was
+        # just told to hold. Measured: a 120 % row turns a 5,500 kW maximum into
+        # 6,600 kW. Worth saying out loud rather than leaving in the arithmetic.
+        if bool(ss.get("gd_site_on")):
+            _scales = pd.to_numeric(scen[S_SCALE], errors="coerce").fillna(100.0)
+            _off = sorted({float(x) for x in _scales if abs(float(x) - 100.0) > 1e-9})
+            if _off:
+                _lo, _hi = min(_off), max(_off)
+                st.warning(
+                    f"The Site panel is fitting the profile to a fixed minimum, average "
+                    f"and maximum, but "
+                    f"{'a row scales' if len(_off) == 1 else 'rows scale'} the load to "
+                    + ", ".join(f"{x:,.0f} %" for x in _off) +
+                    f". The scale is applied after the fit, so those rows do not run at "
+                    f"the site's numbers — a {_hi:,.0f} % row takes the maximum to "
+                    f"{_hi / 100 * float(ss.get('gd_site_max', 0.0)):,.0f} kW. Leave the "
+                    f"scale at 100 % to compare rules at the site's own demand, or accept "
+                    f"that these rows describe a different site.")
         c1, c2 = st.columns(2)
         with c1:
             tlim = st.number_input("Time limit per scenario (s) — 0 for none", 0, 86_400, 120,
@@ -864,7 +1207,7 @@ def render() -> None:
     if missing:
         st.warning("Required: " + ", ".join(missing))
     if st.button("Solve scenarios", type="primary", disabled=bool(missing), key="gd_run"):
-        runs = []
+        runs, unsolved = [], []
         prog = st.progress(0.0, text="Solving")
         rows = [r for r in scen.to_dict("records") if str(r.get(S_NAME) or "").strip()]
         try:
@@ -880,7 +1223,7 @@ def render() -> None:
                 price_used = [p for c in typ.day_of for p in typ.price[c]]
             for i, sc in enumerate(rows):
                 prog.progress(i / len(rows), text=f"Solving {sc[S_NAME]} ({i + 1} of {len(rows)})")
-                inp = build(load, price, units, bat, sc)
+                inp = build(load, price, units, bat, sc, grid_cap)
                 if typ is not None:
                     # The year the design will show is the typical days replayed,
                     # so the tariff it prices hours with has to be the replayed
@@ -903,6 +1246,14 @@ def render() -> None:
                             text=f"Solving {_n}: typical day {c + 1} of {k}"))
                 else:
                     res = M.solve(inp, time_limit=lim, mip_gap=float(gap) / 100.0)
+                # A rule the solver could not answer is not a cheap rule. Its
+                # series are all zero and its objective is None, so tabulating
+                # it would put an unbeatable 0 in the comparison and make every
+                # saving, payback and NPV measured against it nonsense. It is
+                # named below the table instead.
+                if not res.get("solved", True):
+                    unsolved.append((str(sc[S_NAME]), res["status"]))
+                    continue
                 acc = account(res, price_used, units, bat["wear"] if sc.get(S_BAT) else 0.0)
                 acc["seconds"] = time.time() - t0
                 runs.append({"name": str(sc[S_NAME]), "res": res, "tariff": inp.tariff,
@@ -914,9 +1265,21 @@ def render() -> None:
                              "hourly": hourly(res, price_used, units,
                                               bat["wear"] if inp.storage.enabled else 0.0)})
             prog.progress(1.0, text="Done")
-            ss["gd_results"] = {"runs": runs, "currency": cur, "wear_h": wear_h,
+            if not runs:
+                raise RuntimeError(
+                    "not one rule was solved — "
+                    + "; ".join(f"{n}: {s}" for n, s in unsolved)
+                    + ". Raise the time limit, widen the optimality gap, or "
+                      "shorten the horizon.")
+            ss["gd_results"] = {"runs": runs, "unsolved": unsolved,
+                                # what was asked of the solver, so the results
+                                # can say whether it delivered it
+                                "gap_target": float(gap) / 100.0,
+                                "currency": cur, "wear_h": wear_h,
                                 "hours": len(runs[0]["res"]["series"]["load_kw"]),
                                 "price": price_used, "units": units, "bat": bat,
+                                "fleet_capex": fleet_capex(units),
+                                "grid_cap": grid_cap,
                                 "typical": (None if typ is None else
                                             {"k": typ.k, "weights": list(typ.weights)}),
                                 "life": {"years": int(yrs), "escalation": float(esc) / 100.0,
@@ -933,6 +1296,48 @@ def render() -> None:
     runs, cur = out["runs"], out["currency"]
     H = out.get("hours") or len(runs[0]["res"]["series"]["load_kw"])
     T.panel_head("Scenario comparison")
+    # Named, not tabulated: a rule with no solution has no cost to compare.
+    if out.get("unsolved"):
+        st.warning(
+            "Left out of the comparison because the solver returned no answer for "
+            + ", ".join(f"**{n}** ({s})" for n, s in out["unsolved"])
+            + ". A rule that did not solve is not a cheap rule — it has no cost at "
+              "all, and putting a zero in the table would make every saving and "
+              "payback beside it meaningless. Raise the time limit, widen the "
+              "optimality gap, or shorten the horizon and solve again.",
+            icon=":material/timer_off:")
+
+    # A column the solver did not finish is an UPPER BOUND, not a cost, and it
+    # must not sit silently beside columns that were proved.
+    #
+    # The gap was already in the Solver row at the foot of the table, which is
+    # the last place a reader looks and the easiest to read as a footnote.
+    # Measured on a year with a 120 s limit: A closed to 0.03 %, B stopped at
+    # 20.49 % and C at 46.61 %, and the economics below went on to report that A
+    # saves 240,656,433 kA/yr against B and 703,760,266 kA against C -- of which
+    # up to 228,196,344 kA is not a saving at all, only the distance B still had
+    # to travel. Savings, NPV and payback are differences, so an unconverged
+    # column poisons every figure it touches.
+    #
+    # The test is the reader's own: the optimality gap they asked for. A run
+    # that came back above it did not deliver what was requested, and that is
+    # exactly the run worth naming. No invented threshold is needed.
+    _target = float(out.get("gap_target") or 0.0)
+    _wide = [(r["name"], g) for r in runs
+             for g in [(r["acc"] or {}).get("gap")]
+             if isinstance(g, float) and g == g and abs(g) != float("inf")
+             and g > _target + 1e-9]
+    if _wide:
+        st.warning(
+            "Not proved, and so not comparable: "
+            + ", ".join(f"**{n}** stopped at a gap of {100 * g:.2f} %" for n, g in _wide)
+            + f" against the {100 * _target:.2f} % that was asked for. Those columns "
+              "are upper bounds — the true cost is somewhere below them — so the "
+              "savings, net present values and paybacks computed against them are "
+              "worth at most as much as the gap. Raise the time limit or shorten "
+              "the horizon before reading anything into a difference.",
+            icon=":material/rule:")
+
     if out.get("typical"):
         t = out["typical"]
         P.note([f"a year from <b>{t['k']}</b> typical days, weighted "

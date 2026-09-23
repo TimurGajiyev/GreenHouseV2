@@ -320,14 +320,21 @@ def replay(days: list[dict], typ: Typical, price_year: list[float],
 
     sizes = dict(days[order[0]]["sizes"], fueltech_units=rows, storage_units=st_rows,
                  fueltech_kw=sum(r["size_kw"] for r in rows))
-    obj_days = sum(days[c]["objective_lifecycle_cost"] for c in order)
-    obj = obj_days + extra_cost
+    # A year is only as solved as its least-solved typical day. One day without
+    # an answer leaves the whole year without one: its objective is None, and
+    # summing None into a total would either raise or -- worse, the way this
+    # used to read -- quietly contribute a zero for a day that stands for
+    # dozens of real ones.
+    solved = all(d.get("solved", d["status"] == "Optimal") for d in days)
+    obj_days = (sum(days[c]["objective_lifecycle_cost"] for c in order) if solved else None)
+    obj = (obj_days + extra_cost) if solved else None
     gaps = [(d.get("solver") or {}).get("mip_gap") for d in days]
     gaps = [g for g in gaps if isinstance(g, float) and g == g and abs(g) != float("inf")]
     statuses = {d["status"] for d in days}
 
     return {
         "status": ("Optimal" if statuses == {"Optimal"} else "; ".join(sorted(statuses))),
+        "solved": solved,
         "solver": {"mip_gap": (max(gaps) if gaps else None),
                    "typical_days": typ.k, "weights": list(typ.weights)},
         "objective_lifecycle_cost": obj,

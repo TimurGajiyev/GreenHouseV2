@@ -69,6 +69,20 @@ def render_results(state: dict) -> None:
         "These results summarize the economic viability of PV, battery storage, "
         "CHP and generator at your site. Edit your inputs to see how changes affect them."
     )
+    # A run without a solution has nothing to report. Everything below reads
+    # variables the solver never set, so it would draw a site that costs zero,
+    # saves everything and pays back immediately. The status used to be a
+    # warning printed above that fiction; it now ends the section.
+    if not res.get("solved", res["status"] == "Optimal"):
+        st.error(
+            f"No results: the solver returned **{res['status']}**. "
+            + ("The inputs describe a site that cannot be served — check the "
+               "load against the technologies allowed to serve it."
+               if res["status"] == "Infeasible" else
+               "No solution was found within the time limit. Raise the limit, "
+               "widen the optimality gap, or shorten the horizon."),
+            icon=":material/error:")
+        return
     if res["status"] != "Optimal":
         st.warning(f"Solver status: {res['status']}")
 

@@ -299,6 +299,15 @@ class ScenarioInputs:
     # to the horizon; when they are comparable to it, it is a real restriction
     # (a unit stopped near the end cannot run near the start).
     cyclic_commitment: bool = True
+    # The site's grid connection: the most a transformer or a supply contract
+    # will pass, in kW, counting both what serves the load and what charges the
+    # battery. REopt has no such input -- its ElectricUtility is unlimited --
+    # so this is GreenHouse's own, and it is the one site requirement besides
+    # the load itself that changes the answer: a 5.5 MW site behind a 2 MW
+    # connection is a different plant from the same site behind 10 MW.
+    # None (the default) leaves the grid unlimited, which is the model exactly
+    # as it was before this field existed: no variable, no constraint.
+    max_grid_import_kw: float | None = None
     off_grid_flag: bool = False
     land_acres: float | None = None
     roof_squarefeet: float | None = None
@@ -892,6 +901,32 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
                 m += bdis[b][t] == 0, f"nodis_{b}_{t}"
                 m += bsoc[b][t] == 0, f"nosoc_{b}_{t}"
 
+    # "No grid charging" has to mean it -- storage_constraints.jl:24-31
+    #
+    # REopt splits the charge by where it came from: dvProductionToStorage per
+    # technology and dvGridToStorage, and can_grid_charge zeroes the second one.
+    # This port carries the same two variables (bchg, bgchg) but the load
+    # balance is a single node, so nothing stopped utility power flowing into
+    # bchg while bgchg sat pinned at zero -- the flag zeroed a variable nobody
+    # had to use. Measured on a flat 1,500 kW load, no PV and no engine, and a
+    # price that steps from 10 to 200: the battery cycled 4,264 kWh and saved
+    # 708 kA regardless of the flag, and the only place that energy could have
+    # come from is the grid.
+    #
+    # The money was always right -- grid[t] is billed whatever it goes on to do
+    # -- so no cost was understated. What was wrong is that a site told it may
+    # not arbitrage the tariff did so anyway.
+    #
+    # One constraint over the bank, not one per battery: the batteries that MAY
+    # charge from the grid need no allocation of the site's own output, since
+    # any on-site kWh they take can be relabelled as a grid kWh at no cost to
+    # the argument. Only the ones that may not have to share what the site made.
+    _no_gc = [b for b in NB if sts[b].enabled and not sts[b].can_grid_charge]
+    if _no_gc:
+        for t in T:
+            m += (pulp.lpSum(bchg[b][t] for b in _no_gc) <= pvprod[t] + ftprod[t],
+                  f"chg_onsite_{t}")
+
     # Electric load balance -- load_balance.jl:3
     can_export = (not inp.off_grid_flag) and inp.compensation_type != "no_compensation"
     # NOTE: net_metering_limit_kw caps the capacity that may PARTICIPATE in the
@@ -904,6 +939,11 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
               == loads[t] + chg[t] + gridchg[t] + export[t]), f"load_bal_{t}"
         if not can_export:
             m += export[t] == 0, f"noexport_{t}"
+        if inp.max_grid_import_kw is not None:
+            # the connection carries everything drawn from the utility, load and
+            # battery charging alike -- the same sum the demand charge bills
+            m += (grid[t] + gridchg[t] <= float(inp.max_grid_import_kw),
+                  f"gridcap_{t}")
 
     _or_req, _or_vars = [], None
     if inp.off_grid_flag:
@@ -1450,10 +1490,30 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
         max(0.0, series["battery_charge_kw"][t] - series["pv_to_load_kw"][t]) for t in T
     ) * 0.0  # grid charging already inside grid_kw accounting below
 
+    # A model with no solution has no cost, and must not be given one.
+    #
+    # The objective used to read float(pulp.value(...) or 0.0), which turns "no
+    # answer" into "zero" -- and zero is not a neutral value here, it is the
+    # cheapest number there is. Measured on the page: a scenario that hit its
+    # time limit without an incumbent was tabulated at 0 kA, became the baseline
+    # every other scenario was compared against, and produced a 0.4-year payback
+    # for a 391 MkA battery. The solver was honest (status "Not Solved"); the
+    # reporting was not.
+    #
+    # None says what happened. Every series and total in this dict is the same
+    # fiction when `solved` is False -- they are all v(x) on variables the
+    # solver never set -- so `solved` is the one flag a reader has to check
+    # before believing any of it.
+    _obj = pulp.value(m.objective)
+    _status = pulp.LpStatus[status]
+    _solved = _obj is not None and _status not in (
+        "Infeasible", "Unbounded", "Undefined", "Not Solved")
+
     out = {
-        "status": pulp.LpStatus[status],
+        "status": _status,
+        "solved": _solved,
         "solver": solver_info,
-        "objective_lifecycle_cost": float(pulp.value(m.objective) or 0.0),
+        "objective_lifecycle_cost": float(_obj) if _solved else None,
         "sizes": {
             "pv_kw": pv_kw, "battery_kw": bat_kw, "battery_kwh": bat_kwh,
             "fueltech_kw": ft_kw,

@@ -615,7 +615,9 @@ Reproduce with `python calculator/tools/yemen_case.py`; raw output in
 
 # Part 9 — Bugs found and fixed
 
-Every one of these was found by a numeric mismatch against a real REopt run.
+Every one of these but the last was found by a numeric mismatch against a real REopt
+run. The last was found by a property test that never compares against anything —
+see `calculator/tools/stress_core.py`.
 
 | Bug | Symptom | Fix |
 |---|---|---|
@@ -633,6 +635,9 @@ Every one of these was found by a numeric mismatch against a real REopt run.
 | **CHP missing its MACRS** | Invisible (tech sized to 0) | The captured spec ships CHP with 5-yr MACRS / 100% bonus and Prime Generator with none; we applied none to both |
 | **No operating reserve off-grid** | PV +42.9%, diesel −26.3%, capital +22.5% vs REopt | Ported `operating_reserve_constraints.jl`, gated to off-grid |
 | **Stale module after edit** | `ScenarioInputs.__init__() got an unexpected keyword argument` | Streamlit reloads the script but not imported modules — added a filtering guard with a clear "restart Streamlit" message |
+| **A model with no solution reported a cost of zero** | A rule that hit its time limit without an incumbent was tabulated at 0 ₸, became the baseline every other rule was compared against, and produced a 0.4-year payback for a 391 M ₸ battery | `objective_lifecycle_cost` read `float(pulp.value(m.objective) or 0.0)`, turning "no answer" into "zero" — and zero is not neutral, it is the cheapest number there is. Now `None`, with an explicit `solved` flag; every series in the same dict is the same fiction when it is false. Three consumers followed: the dispatch study names such a rule instead of tabulating it, the REopt results section ends rather than drawing zeros over a warning, and a year from typical days is only as solved as its least-solved day |
+| **An unconverged column sat silently beside proved ones** | On a year at a 120 s limit: A closed to 0.03 %, B stopped at 20.49 %, C at 46.61 %, and the economics reported A saving 240,656,433 ₸/yr against B and 703,760,266 ₸ against C — up to 228,196,344 ₸ of which is not a saving but the distance B still had to travel | The gap was already in the Solver row at the foot of the table, the last place a reader looks. A warning above the comparison now names every rule whose achieved gap exceeds **the optimality gap the reader asked for** — no invented threshold — and says those columns are upper bounds, so savings, NPV and payback computed against them are worth at most as much as the gap |
+| **`can_grid_charge=False` did nothing** | A battery told it may not charge from the grid arbitraged the tariff anyway: 4,264 kWh cycled on a site with no PV and no engine | REopt splits the charge by source (`dvProductionToStorage` per tech, `dvGridToStorage`) and the flag zeroes the second. This port carries both variables but balances electricity at a single node, so utility power flowed into the on-site charge variable while the grid-charge variable sat pinned at zero. Added `Σ bchg ≤ pvprod + ftprod` over the batteries that are refused the grid. **No cost was ever understated** — `grid[t]` is billed whatever it goes on to do — but a site told not to arbitrage did |
 
 Two harness bugs are worth recording because they produced convincing-looking wrong
 answers:
