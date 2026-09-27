@@ -360,7 +360,7 @@ def _maint_note(units: pd.DataFrame, hours: int) -> None:
                              done here, and a unit that never runs still gets
                              serviced, which is wrong but cheap.
     """
-    rows, any_interval = [], False
+    rows, any_interval, dark = [], False, []
     for _, u in units.iterrows():
         kw = float(u.get(U_KW) or 0.0)
         D = _opt_int(u.get(U_MDUR)) or 0
@@ -373,6 +373,19 @@ def _maint_note(units: pd.DataFrame, hours: int) -> None:
         if N > 0:
             any_interval = True
             most = int(hours // (N + D)) + 1
+            # A minimum run of `up` hours banks `up` running hours before the
+            # unit is allowed to stop, and a service at full capacity lost
+            # takes the unit off, so the counter cannot be reset mid-run. An
+            # interval shorter than the minimum up time therefore forbids the
+            # first start outright. The model stays feasible -- the fleet
+            # simply never runs -- so the answer comes back Optimal at a
+            # 0.00 % gap with the whole load bought from the grid, and nothing
+            # on the page says why. Measured in the core: interval 1 h with
+            # min up 4 h gives 0 running hours and 10,080,000; the same week
+            # at a 100 h interval gives 304 h and 4,138,076.
+            up = max(1, _opt_int(u.get(U_UP)) or 1)
+            if float(u.get(U_MPU) or 100.0) >= 100.0 and N < up:
+                dark.append((str(name), N, up, D))
             rows.append(
                 f"**{name}**: a {D} h service every **{N:,.0f} running hours** — "
                 f"at most {most} of them in {hours:,} h if it runs throughout, "
@@ -404,6 +417,21 @@ def _maint_note(units: pd.DataFrame, hours: int) -> None:
            "A count is a proxy for that interval — it is fixed up front, so a "
            "unit that never runs still gets serviced. Set 'Service every (run h)' "
            "instead to trigger on actual running hours."))
+    if dark:
+        st.warning(
+            "**This fleet cannot start.**  \n"
+            + "  \n".join(
+                f"**{_n}**: the shortest run the unit is allowed is **{_up} h** "
+                f"(Min up h), which banks {_up} running hours — but a service "
+                f"falls due after **{_iv:,.0f}** and takes the unit fully out "
+                f"for {_d} h, so the counter cannot be reset mid-run. The first "
+                "start is never permitted."
+                for _n, _iv, _up, _d in dark)
+            + "  \nThe run will still solve and report *Optimal*: it will "
+              "buy the whole load from the grid. Raise 'Service every (run h)' — "
+              "a gas engine's minor service is every 1,000–2,000 running hours — "
+              "or lower 'Min up h'.",
+            icon=":material/build:")
 
 
 def default_scenarios() -> pd.DataFrame:
