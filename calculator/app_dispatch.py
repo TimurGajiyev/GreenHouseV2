@@ -1265,8 +1265,12 @@ def render() -> None:
                 # is handed one no run will ever reach.
                 lim = NO_LIMIT if int(tlim) == 0 else int(tlim)
                 if typ is not None:
+                    # The connection limit belongs to every typical day too. Left
+                    # out, a year the wire cannot carry came back Optimal: 415 h
+                    # above a 2,500 kW cap on the fitted default site, where the
+                    # window solved as posed is Infeasible.
                     res = Y.solve_year(
-                        lambda dl, dp, _sc=sc: build(dl, dp, units, bat, _sc),
+                        lambda dl, dp, _sc=sc: build(dl, dp, units, bat, _sc, grid_cap),
                         load, price, kk, typical=typ,
                         time_limit=lim, mip_gap=float(gap) / 100.0,
                         on_day=lambda c, k, _n=sc[S_NAME], _i=i: prog.progress(
