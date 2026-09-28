@@ -1,0 +1,13 @@
+# Streamlit Community Cloud installs from this file. Entry point:
+#   calculator/streamlit_app.py
+# Versions are the ones the app is tested against locally.
+
+streamlit==1.62.0
+pandas==2.3.3
+numpy==2.3.3
+altair==6.2.2
+
+# Optimisation core (calculator/reopt_core/model.py): PuLP builds the model,
+# pulp.HiGHS solves it through the highspy package.
+pulp==3.3.0
+highspy==1.13.1
