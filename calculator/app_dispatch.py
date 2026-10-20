@@ -254,6 +254,7 @@ def _real_year(site: str) -> dict:
 # quoted word for word, its own status included: a value it marks KILLER or
 # "не из договора" is NOT a confirmed figure, and the page says so.
 MEASURED, PASSPORT, UNCONFIRMED, TYPED = "measured", "nameplate", "NOT CONFIRMED", "typed on this page"
+RULE = "study rule"
 SOURCES = {
     "unit_kw": (1067.0, PASSPORT, "Jenbacher JMC 320 (J 320 GS-D25), техописание INNIO 04.09.2023, "
                                   "разд. 0.01: «Электрическая выходная мощность 1067 кВт эл.»; "
@@ -263,7 +264,10 @@ SOURCES = {
                                     "gives 2,54 kWh of gas per kWh at 75 % against the sheet's 2,53"),
     "min_load": (50.0, PASSPORT, "JMC 320, разд. 1.11.10 и 2.03.02: регулирование активной мощности "
                                  "«от 100 % до 50 % (Pmin)»; TEDOM Quanto 1200 / Cento 530: «не ниже "
-                                 "50 % номинальной». The workbook's 90 % rule is in no OEM document"),
+                                 "50 % номинальной»"),
+    "min_b": (90.0, RULE, "Scenario B's operating rule: engines at 90 % or more of nameplate, the "
+                          "battery absorbing the difference. A choice of the study, not an OEM "
+                          "limit (the OEM minimum is 50 %)"),
     "updown": ((4, 5), UNCONFIRMED, "«Мин. время работы / стоянки 4 / 5 ч — параметр контроллера, не предел машины»"),
     "gen_cost": (22.0, UNCONFIRMED, "«Себестоимость КГУ 22 ₸/кВт·ч — всё включено»; no gas contract behind it"),
     "start": (15_000.0, UNCONFIRMED, "«Цена пуска 15 000 ₸ — KILLER, из сервисного контракта»"),
@@ -309,7 +313,8 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                      row("Start cost", num(first[U_START]), "start", f"{num(first[U_START]):,.0f} {cur}"),
                      row("Min up / down", (int(num(first[U_UP])), int(num(first[U_DOWN]))), "updown",
                          f"{int(num(first[U_UP]))} / {int(num(first[U_DOWN]))} h")]
-        rows += [row("Minimum load, scenarios A and B", 50.0, "min_load", "50 %"),
+        rows += [row("Minimum load, scenario A", 50.0, "min_load", "50 %"),
+                 row("Minimum load, scenario B", 90.0, "min_b", "90 %"),
                  row("Grid price", float(grid), "grid", f"{float(grid):,.2f} {cur}/kWh"),
                  row("Battery", (bat["kw"], bat["kwh"]), "bess",
                      f"{bat['kw']:,.0f} kW / {bat['kwh']:,.0f} kWh"),
@@ -578,25 +583,26 @@ def _rule(name: str, minload: float | None = 50.0, bat: bool = False,
     return {S_NAME: name, S_MIN: minload, S_BAT: bat, S_SCALE: scale, S_MAXST: starts}
 
 
-# The two scenarios of the study, and only these two. They differ in one
-# thing, the battery, so the difference in their cost is the battery's alone.
+# The two scenarios of the study, and only these two.
 #
-#   A  two engines, each free to modulate down to 50 % of nameplate, no battery;
-#   B  the same two engines on the same 50 % minimum, with the battery panel's
-#      battery.
+#   A  two engines, each free to modulate down to 50 % of nameplate, no battery
+#      -- the plant as it can run today;
+#   B  the same two engines held at 90 % of nameplate or above whenever they
+#      run, with the battery panel's battery taking the surplus and covering
+#      the shortfall -- the operating concept the battery is bought for.
 #
-# 50 % is the manufacturers' own minimum, not an assumption: the Jenbacher
-# JMC 320 description limits active power "от 100 % до 50 % (Pmin)" (sections
-# 1.11.10 and 2.03.02), and both TEDOM sheets say the permanent output "не
-# должна снижаться ниже 50 % номинальной". The 90 % rule of the client
-# workbook appears in no OEM document (docs/equipment/README.md), so it is no
-# longer a scenario; it can still be typed into the table by hand.
+# 50 % is the manufacturers' own minimum: the Jenbacher JMC 320 description
+# limits active power "от 100 % до 50 % (Pmin)" (sections 1.11.10 and
+# 2.03.02), and both TEDOM sheets say the permanent output "не должна
+# снижаться ниже 50 % номинальной". 90 % is not an OEM limit; it is the
+# operating rule of scenario B, chosen by the study, and with the part-load
+# curve it keeps the engines where a kWh costs least.
 #
 # The battery's payback is B measured against A, by the model's own cost
 # accounting.
 SCENARIO_LIBRARY: dict[str, dict] = {r[S_NAME]: r for r in [
     _rule("A · 2 ГПУ от 50%, без батареи", minload=50.0),
-    _rule("B · 2 ГПУ от 50% + батарея", minload=50.0, bat=True),
+    _rule("B · 2 ГПУ от 90% + батарея", minload=90.0, bat=True),
 ]}
 SCENARIO_DEFAULT = list(SCENARIO_LIBRARY)
 
