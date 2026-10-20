@@ -985,10 +985,18 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
             ["Generation cost", money(m["gen_cost"])] + [money(a["gen_cost"]) for a in acc],
             ["Grid cost", money(m["grid_cost"])] + [money(a["grid_cost"]) for a in acc],
             ["Start cost", money(m["start_cost"])] + [money(a["start_cost"]) for a in acc]]
-    rows.append(["Saving against measured", "—"] + [
+    rows.append(["Operating cost over the window", money(m["total"])]
+                + [money(a["total"]) for a in acc])
+    rows.append(["Saving against measured, window", "—"] + [
         (money(m["total"] - a["total"]),
          "ghp-pos" if a["total"] < m["total"] - 0.5 else "ghp-neg") for a in acc])
-    P.table(head, rows, ["Operating cost", money(m["total"])] + [money(a["total"]) for a in acc])
+    # the same per year, as the comparison above annualises: by hours
+    k = MAX_H / H
+    rows.append([f"Saving against measured, per year (× {k:,.2f})", "—"] + [
+        (money((m["total"] - a["total"]) * k),
+         "ghp-pos" if a["total"] < m["total"] - 0.5 else "ghp-neg") for a in acc])
+    P.table(head, rows, [f"Operating cost per year (× {k:,.2f})", money(m["total"] * k)]
+            + [money(a["total"] * k) for a in acc])
     P.note(["<b>Measured</b> is the logger's own hours priced with this page's inputs: each "
             "engine at its own hourly output, on its part-load curve where it has one; a "
             "start whenever output rises past 50 kW; the grid at the grid price",
@@ -996,7 +1004,11 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
             "balance error (within 20 kW on most hours)",
             "what the site sent to the city is priced at zero, as in every scenario",
             "a typical-days year is the clustered year, so its load is not hour for hour "
-            "the logged one — compare totals, not hours"])
+            "the logged one — compare totals, not hours",
+            "<b>this saving is not the battery's</b>: a scenario without a battery saves "
+            "nearly as much. It is the distance between how the engines ran and how they "
+            "could have run — and the model knows no outage, no service stop and no "
+            "limit the site's own control imposed, so part of it may not be reachable"])
 
 
 def _pay(simple: float | None, disc: float | None, tail: str = "") -> tuple[str, str]:
