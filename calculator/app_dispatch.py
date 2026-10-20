@@ -246,9 +246,12 @@ def _real_year(site: str) -> dict:
 # "не из договора" is NOT a confirmed figure, and the page says so.
 MEASURED, PASSPORT, UNCONFIRMED, TYPED = "measured", "nameplate", "NOT CONFIRMED", "typed on this page"
 SOURCES = {
-    "unit_kw": (1067.0, PASSPORT, "«Jenbacher, номинал 1067 кВт — паспорт»; the loggers name the engine J320"),
-    "min_a": (50.0, UNCONFIRMED, "«Технический минимум, база A 0.5 — литература 20–50%, Wartsila 10%»"),
-    "min_b": (90.0, UNCONFIRMED, "«Правило минимальной загрузки 0.9 — KILLER, нужна режимная карта»"),
+    "unit_kw": (1067.0, PASSPORT, "Jenbacher JMC 320 (J 320 GS-D25), техописание INNIO 04.09.2023, "
+                                  "разд. 0.01: «Электрическая выходная мощность 1067 кВт эл.»; "
+                                  "the loggers name the engine J320"),
+    "min_load": (50.0, PASSPORT, "JMC 320, разд. 1.11.10 и 2.03.02: регулирование активной мощности "
+                                 "«от 100 % до 50 % (Pmin)»; TEDOM Quanto 1200 / Cento 530: «не ниже "
+                                 "50 % номинальной». The workbook's 90 % rule is in no OEM document"),
     "updown": ((4, 5), UNCONFIRMED, "«Мин. время работы / стоянки 4 / 5 ч — параметр контроллера, не предел машины»"),
     "gen_cost": (22.0, UNCONFIRMED, "«Себестоимость КГУ 22 ₸/кВт·ч — всё включено»; no gas contract behind it"),
     "start": (15_000.0, UNCONFIRMED, "«Цена пуска 15 000 ₸ — KILLER, из сервисного контракта»"),
@@ -289,8 +292,7 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                      row("Start cost", num(first[U_START]), "start", f"{num(first[U_START]):,.0f} {cur}"),
                      row("Min up / down", (int(num(first[U_UP])), int(num(first[U_DOWN]))), "updown",
                          f"{int(num(first[U_UP]))} / {int(num(first[U_DOWN]))} h")]
-        rows += [row("Scenario A minimum load", 50.0, "min_a", "50 %"),
-                 row("Scenario B minimum load", 90.0, "min_b", "90 %"),
+        rows += [row("Minimum load, scenarios A and B", 50.0, "min_load", "50 %"),
                  row("Grid price", float(grid), "grid", f"{float(grid):,.2f} {cur}/kWh"),
                  row("Battery", (bat["kw"], bat["kwh"]), "bess",
                      f"{bat['kw']:,.0f} kW / {bat['kwh']:,.0f} kWh"),
@@ -527,18 +529,25 @@ def _rule(name: str, minload: float | None = 50.0, bat: bool = False,
     return {S_NAME: name, S_MIN: minload, S_BAT: bat, S_SCALE: scale, S_MAXST: starts}
 
 
-# The two scenarios of the study, and only these two.
+# The two scenarios of the study, and only these two. They differ in one
+# thing, the battery, so the difference in their cost is the battery's alone.
 #
-#   A  both engines modulate freely from 50 % of nameplate, no battery --
-#      CHP_BESS_model_v2.xlsx: "Свободный режим ... честная база «как есть»";
-#   B  every running engine held at 90 % of nameplate or above, with the
-#      battery -- the workbook's scenario C, "Правило 90% плюс накопитель".
+#   A  two engines, each free to modulate down to 50 % of nameplate, no battery;
+#   B  the same two engines on the same 50 % minimum, with the battery panel's
+#      battery.
+#
+# 50 % is the manufacturers' own minimum, not an assumption: the Jenbacher
+# JMC 320 description limits active power "от 100 % до 50 % (Pmin)" (sections
+# 1.11.10 and 2.03.02), and both TEDOM sheets say the permanent output "не
+# должна снижаться ниже 50 % номинальной". The 90 % rule of the client
+# workbook appears in no OEM document (docs/equipment/README.md), so it is no
+# longer a scenario; it can still be typed into the table by hand.
 #
 # The battery's payback is B measured against A, by the model's own cost
-# accounting. Other rules can still be typed into the table by hand.
+# accounting.
 SCENARIO_LIBRARY: dict[str, dict] = {r[S_NAME]: r for r in [
     _rule("A · 2 ГПУ от 50%, без батареи", minload=50.0),
-    _rule("B · 2 ГПУ от 90% + батарея", minload=90.0, bat=True),
+    _rule("B · 2 ГПУ от 50% + батарея", minload=50.0, bat=True),
 ]}
 SCENARIO_DEFAULT = list(SCENARIO_LIBRARY)
 

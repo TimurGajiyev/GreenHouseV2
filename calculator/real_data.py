@@ -32,8 +32,9 @@ import pandas as pd
 
 DATA = Path(__file__).resolve().parent.parent / "real_data" / "zharkent" / "data"
 YEAR = ("2025-10-01 00:00", "2026-09-30 23:00")
-# Jenbacher nameplate, CHP_BESS_model_v2.xlsx «Допущения»: "Jenbacher, номинал
-# 1067 кВт, паспорт". The loggers name the engine type J320 on both stations.
+# Jenbacher JMC 320 (J 320 GS-D25) nameplate, INNIO technical description of
+# 04.09.2023, section 0.01: «Электрическая выходная мощность 1067 кВт эл.»
+# (docs/equipment). The loggers name the engine type J320 on both stations.
 J320_KW = 1067.0
 
 # label shown on the page: (station files, hours to shift onto UTC+6, units)
