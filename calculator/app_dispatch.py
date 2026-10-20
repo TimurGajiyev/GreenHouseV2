@@ -60,6 +60,15 @@ OWN_PAID, OWN_BUY = "Paid (owned)", "Purchase"
 # service takes away, so 100% is the unit fully out -- which is what a gas
 # engine service is: it cools down, is worked on, and is started again.
 MSPACE_EVEN, MSPACE_FREE = "Evenly", "Anywhere"
+# Part-load efficiency, as an OEM data sheet gives it. With both columns set the
+# energy cost column is the cost per kWh AT FULL LOAD, and every other load is
+# priced by REopt's own fuel curve (utils.jl:645, fuel_slope_and_intercept):
+# the straight fuel line through the 100 % and 50 % points, an intercept paid
+# for every hour the unit is on. A unit at half load then pays more per kWh than
+# one at full load, as the engine does. Left blank, the row prices every kWh the
+# same, exactly as before the columns existed.
+U_EFF100, U_EFF50 = "El. efficiency 100 % load", "El. efficiency 50 % load"
+KWH_PER_MMBTU = 293.07107
 S_NAME, S_MIN, S_BAT, S_SCALE = "Scenario", "Min load % (blank = per unit)", "Battery", "Load scale %"
 S_MAXST = "Max starts/day (blank = per unit)"
 
@@ -249,6 +258,9 @@ SOURCES = {
     "unit_kw": (1067.0, PASSPORT, "Jenbacher JMC 320 (J 320 GS-D25), техописание INNIO 04.09.2023, "
                                   "разд. 0.01: «Электрическая выходная мощность 1067 кВт эл.»; "
                                   "the loggers name the engine J320"),
+    "eff": ((40.5, 37.4), PASSPORT, "JMC 320, разд. 0.01: электрический КПД 40,5 % / 39,5 % / 37,4 % "
+                                    "при 100 / 75 / 50 %; the fuel line through 100 % and 50 % "
+                                    "gives 2,54 kWh of gas per kWh at 75 % against the sheet's 2,53"),
     "min_load": (50.0, PASSPORT, "JMC 320, разд. 1.11.10 и 2.03.02: регулирование активной мощности "
                                  "«от 100 % до 50 % (Pmin)»; TEDOM Quanto 1200 / Cento 530: «не ниже "
                                  "50 % номинальной». The workbook's 90 % rule is in no OEM document"),
@@ -287,8 +299,13 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
             kws = tuple(sorted({num(v) for v in live[U_KW]}))
             rows += [row("Engines", kws[0] if len(kws) == 1 else kws, "unit_kw",
                          f"{len(live.index)} × " + " / ".join(f"{k:,.0f}" for k in kws) + " kW"),
-                     row("Engine cost per kWh", num(first[U_COST]) + num(first.get(U_OM)), "gen_cost",
+                     row("Engine cost per kWh" + (" at full load" if fuel_curve(first) else ""),
+                         num(first[U_COST]) + num(first.get(U_OM)), "gen_cost",
                          f"{num(first[U_COST]) + num(first.get(U_OM)):,.2f} {cur}"),
+                     row("Part-load efficiency", (num(first.get(U_EFF100)), num(first.get(U_EFF50))),
+                         "eff", (f"{num(first.get(U_EFF100)):.1f} % at 100 %, "
+                                 f"{num(first.get(U_EFF50)):.1f} % at 50 %"
+                                 if fuel_curve(first) else "none — one price per kWh")),
                      row("Start cost", num(first[U_START]), "start", f"{num(first[U_START]):,.0f} {cur}"),
                      row("Min up / down", (int(num(first[U_UP])), int(num(first[U_DOWN]))), "updown",
                          f"{int(num(first[U_UP]))} / {int(num(first[U_DOWN]))} h")]
@@ -318,6 +335,36 @@ def unit_presets() -> dict[str, list[tuple[str, float]]]:
     return out
 
 
+def fuel_curve(u) -> tuple[float, float, float] | None:
+    """(cost per kWh of fuel, fuel kWh per kWhe, fuel kWh per rated kW per hour on).
+
+    None when the row carries no part-load efficiencies. The cost per kWh of
+    fuel is the full-load cost per kWhe times the full-load efficiency, so at
+    100 % load the curve returns exactly the cost the table states.
+    """
+    try:
+        e100 = float(u.get(U_EFF100)) / 100.0
+        e50 = float(u.get(U_EFF50)) / 100.0
+    except (TypeError, ValueError):
+        return None
+    if math.isnan(e100) or math.isnan(e50) or not (e100 > 0 and e50 > 0):
+        return None
+    full, half = 1.0 / e100, 0.5 / e50
+    slope = (full - half) / 0.5
+    return float(u[U_COST] or 0.0) * e100, slope, full - slope
+
+
+def unit_hour_cost(u, kw: float, on: float) -> float:
+    """What one unit's hour of output costs: fuel by the curve, plus O&M."""
+    om = float(u.get(U_OM) or 0.0)
+    c = fuel_curve(u)
+    if c is None:
+        return (float(u[U_COST] or 0.0) + om) * kw
+    price, slope, icept = c
+    return (price * (slope * kw + icept * float(u[U_KW] or 0.0) * (1.0 if on > 0.5 else 0.0))
+            + om * kw)
+
+
 def default_units(preset: str) -> pd.DataFrame:
     fleets = unit_presets()
     return pd.DataFrame([{U_NAME: n, U_KW: kw, U_COST: 22.0, U_START: 15_000.0, U_MIN: 50.0,
@@ -326,8 +373,10 @@ def default_units(preset: str) -> pd.DataFrame:
                           U_MINT: 0, U_MCOST: 0.0,
                           # O&M at 0 and the machines already bought: the fleet
                           # prices exactly as it did before these columns
-                          U_OM: 0.0, U_OWN: OWN_PAID, U_CAPEX: 0.0}
-                         for n, kw in fleets[preset]])
+                          U_OM: 0.0, U_OWN: OWN_PAID, U_CAPEX: 0.0,
+                          # a preset with an OEM curve carries it; the JSX ones do not
+                          U_EFF100: (eff[0] if eff else None), U_EFF50: (eff[1] if eff else None)}
+                         for n, kw, *eff in fleets[preset]])
 
 
 def fit_to_anchors(shape: list[float], lo: float, avg: float,
@@ -594,10 +643,21 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
         if kw <= 0:
             continue
         td = (override if override is not None else float(u[U_MIN] or 0.0)) / 100.0
+        curve = fuel_curve(u)
+        if curve is None:
+            # one price for every kWh, carried as O&M; no fuel term
+            _om = float(u[U_COST] or 0.0) + float(u.get(U_OM) or 0.0)
+            _fuel, _e100, _e50 = 0.0, 0.35, None
+        else:
+            # gas as fuel on REopt's part-load curve, O&M per kWh beside it
+            _om = float(u.get(U_OM) or 0.0)
+            _fuel = curve[0] * KWH_PER_MMBTU
+            _e100, _e50 = float(u[U_EFF100]) / 100.0, float(u[U_EFF50]) / 100.0
         fleet.append(M.FuelTechInputs(
             enabled=True, kind="CHP", label="CHP", name=str(u[U_NAME] or f"Unit {len(fleet) + 1}"),
-            installed_cost_per_kw=0.0, om_cost_per_kw=0.0, om_cost_per_kwh=(float(u[U_COST] or 0.0) + float(u.get(U_OM) or 0.0)),
-            fuel_cost_per_mmbtu=0.0, electric_efficiency_full_load=0.35,
+            installed_cost_per_kw=0.0, om_cost_per_kw=0.0, om_cost_per_kwh=_om,
+            fuel_cost_per_mmbtu=_fuel, electric_efficiency_full_load=_e100,
+            electric_efficiency_half_load=_e50,
             thermal_efficiency_full_load=0.0,
             min_kw=kw, max_kw=kw, min_turn_down_fraction=td,
             start_cost=float(u[U_START] or 0.0),
@@ -647,7 +707,17 @@ def account(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> 
                                float(u[U_START] or 0.0))
                for _, u in units.iterrows()}
     gen_kwh = sum(r["energy_kwh"] for r in rows)
-    gen_cost = sum(r["energy_kwh"] * cost_of.get(r["name"], (0.0, 0.0))[0] for r in rows)
+    by_name = {str(u[U_NAME]): u for _, u in units.iterrows()}
+
+    def _gen_cost(r):
+        u = by_name.get(r["name"])
+        c = fuel_curve(u) if u is not None else None
+        if c is None:
+            return r["energy_kwh"] * cost_of.get(r["name"], (0.0, 0.0))[0]
+        # the solver's own fuel burn (MMBtu) at the curve's price, plus O&M
+        return ((r.get("fuel_units") or 0.0) * c[0] * KWH_PER_MMBTU
+                + r["energy_kwh"] * float(u.get(U_OM) or 0.0))
+    gen_cost = sum(_gen_cost(r) for r in rows)
     starts = sum(r.get("starts") or 0 for r in rows)
     start_cost = sum((r.get("starts") or 0) * cost_of.get(r["name"], (0.0, 0.0))[1] for r in rows)
     grid = ser["grid_kw"]
@@ -746,7 +816,15 @@ def hourly(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> d
                                float(u[U_START] or 0.0))
                for _, u in units.iterrows()}
     energy = [price[t] * ser["grid_kw"][t] for t in range(H)]
+    by_name = {str(u[U_NAME]): u for _, u in units.iterrows()}
+    on_of = ser.get("fueltech_unit_on") or {}
     for name, kw in (ser.get("fueltech_unit_kw") or {}).items():
+        u = by_name.get(name)
+        if u is not None and fuel_curve(u) is not None:
+            on = on_of.get(name) or [1.0 if x > 1e-6 else 0.0 for x in kw]
+            for t in range(H):
+                energy[t] += unit_hour_cost(u, kw[t], on[t])
+            continue
         c = cost_of.get(name, (0.0, 0.0))[0]
         for t in range(H):
             energy[t] += c * kw[t]
@@ -848,26 +926,38 @@ def measured_account(meas: dict, price: list[float], units: pd.DataFrame,
                      on_kw: float = 50.0) -> dict:
     """What the site's own operation cost, priced exactly as a scenario is.
 
-    The logger gives the engines' output and the grid meter hour by hour. The
-    engines are priced at the fleet's mean energy cost per kWh (fuel + O&M), a
-    start is an hour the fleet crosses `on_kw` upwards, and only a positive grid
-    hour is bought -- what the site sent to the city earns nothing here, as an
-    export earns nothing in any scenario.
+    The logger gives each engine's output and the grid meter hour by hour. When
+    it has one series per unit row, each engine is priced on its own row: by the
+    data sheet's part-load curve where the row has one (an hour is "on" above
+    `on_kw`), else at its flat cost per kWh. Otherwise the fleet's output is
+    priced at the mean flat cost. A start is an hour output crosses `on_kw`
+    upwards, and only a positive grid hour is bought -- what the site sent to
+    the city earns nothing here, as an export earns nothing in any scenario.
     """
     gpu, grid = meas["gpu"], meas["grid"]
-    rows = [(float(u[U_COST] or 0.0) + float(u.get(U_OM) or 0.0), float(u[U_START] or 0.0))
-            for _, u in units.iterrows() if float(u[U_KW] or 0.0) > 0]
-    e_cost = sum(r[0] for r in rows) / len(rows) if rows else 0.0
-    s_cost = sum(r[1] for r in rows) / len(rows) if rows else 0.0
-    starts = sum(1 for a, b in zip(gpu, gpu[1:]) if a < on_kw <= b)
-    buy = [max(0.0, g) for g in grid]
+    live = [u for _, u in units.iterrows() if float(u[U_KW] or 0.0) > 0]
+    per_unit = meas.get("gpu_units") or []
     gen = sum(gpu)
+    if per_unit and len(per_unit) == len(live):
+        gen_cost, starts, start_cost = 0.0, 0, 0.0
+        for u, series in zip(live, per_unit):
+            gen_cost += sum(unit_hour_cost(u, kw, 1.0 if kw > on_kw else 0.0) for kw in series)
+            n = sum(1 for a, b in zip(series, series[1:]) if a < on_kw <= b)
+            starts += n
+            start_cost += n * float(u[U_START] or 0.0)
+    else:
+        rows = [(float(u[U_COST] or 0.0) + float(u.get(U_OM) or 0.0), float(u[U_START] or 0.0))
+                for u in live]
+        e_cost = sum(r[0] for r in rows) / len(rows) if rows else 0.0
+        s_cost = sum(r[1] for r in rows) / len(rows) if rows else 0.0
+        starts = sum(1 for a, b in zip(gpu, gpu[1:]) if a < on_kw <= b)
+        gen_cost, start_cost = gen * e_cost, starts * s_cost
+    buy = [max(0.0, g) for g in grid]
     grid_cost = sum(p * b for p, b in zip(price, buy))
     return dict(load=sum(g + q for g, q in zip(gpu, grid)), gen_kwh=gen, grid_kwh=sum(buy),
                 export=-sum(min(0.0, g) for g in grid), peak=max(buy, default=0.0),
-                starts=starts, gen_cost=gen * e_cost, grid_cost=grid_cost,
-                start_cost=starts * s_cost,
-                total=gen * e_cost + grid_cost + starts * s_cost)
+                starts=starts, gen_cost=gen_cost, grid_cost=grid_cost,
+                start_cost=start_cost, total=gen_cost + grid_cost + start_cost)
 
 
 def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
@@ -893,9 +983,9 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
         (money(m["total"] - a["total"]),
          "ghp-pos" if a["total"] < m["total"] - 0.5 else "ghp-neg") for a in acc])
     P.table(head, rows, ["Operating cost", money(m["total"])] + [money(a["total"]) for a in acc])
-    P.note(["<b>Measured</b> is the logger's own hours priced with this page's inputs: the "
-            "engines at the fleet's mean cost per kWh, a start whenever output rises past "
-            "50 kW, the grid at the grid price",
+    P.note(["<b>Measured</b> is the logger's own hours priced with this page's inputs: each "
+            "engine at its own hourly output, on its part-load curve where it has one; a "
+            "start whenever output rises past 50 kW; the grid at the grid price",
             "load here is engines + grid as logged; it differs from the plant meter by the "
             "balance error (within 20 kW on most hours)",
             "what the site sent to the city is priced at zero, as in every scenario",
@@ -1036,7 +1126,8 @@ def render() -> None:
                      "the two plants' loads are added hour by hour; CR06 (logged in "
                      "UTC+5) is moved onto CC42's clock (UTC+6) first.")
             y = _real_year(site)
-            load, measured = list(y["load"]), {"gpu": y["gpu"], "grid": y["grid"]}
+            load, measured = list(y["load"]), {"gpu": y["gpu"], "grid": y["grid"],
+                                               "gpu_units": y["gpu_units"]}
             # The units table below follows the site: on a change of site its
             # preset becomes the engines the site actually runs.
             if ss.get("gd_real_site_seen") != site:
@@ -1092,7 +1183,10 @@ def render() -> None:
                                              min(MAX_H, n - start), key=f"gd_len_{wk}_{start}"))
             load = load[start:start + length]
             if measured is not None:
-                measured = {k: v[start:start + length] for k, v in measured.items()}
+                measured = {"gpu": measured["gpu"][start:start + length],
+                            "grid": measured["grid"][start:start + length],
+                            "gpu_units": [g[start:start + length]
+                                          for g in measured.get("gpu_units") or []]}
             ss["gd_measured"] = measured
             st.caption(f"{len(load):,} hours · {sum(load):,.0f} kWh · peak {max(load):,.0f} kW "
                        f"· minimum {min(load):,.0f} kW" + _prov)
@@ -1244,7 +1338,19 @@ def render() -> None:
                 U_KW: st.column_config.NumberColumn(min_value=0.0, step=10.0, format="%.0f"),
                 U_COST: st.column_config.NumberColumn(
                     f"Fuel cost ({cur}/kWh)", min_value=0.0,
-                    help="Gas only. Charged on rated output, spill included."),
+                    help="Gas only, per kWh generated. With the two efficiency columns "
+                         "set it is the cost at FULL load, and part load is priced by "
+                         "the data sheet's curve; blank, every kWh costs this. Spill "
+                         "included."),
+                U_EFF100: st.column_config.NumberColumn(
+                    min_value=1.0, max_value=100.0, step=0.1, format="%.1f",
+                    help="Electrical efficiency at 100 % load, from the data sheet "
+                         "(JMC 320: 40,5 %). With both efficiencies set, the fuel cost "
+                         "column is the cost per kWh at full load and lower loads cost "
+                         "more per kWh. Blank = one price for every kWh."),
+                U_EFF50: st.column_config.NumberColumn(
+                    min_value=1.0, max_value=100.0, step=0.1, format="%.1f",
+                    help="Electrical efficiency at 50 % load (JMC 320: 37,4 %)."),
                 U_OM: st.column_config.NumberColumn(
                     f"Variable O&M ({cur}/kWh)", min_value=0.0,
                     help="Стоимость моточаса per kWh generated — oil, filters, plugs, "

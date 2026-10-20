@@ -36,14 +36,20 @@ YEAR = ("2025-10-01 00:00", "2026-09-30 23:00")
 # 04.09.2023, section 0.01: «Электрическая выходная мощность 1067 кВт эл.»
 # (docs/equipment). The loggers name the engine type J320 on both stations.
 J320_KW = 1067.0
+# Electrical efficiency at 100 % and 50 % load, same section: 40,5 % and 37,4 %
+# (75 %: 39,5 %, which the straight fuel line through these two reproduces).
+J320_EFF = (40.5, 37.4)
 
 # label shown on the page: (station files, hours to shift onto UTC+6, units)
 BOTH = "ГПУ-2 + ГПУ-3 together (CC42 + CR06)"
 SITES: dict[str, tuple[tuple[str, ...], tuple[int, ...], list[tuple[str, float]]]] = {
     BOTH: (("GPU2_CC42", "GPU3_CR06"), (0, 1),
-           [("Jenbacher J320 (ГПУ-2)", J320_KW), ("Jenbacher J320 (ГПУ-3)", J320_KW)]),
-    "ГПУ-2 · Zharkent (CC42)": (("GPU2_CC42",), (0,), [("Jenbacher J320 (ГПУ-2)", J320_KW)]),
-    "ГПУ-3 · Zharkent 2 (CR06)": (("GPU3_CR06",), (0,), [("Jenbacher J320 (ГПУ-3)", J320_KW)]),
+           [("Jenbacher J320 (ГПУ-2)", J320_KW, *J320_EFF),
+            ("Jenbacher J320 (ГПУ-3)", J320_KW, *J320_EFF)]),
+    "ГПУ-2 · Zharkent (CC42)": (("GPU2_CC42",), (0,),
+                                [("Jenbacher J320 (ГПУ-2)", J320_KW, *J320_EFF)]),
+    "ГПУ-3 · Zharkent 2 (CR06)": (("GPU3_CR06",), (0,),
+                                  [("Jenbacher J320 (ГПУ-3)", J320_KW, *J320_EFF)]),
 }
 
 
@@ -81,6 +87,8 @@ def year(site: str) -> dict:
         tot = tot + h[full]
     # a plant reading of a few kW below zero is meter noise; demand is not negative
     return {"load": [float(x) for x in tot.plant.clip(lower=0)], "gpu": [float(x) for x in tot.gpu],
+            # each engine's own output, in the order of the units list
+            "gpu_units": [[float(x) for x in h.gpu[full]] for h in frames],
             "grid": [float(x) for x in tot.grid], "time": list(tot.index),
             "units": units, "days": int(full.sum() // 24),
             "days_period": int(day.nunique()), "hours": len(tot)}
