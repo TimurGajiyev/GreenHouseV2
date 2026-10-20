@@ -22,12 +22,14 @@ import math
 import os
 import re
 import time
+import zlib
 
 import pandas as pd
 import streamlit as st
 
 import app_periods as A
 import profile_ui as P
+import real_data as RD
 import ui_theme as T
 import year_study as Y
 from reopt_core import data_sources as ds
@@ -64,6 +66,11 @@ S_MAXST = "Max starts/day (blank = per unit)"
 # the two ways a horizon can be covered
 COVER_WINDOW = "Solve the window as posed"
 COVER_DAYS = "A year from typical days (weighted)"
+
+# the measured load, and the units preset that follows its site
+REAL = "Real data: Zharkent logger (measured days)"
+REAL_PRESET = "Zharkent · "
+YEAR_LABEL = "1 Oct 2025 – 30 Sep 2026"
 
 # bess_profile_v2.jsx / CHP_BESS_model_v2.xlsx, «Допущения»
 JSX_UNITS = {
@@ -229,7 +236,88 @@ def read_series(upload) -> list[float]:
     return [v for v in pick if v is not None]
 
 
+@st.cache_data(show_spinner=False)
+def _real_year(site: str) -> dict:
+    return RD.year(site)
+
+
+# Where each default comes from. CHP_BESS_model_v2.xlsx, sheet «Допущения», is
+# quoted word for word, its own status included: a value it marks KILLER or
+# "не из договора" is NOT a confirmed figure, and the page says so.
+MEASURED, PASSPORT, UNCONFIRMED, TYPED = "measured", "nameplate", "NOT CONFIRMED", "typed on this page"
+SOURCES = {
+    "unit_kw": (1067.0, PASSPORT, "«Jenbacher, номинал 1067 кВт — паспорт»; the loggers name the engine J320"),
+    "min_a": (50.0, UNCONFIRMED, "«Технический минимум, база A 0.5 — литература 20–50%, Wartsila 10%»"),
+    "min_b": (90.0, UNCONFIRMED, "«Правило минимальной загрузки 0.9 — KILLER, нужна режимная карта»"),
+    "updown": ((4, 5), UNCONFIRMED, "«Мин. время работы / стоянки 4 / 5 ч — параметр контроллера, не предел машины»"),
+    "gen_cost": (22.0, UNCONFIRMED, "«Себестоимость КГУ 22 ₸/кВт·ч — всё включено»; no gas contract behind it"),
+    "start": (15_000.0, UNCONFIRMED, "«Цена пуска 15 000 ₸ — KILLER, из сервисного контракта»"),
+    "grid": (60.0, UNCONFIRMED, "«Тариф сети 60 ₸/кВт·ч — KILLER, не из договора». Published retail "
+                                "with VAT: Алматы 46.25 (esalmaty.kz, с 05.06.2026), Астана 40 "
+                                "(АО «Астана-РЭК», с 01.07.2026)"),
+    "bess": ((2_500.0, 5_500.0), "project", "«Ёмкость 5500 кВт·ч, инвертор 2500 кВт — конфигурация проекта»"),
+    "soc": (30.0, "project", "«Рабочее окно SoC 30 – 100 %»"),
+    "rte": (88.0, "project", "«RTE 0.88»"),
+    "wear": (0.5, UNCONFIRMED, "«Износ за цикл 0.5 ₸/кВт·ч разряда — допущение»"),
+    "capex": (391_000_000.0, "project", "«CAPEX накопителя 391 000 000 ₸ — 850 000 USD по курсу 460»"),
+}
+
+
+def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dict) -> None:
+    """Every input of the study, its value on the page and where it comes from."""
+    T.panel_head("Where every number comes from")
+    with st.expander("Data sources", expanded=True):
+        live = units[pd.to_numeric(units[U_KW], errors="coerce").fillna(0) > 0]
+        first = live.iloc[0] if len(live.index) else None
+
+        def row(label, value, key, shown):
+            want, status, text = SOURCES[key]
+            same = value == want
+            return [label, shown, (status if same else TYPED,
+                                   "ghp-neg" if same and status == UNCONFIRMED else ""),
+                    text if same else "changed from the workbook's " + str(want)]
+
+        num = lambda v: float(v or 0.0)
+        rows = [["Load", f"{y['hours']:,} h, peak {max(y['load']):,.0f} kW", (MEASURED, "ghp-pos"),
+                 f"Jenbacher logger, plant meter; {y['days']} fully logged days of {y['days_period']}"]]
+        if first is not None:
+            kws = tuple(sorted({num(v) for v in live[U_KW]}))
+            rows += [row("Engines", kws[0] if len(kws) == 1 else kws, "unit_kw",
+                         f"{len(live.index)} × " + " / ".join(f"{k:,.0f}" for k in kws) + " kW"),
+                     row("Engine cost per kWh", num(first[U_COST]) + num(first.get(U_OM)), "gen_cost",
+                         f"{num(first[U_COST]) + num(first.get(U_OM)):,.2f} {cur}"),
+                     row("Start cost", num(first[U_START]), "start", f"{num(first[U_START]):,.0f} {cur}"),
+                     row("Min up / down", (int(num(first[U_UP])), int(num(first[U_DOWN]))), "updown",
+                         f"{int(num(first[U_UP]))} / {int(num(first[U_DOWN]))} h")]
+        rows += [row("Scenario A minimum load", 50.0, "min_a", "50 %"),
+                 row("Scenario B minimum load", 90.0, "min_b", "90 %"),
+                 row("Grid price", float(grid), "grid", f"{float(grid):,.2f} {cur}/kWh"),
+                 row("Battery", (bat["kw"], bat["kwh"]), "bess",
+                     f"{bat['kw']:,.0f} kW / {bat['kwh']:,.0f} kWh"),
+                 row("Minimum SoC", round(bat["soc_min"] * 100, 6), "soc", f"{bat['soc_min']:.0%}"),
+                 row("Round-trip efficiency", round(bat["rte"] * 100, 6), "rte", f"{bat['rte']:.0%}"),
+                 row("Battery wear", float(bat["wear"]), "wear", f"{bat['wear']:,.2f} {cur}/kWh"),
+                 row("Battery CAPEX", float(bat["capex"]), "capex", _money(bat["capex"], cur))]
+        P.table(["Input", "Value", "Status", "Source"], rows)
+        P.note(["<b>measured</b>: read off the logger · <b>nameplate</b> and <b>project</b>: "
+                "the workbook's passport and project configuration",
+                "<b>NOT CONFIRMED</b>: the workbook itself marks these as assumptions or "
+                "KILLER items; the payback moves with each of them — replace them with the "
+                "contract figures in the panels above",
+                "formulas: the REopt.jl dispatch model (reopt_core), finance off; the payback "
+                "is the battery CAPEX over the cost of A minus the cost of B"])
+
+
+def unit_presets() -> dict[str, list[tuple[str, float]]]:
+    """The JSX fleets, plus the engines each measured site actually runs."""
+    out = dict(JSX_UNITS)
+    for site in RD.available():
+        out[REAL_PRESET + site] = RD.SITES[site][2]
+    return out
+
+
 def default_units(preset: str) -> pd.DataFrame:
+    fleets = unit_presets()
     return pd.DataFrame([{U_NAME: n, U_KW: kw, U_COST: 22.0, U_START: 15_000.0, U_MIN: 50.0,
                           U_UP: 4, U_DOWN: 5, U_SPILL: True, U_MAXST: None,
                           U_MEV: 0, U_MDUR: 8, U_MPU: 100.0, U_MSPACE: True,
@@ -237,7 +325,7 @@ def default_units(preset: str) -> pd.DataFrame:
                           # O&M at 0 and the machines already bought: the fleet
                           # prices exactly as it did before these columns
                           U_OM: 0.0, U_OWN: OWN_PAID, U_CAPEX: 0.0}
-                         for n, kw in JSX_UNITS[preset]])
+                         for n, kw in fleets[preset]])
 
 
 def fit_to_anchors(shape: list[float], lo: float, avg: float,
@@ -434,8 +522,35 @@ def _maint_note(units: pd.DataFrame, hours: int) -> None:
             icon=":material/build:")
 
 
+def _rule(name: str, minload: float | None = 50.0, bat: bool = False,
+          scale: float = 100.0, starts: int | None = None) -> dict:
+    return {S_NAME: name, S_MIN: minload, S_BAT: bat, S_SCALE: scale, S_MAXST: starts}
+
+
+# The two scenarios of the study, and only these two.
+#
+#   A  both engines modulate freely from 50 % of nameplate, no battery --
+#      CHP_BESS_model_v2.xlsx: "Свободный режим ... честная база «как есть»";
+#   B  every running engine held at 90 % of nameplate or above, with the
+#      battery -- the workbook's scenario C, "Правило 90% плюс накопитель".
+#
+# The battery's payback is B measured against A, by the model's own cost
+# accounting. Other rules can still be typed into the table by hand.
+SCENARIO_LIBRARY: dict[str, dict] = {r[S_NAME]: r for r in [
+    _rule("A · 2 ГПУ от 50%, без батареи", minload=50.0),
+    _rule("B · 2 ГПУ от 90% + батарея", minload=90.0, bat=True),
+]}
+SCENARIO_DEFAULT = list(SCENARIO_LIBRARY)
+
+
 def default_scenarios() -> pd.DataFrame:
-    """The artifact's three rules, A / B / C."""
+    """The rows the page starts with: scenarios A and B."""
+    return pd.DataFrame([SCENARIO_LIBRARY[n] for n in SCENARIO_DEFAULT])
+
+
+def jsx_scenarios() -> pd.DataFrame:
+    """The artifact's three rules, A / B / C -- kept for the validation tests,
+    which reproduce the JSX's own numbers. No longer offered on the page."""
     return pd.DataFrame([
         {S_NAME: "A · free from 50%", S_MIN: 50.0, S_BAT: False, S_SCALE: 100.0, S_MAXST: None},
         {S_NAME: "B · 90% rule", S_MIN: 90.0, S_BAT: False, S_SCALE: 100.0, S_MAXST: None},
@@ -673,7 +788,8 @@ def _default_base(run: dict, others: list[dict]) -> dict:
     the same rule and no battery; otherwise against the first other scenario."""
     if run["battery"]:
         same = [r for r in others if not r["battery"]
-                and r.get("rule") == run.get("rule") and r.get("scale") == run.get("scale")]
+                and r.get("rule") == run.get("rule") and r.get("scale") == run.get("scale")
+                and r.get("starts") == run.get("starts")]
         if same:
             return same[0]
         plain = [r for r in others if not r["battery"]]
@@ -717,6 +833,65 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
                     f"(REPORT.md Part 16): a single week lands between −15% and +23% of "
                     f"it, a single month up to +18%. The payback below carries that error")
     P.note(note)
+
+
+def measured_account(meas: dict, price: list[float], units: pd.DataFrame,
+                     on_kw: float = 50.0) -> dict:
+    """What the site's own operation cost, priced exactly as a scenario is.
+
+    The logger gives the engines' output and the grid meter hour by hour. The
+    engines are priced at the fleet's mean energy cost per kWh (fuel + O&M), a
+    start is an hour the fleet crosses `on_kw` upwards, and only a positive grid
+    hour is bought -- what the site sent to the city earns nothing here, as an
+    export earns nothing in any scenario.
+    """
+    gpu, grid = meas["gpu"], meas["grid"]
+    rows = [(float(u[U_COST] or 0.0) + float(u.get(U_OM) or 0.0), float(u[U_START] or 0.0))
+            for _, u in units.iterrows() if float(u[U_KW] or 0.0) > 0]
+    e_cost = sum(r[0] for r in rows) / len(rows) if rows else 0.0
+    s_cost = sum(r[1] for r in rows) / len(rows) if rows else 0.0
+    starts = sum(1 for a, b in zip(gpu, gpu[1:]) if a < on_kw <= b)
+    buy = [max(0.0, g) for g in grid]
+    gen = sum(gpu)
+    grid_cost = sum(p * b for p, b in zip(price, buy))
+    return dict(load=sum(g + q for g, q in zip(gpu, grid)), gen_kwh=gen, grid_kwh=sum(buy),
+                export=-sum(min(0.0, g) for g in grid), peak=max(buy, default=0.0),
+                starts=starts, gen_cost=gen * e_cost, grid_cost=grid_cost,
+                start_cost=starts * s_cost,
+                total=gen * e_cost + grid_cost + starts * s_cost)
+
+
+def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
+    """The logged year beside the optimised ones, on the same prices."""
+    meas, H = out.get("measured"), out.get("hours")
+    if not meas or len(meas["gpu"]) != H:
+        return
+    T.panel_head("Measured operation against the scenarios")
+    m = measured_account(meas, out.get("price_raw") or out["price"], out["units"])
+    money = lambda v: _money(v, cur)
+    kwh = lambda v: f"{v:,.0f}"
+    head = ["Metric", "Measured (logger)"] + [r["name"] for r in runs]
+    acc = [r["acc"] for r in runs]
+    rows = [["Load (kWh)", kwh(m["load"])] + [kwh(a["load"]) for a in acc],
+            ["Fuel-fired generation (kWh)", kwh(m["gen_kwh"])] + [kwh(a["gen_kwh"]) for a in acc],
+            ["Grid purchase (kWh)", kwh(m["grid_kwh"])] + [kwh(a["grid_kwh"]) for a in acc],
+            ["Sent to the city, unpaid (kWh)", kwh(m["export"])] + ["—" for _ in acc],
+            ["Starts", kwh(m["starts"])] + [kwh(a["starts"]) for a in acc],
+            ["Generation cost", money(m["gen_cost"])] + [money(a["gen_cost"]) for a in acc],
+            ["Grid cost", money(m["grid_cost"])] + [money(a["grid_cost"]) for a in acc],
+            ["Start cost", money(m["start_cost"])] + [money(a["start_cost"]) for a in acc]]
+    rows.append(["Saving against measured", "—"] + [
+        (money(m["total"] - a["total"]),
+         "ghp-pos" if a["total"] < m["total"] - 0.5 else "ghp-neg") for a in acc])
+    P.table(head, rows, ["Operating cost", money(m["total"])] + [money(a["total"]) for a in acc])
+    P.note(["<b>Measured</b> is the logger's own hours priced with this page's inputs: the "
+            "engines at the fleet's mean cost per kWh, a start whenever output rises past "
+            "50 kW, the grid at the grid price",
+            "load here is engines + grid as logged; it differs from the plant meter by the "
+            "balance error (within 20 kW on most hours)",
+            "what the site sent to the city is priced at zero, as in every scenario",
+            "a typical-days year is the clustered year, so its load is not hour for hour "
+            "the logged one — compare totals, not hours"])
 
 
 def _pay(simple: float | None, disc: float | None, tail: str = "") -> tuple[str, str]:
@@ -817,11 +992,25 @@ def render() -> None:
         # offered only when that file was present. It takes the level from the
         # Site panel now and needs nothing, so it always stands. The order is
         # unchanged where the file does exist.
-        sources = (["Upload hourly CSV"]
-                   + (["Example: bess_profile_v2.jsx day (24 h)",
-                       "Example: bess_profile_v2.jsx week (168 h)"] if ex else [])
-                   + [FREE])
-        src = st.radio("Source", sources, index=1 if ex else 0, key="gd_src", horizontal=True)
+        # The measured year joins the list only where its CSVs are on disk
+        # (they are local data, not in the repository), and is then the
+        # default: it is the one source that is the site itself.
+        #
+        # With the measured data on disk the synthetic sources are withdrawn:
+        # the example day and week and Free mode are made-up profiles (the
+        # workbook says so itself: "Профили нагрузки синтетические"), and this
+        # study is to run on the plant's own meter only. Without the data --
+        # the deployed app, which does not carry it -- they stand as before.
+        real_sites = RD.available()
+        if real_sites:
+            sources = [REAL, "Upload hourly CSV"]
+        else:
+            sources = (["Upload hourly CSV"]
+                       + (["Example: bess_profile_v2.jsx day (24 h)",
+                           "Example: bess_profile_v2.jsx week (168 h)"] if ex else [])
+                       + [FREE])
+        src = st.radio("Source", sources, index=0 if real_sites else (1 if ex else 0),
+                       key="gd_src", horizontal=True)
         # The Site panel below can refit the level, which makes every level this
         # panel quotes provisional. It renders after this one, so its checkbox is
         # read from session state -- present from the previous rerun, absent on
@@ -830,7 +1019,28 @@ def render() -> None:
         _prov = (" — provisional: the Site panel below refits this level onto the "
                  "site's own minimum, average and maximum." if _refit else "")
         load: list[float] = []
-        if src.startswith("Upload"):
+        measured = None             # the logger's own gpu / grid, real data only
+        if src == REAL:
+            site = st.selectbox(
+                "Units", real_sites, key="gd_real_site",
+                help="Each engine logs its own plant meter and grid meter. Together, "
+                     "the two plants' loads are added hour by hour; CR06 (logged in "
+                     "UTC+5) is moved onto CC42's clock (UTC+6) first.")
+            y = _real_year(site)
+            load, measured = list(y["load"]), {"gpu": y["gpu"], "grid": y["grid"]}
+            # The units table below follows the site: on a change of site its
+            # preset becomes the engines the site actually runs.
+            if ss.get("gd_real_site_seen") != site:
+                ss["gd_real_site_seen"] = site
+                ss["gd_preset"] = REAL_PRESET + site
+            st.caption(
+                f"Measured only: the plant's own consumption from the Jenbacher logger, "
+                f"hourly means of its samples, 01.10.2025 – 30.09.2026. **{y['days']} of "
+                f"{y['days_period']} days** were logged in full and are used, end to end "
+                f"({y['hours']:,} h); a day with any hour missing is left out whole, and "
+                f"nothing is interpolated. Per-year figures scale these days to 8,760 h. "
+                f"Source and cleaning: real_data/zharkent/build.py.")
+        elif src.startswith("Upload"):
             up = st.file_uploader("Hourly load, kW — one value per line or the first column of "
                                   "a CSV; any length from 24 to 8,760 hours",
                                   type=["csv", "txt"], key="gd_load_up")
@@ -872,6 +1082,9 @@ def render() -> None:
                 length = int(st.number_input("Window length (hours)", 1, min(MAX_H, n - start),
                                              min(MAX_H, n - start), key=f"gd_len_{wk}_{start}"))
             load = load[start:start + length]
+            if measured is not None:
+                measured = {k: v[start:start + length] for k, v in measured.items()}
+            ss["gd_measured"] = measured
             st.caption(f"{len(load):,} hours · {sum(load):,.0f} kWh · peak {max(load):,.0f} kW "
                        f"· minimum {min(load):,.0f} kW" + _prov)
 
@@ -885,6 +1098,8 @@ def render() -> None:
     with st.expander("Site demand", expanded=True):
         fit_on = st.checkbox(
             "Scale the profile to this site's own demand", value=False, key="gd_site_on",
+            # a measured load is the site's demand; refitting it would invent one
+            disabled=src == REAL,
             help="Off: the profile is used at the level it arrives with. On: its shape "
                  "is kept and refitted onto the three numbers below.")
         c1, c2, c3 = st.columns(3)
@@ -916,6 +1131,7 @@ def render() -> None:
         # The fit comes BEFORE the connection check on purpose: the check has to
         # read the peak the solver will actually see. Reading it first reported
         # the profile's own 4,106 kW and called a 5,500 kW site merely "tight".
+        fit_on = fit_on and src != REAL
         if fit_on and load:
             if not (s_min < s_avg < s_max):
                 st.error(
@@ -1005,7 +1221,10 @@ def render() -> None:
     # ---- 3. units -------------------------------------------------------------
     T.panel_head("Fuel-fired units")
     with st.expander("Units", expanded=True):
-        preset = st.selectbox("Start from", list(JSX_UNITS), key="gd_preset")
+        _presets = list(unit_presets())
+        if ss.get("gd_preset") not in _presets:
+            ss.pop("gd_preset", None)
+        preset = st.selectbox("Start from", _presets, key="gd_preset")
         if ss.get("gd_units_preset") != preset:
             ss["gd_units_df"] = default_units(preset)
             ss["gd_units_preset"] = preset
@@ -1122,13 +1341,33 @@ def render() -> None:
                soc_init=soc_init / 100.0, cyclic=soc_mode.startswith("Cyclic"),
                wear=wear, grid_charge=grid_charge, capex=capex)
 
+    # ---- 4b. where every input comes from -----------------------------------
+    if src == REAL and real_sites:
+        _sources_panel(units, flat, bat, cur, _real_year(ss["gd_real_site"]))
+
     # ---- 5. scenarios ---------------------------------------------------------
     T.panel_head("Scenarios", required=True)
     with st.expander("Operating rules to compare", expanded=True):
-        if "gd_scen_df" not in ss:
-            ss["gd_scen_df"] = default_scenarios()
+        picked = st.pills(
+            "Rules to compare", list(SCENARIO_LIBRARY), selection_mode="multi",
+            default=SCENARIO_DEFAULT, key="gd_scen_pick",
+            help="Each picked rule is solved separately and compared side by side. "
+                 "A battery rule is measured against the same rule without it.")
+        picked = [n for n in SCENARIO_LIBRARY if n in (picked or [])]
+        # The table is built from the picks and keyed by them: a data editor
+        # keeps its edits as a delta against the frame it was handed, so a new
+        # set of picks needs a new editor, not the old edits on a new frame.
+        _sig = "|".join(picked) or "none"
+        if ss.get("gd_scen_sig") != _sig:
+            ss["gd_scen_sig"] = _sig
+            ss["gd_scen_df"] = pd.DataFrame(
+                [SCENARIO_LIBRARY[n] for n in picked],
+                columns=[S_NAME, S_MIN, S_BAT, S_SCALE, S_MAXST])
+        st.caption(f"{len(picked)} rule{'s' if len(picked) != 1 else ''} picked. Fine-tune "
+                   f"them below or add a row of your own; picking again resets the table.")
         scen = st.data_editor(
-            ss["gd_scen_df"], num_rows="dynamic", use_container_width=True, key="gd_scen",
+            ss["gd_scen_df"], num_rows="dynamic", use_container_width=True,
+            key=f"gd_scen_{zlib.crc32(_sig.encode())}",
             column_config={
                 S_MIN: st.column_config.NumberColumn(min_value=0.0, max_value=100.0,
                                                      help="Overrides every unit's minimum load."),
@@ -1142,9 +1381,6 @@ def render() -> None:
                     min_value=0, step=1, format="%d",
                     help="Overrides every unit's max starts per day for this scenario."),
             })
-        st.caption("Each row is solved separately and compared side by side. The JSX's own "
-                   "three rules are filled in; add rows to vary the load level, the minimum-load "
-                   "rule or the battery.")
         # Two levers scale the same series and the scenario one runs last, so a
         # row at anything but 100 % silently moves the anchors the Site panel was
         # just told to hold. Measured: a 120 % row turns a 5,500 kW maximum into
@@ -1181,6 +1417,8 @@ def render() -> None:
         cover = st.radio(
             "How to cover the horizon",
             [COVER_WINDOW, COVER_DAYS], key="gd_cover", horizontal=True,
+            # a measured year is 8,760 hours of binaries: typical days by default
+            index=1 if src == REAL else 0,
             help="A full year of on/off units is 8,760 hours of binaries and does not "
                  "solve. Clustering the days into a few typical ones and weighting them "
                  "by how many real days each stands for is the standard answer "
@@ -1294,6 +1532,7 @@ def render() -> None:
                                                                         and math.isnan(sc[S_MIN]))
                                       else float(sc[S_MIN])),
                              "scale": float(sc.get(S_SCALE) or 100.0),
+                             "starts": _opt_int(sc.get(S_MAXST)),
                              "hourly": hourly(res, price_used, units,
                                               bat["wear"] if inp.storage.enabled else 0.0)})
             prog.progress(1.0, text="Done")
@@ -1310,6 +1549,9 @@ def render() -> None:
                                 "currency": cur, "wear_h": wear_h,
                                 "hours": len(runs[0]["res"]["series"]["load_kw"]),
                                 "price": price_used, "units": units, "bat": bat,
+                                "price_raw": list(price),
+                                "measured": (ss.get("gd_measured")
+                                             if src == REAL else None),
                                 "fleet_capex": fleet_capex(units),
                                 "grid_cap": grid_cap,
                                 "typical": (None if typ is None else
@@ -1379,10 +1621,13 @@ def render() -> None:
                 "the joins between unlike days create are counted and charged, a minimum up "
                 "or down time spanning a join is not (method: Kotzur et al. 2018)"])
     _compare(runs, cur, H, out.get("wear_h", 15.0))
+    _measured_vs(out, runs, cur)
 
     T.panel_head("Economics of one scenario against the others")
     names = [r["name"] for r in runs]
-    pick = P.switch("Scenario", names, key="gd_pick")
+    # open on the battery scenario: its payback against the others is the question
+    pick = P.switch("Scenario", names, key="gd_pick",
+                    default=next((r["name"] for r in runs if r["battery"]), None))
     run = next((r for r in runs if r["name"] == pick), runs[0])
     others = [r for r in runs if r is not run]
     if others:

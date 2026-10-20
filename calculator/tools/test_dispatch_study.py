@@ -37,7 +37,7 @@ def main():
     bat = dict(kw=S.BESS_KW, kwh=S.BESS_KWH, rte=S.RTE, soc_min=S.SOC_MIN, soc_init=0.5,
                cyclic=True, wear=S.WEAR, grid_charge=False)
     presets = {"chp2": "2 units (Jenbacher + TEDOM)", "chp3": "3 units (+ КГУ-3)"}
-    scen = D.default_scenarios().to_dict("records")
+    scen = D.jsx_scenarios().to_dict("records")
     for fk, preset in presets.items():
         units = D.default_units(preset)
         for sc, mode in zip(scen, "ABC"):
