@@ -256,12 +256,6 @@ def _real_year(site: str) -> dict:
 MEASURED, PASSPORT, UNCONFIRMED, TYPED = "measured", "nameplate", "NOT CONFIRMED", "typed on this page"
 RULE = "study rule"
 SOURCES = {
-    "unit_kw": (1067.0, PASSPORT, "Jenbacher JMC 320 (J 320 GS-D25), техописание INNIO 04.09.2023, "
-                                  "разд. 0.01: «Электрическая выходная мощность 1067 кВт эл.»; "
-                                  "the loggers name the engine J320"),
-    "eff": ((40.5, 37.4), PASSPORT, "JMC 320, разд. 0.01: электрический КПД 40,5 % / 39,5 % / 37,4 % "
-                                    "при 100 / 75 / 50 %; the fuel line through 100 % and 50 % "
-                                    "gives 2,54 kWh of gas per kWh at 75 % against the sheet's 2,53"),
     "min_load": (50.0, PASSPORT, "JMC 320, разд. 1.11.10 и 2.03.02: регулирование активной мощности "
                                  "«от 100 % до 50 % (Pmin)»; TEDOM Quanto 1200 / Cento 530: «не ниже "
                                  "50 % номинальной»"),
@@ -282,6 +276,17 @@ SOURCES = {
 }
 
 
+# The engines the OEM documents describe: (kW, efficiency 100 %, 50 %) -> source.
+OEM = {
+    (1067.0, 40.5, 37.4): "Jenbacher JMC 320 (J 320 GS-D25), техописание INNIO 04.09.2023, разд. 0.01: "
+                          "1 067 кВт эл., КПД 40,5 / 39,5 / 37,4 % при 100 / 75 / 50 %",
+    (1200.0, 43.6, 40.2): "TEDOM Quanto 1200 NG, TS_Quanto_1200_MWM_NG_OM_SE_C_LB_50Hz_S_500_RU_04_2021: "
+                          "1 200 kW, к.п.д. электрический 43,6 / 42,4 / 40,2 % при 100 / 75 / 50 %",
+    (528.0, 40.4, 37.5): "TEDOM Cento 530 NG SE, TS_Cento_530_MAN_NG_SE_LB_50Hz_S_EN_12_2019: "
+                         "528 kW, electrical efficiency 40,4 / 39,7 / 37,5 % at 100 / 75 / 50 %",
+}
+
+
 def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dict) -> None:
     """Every input of the study, its value on the page and where it comes from."""
     T.panel_head("Where every number comes from")
@@ -298,18 +303,21 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
 
         num = lambda v: float(v or 0.0)
         rows = [["Load", f"{y['hours']:,} h, peak {max(y['load']):,.0f} kW", (MEASURED, "ghp-pos"),
-                 f"Jenbacher logger, plant meter; {y['days']} fully logged days of {y['days_period']}"]]
+                 f"{y.get('source', 'logger')}; {y['days']} fully measured days of "
+                 f"{y['days_period']}"]]
+        # one row per engine: its rating and part-load curve against the OEM sheet
+        for _, u in live.iterrows():
+            key = (num(u[U_KW]), num(u.get(U_EFF100)), num(u.get(U_EFF50)))
+            src = OEM.get(key)
+            rows.append([f"Engine · {u[U_NAME]}",
+                         f"{key[0]:,.0f} kW · КПД {key[1]:.1f} / {key[2]:.1f} %"
+                         if fuel_curve(u) else f"{key[0]:,.0f} kW · one price per kWh",
+                         (PASSPORT, "") if src else (TYPED, ""),
+                         src or "not an OEM data sheet value"])
         if first is not None:
-            kws = tuple(sorted({num(v) for v in live[U_KW]}))
-            rows += [row("Engines", kws[0] if len(kws) == 1 else kws, "unit_kw",
-                         f"{len(live.index)} × " + " / ".join(f"{k:,.0f}" for k in kws) + " kW"),
-                     row("Engine cost per kWh" + (" at full load" if fuel_curve(first) else ""),
+            rows += [row("Engine cost per kWh" + (" at full load" if fuel_curve(first) else ""),
                          num(first[U_COST]) + num(first.get(U_OM)), "gen_cost",
                          f"{num(first[U_COST]) + num(first.get(U_OM)):,.2f} {cur}"),
-                     row("Part-load efficiency", (num(first.get(U_EFF100)), num(first.get(U_EFF50))),
-                         "eff", (f"{num(first.get(U_EFF100)):.1f} % at 100 %, "
-                                 f"{num(first.get(U_EFF50)):.1f} % at 50 %"
-                                 if fuel_curve(first) else "none — one price per kWh")),
                      row("Start cost", num(first[U_START]), "start", f"{num(first[U_START]):,.0f} {cur}"),
                      row("Min up / down", (int(num(first[U_UP])), int(num(first[U_DOWN]))), "updown",
                          f"{int(num(first[U_UP]))} / {int(num(first[U_DOWN]))} h")]
@@ -336,7 +344,7 @@ def unit_presets() -> dict[str, list[tuple[str, float]]]:
     """The JSX fleets, plus the engines each measured site actually runs."""
     out = dict(JSX_UNITS)
     for site in RD.available():
-        out[REAL_PRESET + site] = RD.SITES[site][2]
+        out[REAL_PRESET + site] = RD.SITES[site][4]
     return out
 
 
@@ -1140,9 +1148,10 @@ def render() -> None:
         if src == REAL:
             site = st.selectbox(
                 "Units", real_sites, key="gd_real_site",
-                help="Each engine logs its own plant meter and grid meter. Together, "
-                     "the two plants' loads are added hour by hour; CR06 (logged in "
-                     "UTC+5) is moved onto CC42's clock (UTC+6) first.")
+                help="Two plants. ЖКПЗ is fed by the TEDOM Quanto 1200 and the "
+                     "Jenbacher J320 of Жаркент 2 together with the city; Жаркент 3 is "
+                     "a plant of its own with one J320. Built by "
+                     "real_data/zharkent/combine.py.")
             y = _real_year(site)
             load, measured = list(y["load"]), {"gpu": y["gpu"], "grid": y["grid"],
                                                "gpu_units": y["gpu_units"]}
@@ -1152,12 +1161,12 @@ def render() -> None:
                 ss["gd_real_site_seen"] = site
                 ss["gd_preset"] = REAL_PRESET + site
             st.caption(
-                f"Measured only: the plant's own consumption from the Jenbacher logger, "
-                f"hourly means of its samples, 01.10.2025 – 30.09.2026. **{y['days']} of "
+                f"Measured only: the plant's own consumption ({y['source']}), hourly means "
+                f"of measured samples, 01.10.2025 – 30.09.2026. **{y['days']} of "
                 f"{y['days_period']} days** were logged in full and are used, end to end "
                 f"({y['hours']:,} h); a day with any hour missing is left out whole, and "
                 f"nothing is interpolated. Per-year figures scale these days to 8,760 h. "
-                f"Source and cleaning: real_data/zharkent/build.py.")
+                f"Source and cleaning: real_data/zharkent/build.py and combine.py.")
         elif src.startswith("Upload"):
             up = st.file_uploader("Hourly load, kW — one value per line or the first column of "
                                   "a CSV; any length from 24 to 8,760 hours",
