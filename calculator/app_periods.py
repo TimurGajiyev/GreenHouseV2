@@ -45,6 +45,9 @@ def _idx(n: int = HOURS) -> pd.DatetimeIndex:
 
 
 _CUR = "$"          # set per render; a custom study may price in any currency
+# set per render: a measured clock can hold the same date in two years, so its
+# days are named with the year; the 2017 calendar's year means nothing
+_YEAR = False
 
 
 def _m(x) -> str:
@@ -71,7 +74,7 @@ def _daylabel(ts, weekday: bool = False) -> str:
     ``%-d`` is a glibc extension that Windows strftime rejects with
     "Invalid format string", so the day number is formatted separately.
     """
-    day = f"{ts.day} {ts.strftime('%B')}"
+    day = f"{ts.day} {ts.strftime('%B')}" + (f" {ts.year}" if _YEAR else "")
     return f"{ts.strftime('%A')}, {day}" if weekday else day
 
 
@@ -597,7 +600,8 @@ def _starts_section(sh: dict, series: dict, idx: pd.DatetimeIndex, res: dict) ->
         bits.insert(1, "folded onto weekdays because the horizon is longer than a month")
     if res.get("typical"):
         t = res["typical"]
-        bits.append(f"the year is replayed from {t['k']} typical days, so the per-day "
+        bits.append(f"the {'year' if H == HOURS else 'horizon'} is replayed from "
+                    f"{t['k']} typical days, so the per-day "
                     f"pattern repeats them and the count is a lower bound "
                     f"({t.get('starts_from_joins', 0):,} of {sum(totals):,} come from "
                     f"the joins between unlike days)")
@@ -606,7 +610,7 @@ def _starts_section(sh: dict, series: dict, idx: pd.DatetimeIndex, res: dict) ->
 
 # ----------------------------------------------------------------- render
 def render_periods(state: dict) -> None:
-    global _CUR
+    global _CUR, _YEAR
     _CUR = state.get("currency") or "$"
     res = state["res"]
     series = res.get("series") or {}
@@ -615,7 +619,13 @@ def render_periods(state: dict) -> None:
     tariff = state.get("tariff")
     load = series["load_kw"]
     sh = _shape(res)
-    idx = _idx(horizon(series))
+    # A measured horizon brings its own clock (state["time"], one stamp per
+    # hour): its days are labelled with their real dates. Anything else is
+    # laid on the 2017 calendar as before.
+    own = state.get("time")
+    real_clock = own is not None and len(own) == horizon(series)
+    idx = pd.DatetimeIndex(own) if real_clock else _idx(horizon(series))
+    _YEAR = real_clock
     rep, pk = representative_day(load), peak_day(load)
 
     T.panel_head("Dispatch by period", icon="calendar_month")
@@ -886,8 +896,11 @@ def render_periods(state: dict) -> None:
     _summary_table(series, tariff, rep, sh, res["sizes"])
     st.caption(
         f"The representative day is the one whose energy is closest to the median "
-        f"across the year — {_daylabel(idx[rep * 24])}. The week is the calendar "
-        f"week containing it."
+        f"across the {'year' if H == HOURS and not real_clock else 'horizon'} — "
+        f"{_daylabel(idx[rep * 24])}. "
+        + ("The week is the seven measured days containing it, end to end as solved: "
+           "a day left out for a gap in the data is skipped, not shown empty."
+           if real_clock else "The week is the calendar week containing it.")
     )
 
     # ---- per-unit tables, one row per unit however many there are -------

@@ -15,10 +15,11 @@ say there are two plants:
 
 This module hands the study the measured days of one plant, and nothing else:
 
-  * the period is 1 Oct 2025 00:00 - 30 Sep 2026 23:00: at most one of each
-    calendar day, and September 2025 (commissioning on CR06, impossible plant
-    readings on CC42) left out;
-  * a day is kept only if every one of its 24 hours is measured in full
+  * the period is the whole table, every hour the data covers. It is longer
+    than a year, so a calendar date can be in it twice (Жаркент 3 has
+    September and early October of 2025 and of 2026); the period the plant's
+    own meters cover is reported with it;
+  * a day is kept only if all 24 of its hours are measured in full
     (combine.py's *_complete columns). Nothing is interpolated or copied
     from another day: a day with a hole in it is left out whole;
   * the kept days are laid end to end. The study annualises by hours, so a
@@ -35,7 +36,6 @@ import pandas as pd
 
 DATA = Path(__file__).resolve().parent.parent / "real_data" / "zharkent" / "data"
 TABLE = DATA / "zharkent_all_hourly.csv"
-YEAR = ("2025-10-01 00:00", "2026-09-30 23:00")
 
 # Nameplate and electrical efficiency at 100 % / 50 % load, from the OEM
 # documents in docs/equipment:
@@ -70,28 +70,43 @@ def available() -> list[str]:
     return list(SITES) if TABLE.exists() else []
 
 
+def stamp() -> float:
+    """When the table was last written: a cache key, so a rebuilt table is read again."""
+    return TABLE.stat().st_mtime if TABLE.exists() else 0.0
+
+
 def _table() -> pd.DataFrame:
-    t = pd.read_csv(TABLE, index_col=0, parse_dates=True)
-    return t.loc[YEAR[0]:YEAR[1]]
+    return pd.read_csv(TABLE, index_col=0, parse_dates=True)
 
 
 def year(site: str) -> dict:
-    """The fully measured days of a plant, end to end.
+    """The fully measured days of a plant over the whole period, end to end.
 
     Returns load (plant, kW), gpu and grid (kW, as measured), each engine's own
     output (gpu_units, in the order of the units list), the timestamps, the
-    days kept and the days in the period.
+    days kept, the period the plant's meters cover (first and last hour on
+    which all of them report) with its length in calendar days, and how many
+    calendar dates the kept days hold twice.
     """
     plant, grid, engines, complete, units, source = SITES[site]
     t = _table()
+    ok = t[complete].astype(bool)
     day = t.index.floor("D")
-    full = t[complete].astype(bool).groupby(day).transform("all")
+    # the table starts and ends part-way through a day: a day is whole only
+    # with all 24 hours in it, and measured only with all 24 complete
+    whole = ok.groupby(day).transform("size") == 24
+    full = whole & ok.groupby(day).transform("all")
     k = t[full]
+    span = t.index[ok]
+    kept = k.index.floor("D").unique()
     gpu = sum(k[c] for c in engines)
     # a plant reading of a few kW below zero is meter noise; demand is not negative
     return {"load": [float(x) for x in k[plant].clip(lower=0)],
             "gpu": [float(x) for x in gpu], "grid": [float(x) for x in k[grid]],
             "gpu_units": [[float(x) for x in k[c]] for c in engines],
             "time": list(k.index), "units": units, "source": source,
-            "days": int(full.sum() // 24), "days_period": int(day.nunique()),
+            "days": len(kept),
+            "period": (span[0], span[-1]),
+            "days_period": (span[-1].floor("D") - span[0].floor("D")).days + 1,
+            "repeat": int(pd.Series(kept.strftime("%m-%d")).duplicated().sum()),
             "hours": len(k)}

@@ -76,10 +76,10 @@ S_MAXST = "Max starts/day (blank = per unit)"
 COVER_WINDOW = "Solve the window as posed"
 COVER_DAYS = "A year from typical days (weighted)"
 
-# the measured load, and the units preset that follows its site
-REAL = "Real data: Zharkent logger (measured days)"
+# the measured plants, one load source each, and the units preset that follows
+# the plant: "Measured: <plant>" -> "Zharkent · <plant>"
+REAL_SRC = "Measured: "
 REAL_PRESET = "Zharkent · "
-YEAR_LABEL = "1 Oct 2025 – 30 Sep 2026"
 
 # bess_profile_v2.jsx / CHP_BESS_model_v2.xlsx, «Допущения»
 JSX_UNITS = {
@@ -246,8 +246,14 @@ def read_series(upload) -> list[float]:
 
 
 @st.cache_data(show_spinner=False)
-def _real_year(site: str) -> dict:
+def _real_year(site: str, stamp: float) -> dict:
+    """RD.year, read again whenever combine.py rewrites the table (``stamp``)."""
     return RD.year(site)
+
+
+def real_sources() -> dict[str, str]:
+    """Load source label -> measured plant, for the plants whose data is on disk."""
+    return {REAL_SRC + site: site for site in RD.available()}
 
 
 # Where each default comes from. CHP_BESS_model_v2.xlsx, sheet «Допущения», is
@@ -302,9 +308,10 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                     text if same else "changed from the workbook's " + str(want)]
 
         num = lambda v: float(v or 0.0)
+        p0, p1 = y["period"]
         rows = [["Load", f"{y['hours']:,} h, peak {max(y['load']):,.0f} kW", (MEASURED, "ghp-pos"),
-                 f"{y.get('source', 'logger')}; {y['days']} fully measured days of "
-                 f"{y['days_period']}"]]
+                 f"{y.get('source', 'logger')}; {y['days']} fully measured days of the "
+                 f"{y['days_period']} from {p0:%d.%m.%Y} to {p1:%d.%m.%Y}"]]
         # one row per engine: its rating and part-load curve against the OEM sheet
         for _, u in live.iterrows():
             key = (num(u[U_KW]), num(u.get(U_EFF100)), num(u.get(U_EFF50)))
@@ -593,11 +600,14 @@ def _rule(name: str, minload: float | None = 50.0, bat: bool = False,
 
 # The two scenarios of the study, and only these two.
 #
-#   A  two engines, each free to modulate down to 50 % of nameplate, no battery
-#      -- the plant as it can run today;
-#   B  the same two engines held at 90 % of nameplate or above whenever they
-#      run, with the battery panel's battery taking the surplus and covering
-#      the shortfall -- the operating concept the battery is bought for.
+#   A  the plant's engines, each free to modulate down to 50 % of nameplate, no
+#      battery -- the plant as it can run today;
+#   B  the same engines held at 90 % of nameplate or above whenever they run,
+#      with the battery panel's battery taking the surplus and covering the
+#      shortfall -- the operating concept the battery is bought for.
+#
+# The names count no engines: the rules are the same on ЖКПЗ's two and on
+# Жаркент 3's one, and on whatever fleet an upload or Free mode is given.
 #
 # 50 % is the manufacturers' own minimum: the Jenbacher JMC 320 description
 # limits active power "от 100 % до 50 % (Pmin)" (sections 1.11.10 and
@@ -609,8 +619,8 @@ def _rule(name: str, minload: float | None = 50.0, bat: bool = False,
 # The battery's payback is B measured against A, by the model's own cost
 # accounting.
 SCENARIO_LIBRARY: dict[str, dict] = {r[S_NAME]: r for r in [
-    _rule("A · 2 ГПУ от 50%, без батареи", minload=50.0),
-    _rule("B · 2 ГПУ от 90% + батарея", minload=90.0, bat=True),
+    _rule("A · ГПУ от 50%, без батареи", minload=50.0),
+    _rule("B · ГПУ от 90% + батарея", minload=90.0, bat=True),
 ]}
 SCENARIO_DEFAULT = list(SCENARIO_LIBRARY)
 
@@ -1115,57 +1125,72 @@ def render() -> None:
         FREE = "Free mode: a real year, no file needed"
         # Free mode used to need the example week for its level, so it was
         # offered only when that file was present. It takes the level from the
-        # Site panel now and needs nothing, so it always stands. The order is
-        # unchanged where the file does exist.
-        # The measured year joins the list only where its CSVs are on disk
-        # (they are local data, not in the repository), and is then the
-        # default: it is the one source that is the site itself.
+        # Site panel now and needs nothing, so it always stands.
         #
-        # With the measured data on disk the synthetic sources are withdrawn:
-        # the example day and week and Free mode are made-up profiles (the
-        # workbook says so itself: "Профили нагрузки синтетические"), and this
-        # study is to run on the plant's own meter only. Without the data --
-        # the deployed app, which does not carry it -- they stand as before.
-        real_sites = RD.available()
-        if real_sites:
-            sources = [REAL, "Upload hourly CSV"]
+        # The measured plants join the list where their table is on disk (it is
+        # local data, not in the repository), one source per plant, and the
+        # first of them is then the default: it is the site itself. Beside them
+        # stand the upload and Free mode, which a study of any other load still
+        # needs; the example day and week are withdrawn there -- they are the
+        # artifact's synthetic profiles ("Профили нагрузки синтетические"), and
+        # a measured plant replaces them. Without the data -- the deployed app,
+        # which does not carry it -- the list is as it always was.
+        real = real_sources()
+        if real:
+            sources = ["Upload hourly CSV", FREE] + list(real)
         else:
             sources = (["Upload hourly CSV"]
                        + (["Example: bess_profile_v2.jsx day (24 h)",
                            "Example: bess_profile_v2.jsx week (168 h)"] if ex else [])
                        + [FREE])
-        src = st.radio("Source", sources, index=0 if real_sites else (1 if ex else 0),
-                       key="gd_src", horizontal=True)
+        # a source this version no longer offers is dropped, as the preset is
+        if ss.get("gd_src") not in sources:
+            ss.pop("gd_src", None)
+        src = st.radio(
+            "Source", sources, index=2 if real else (1 if ex else 0), key="gd_src",
+            # the plants' labels name their engines and do not share one line
+            # with the other two: listed one per line then
+            horizontal=not real,
+            help="Measured: a plant's own meters over the whole period the data covers. "
+                 "ЖКПЗ is one plant fed by two engines — the TEDOM Quanto 1200 "
+                 "(Жаркент) and the Jenbacher J320 of Жаркент 2 — and the city; "
+                 "Жаркент 3 is a plant of its own with one J320. Built by "
+                 "real_data/zharkent/combine.py." if real else None)
+        site = real.get(src)        # the measured plant, or None
+        # The units table below follows the plant: arriving at a measured plant,
+        # from another plant or from any other source, sets its preset to the
+        # engines that plant actually runs. Leaving for another source keeps
+        # the table as it is.
+        if ss.get("gd_src_seen") != src:
+            ss["gd_src_seen"] = src
+            if site is not None:
+                ss["gd_preset"] = REAL_PRESET + site
         # The Site panel below can refit the level, which makes every level this
         # panel quotes provisional. It renders after this one, so its checkbox is
         # read from session state -- present from the previous rerun, absent on
-        # the very first pass, which is the right default either way.
-        _refit = bool(ss.get("gd_site_on"))
+        # the very first pass, which is the right default either way. A measured
+        # plant is never refitted, whatever the box was left at.
+        _refit = bool(ss.get("gd_site_on")) and site is None
         _prov = (" — provisional: the Site panel below refits this level onto the "
                  "site's own minimum, average and maximum." if _refit else "")
         load: list[float] = []
         measured = None             # the logger's own gpu / grid, real data only
-        if src == REAL:
-            site = st.selectbox(
-                "Units", real_sites, key="gd_real_site",
-                help="Two plants. ЖКПЗ is fed by the TEDOM Quanto 1200 and the "
-                     "Jenbacher J320 of Жаркент 2 together with the city; Жаркент 3 is "
-                     "a plant of its own with one J320. Built by "
-                     "real_data/zharkent/combine.py.")
-            y = _real_year(site)
+        times = None                # the hours' own timestamps, real data only
+        if site is not None:
+            y = _real_year(site, RD.stamp())
             load, measured = list(y["load"]), {"gpu": y["gpu"], "grid": y["grid"],
                                                "gpu_units": y["gpu_units"]}
-            # The units table below follows the site: on a change of site its
-            # preset becomes the engines the site actually runs.
-            if ss.get("gd_real_site_seen") != site:
-                ss["gd_real_site_seen"] = site
-                ss["gd_preset"] = REAL_PRESET + site
+            times = list(y["time"])
+            p0, p1 = y["period"]
+            twice = (f" The period is longer than a year: {y['repeat']} calendar dates are "
+                     f"in it twice, and count twice." if y["repeat"] else "")
             st.caption(
                 f"Measured only: the plant's own consumption ({y['source']}), hourly means "
-                f"of measured samples, 01.10.2025 – 30.09.2026. **{y['days']} of "
-                f"{y['days_period']} days** were logged in full and are used, end to end "
-                f"({y['hours']:,} h); a day with any hour missing is left out whole, and "
-                f"nothing is interpolated. Per-year figures scale these days to 8,760 h. "
+                f"of measured samples, over the whole period its meters cover, "
+                f"{p0:%d.%m.%Y} – {p1:%d.%m.%Y}. **{y['days']} of those {y['days_period']} "
+                f"days** were measured in full and are used, end to end ({y['hours']:,} h); "
+                f"a day with any hour missing is left out whole, and nothing is "
+                f"interpolated.{twice} Per-year figures scale these days to 8,760 h. "
                 f"Source and cleaning: real_data/zharkent/build.py and combine.py.")
         elif src.startswith("Upload"):
             up = st.file_uploader("Hourly load, kW — one value per line or the first column of "
@@ -1214,6 +1239,8 @@ def render() -> None:
                             "grid": measured["grid"][start:start + length],
                             "gpu_units": [g[start:start + length]
                                           for g in measured.get("gpu_units") or []]}
+            if times is not None:
+                times = times[start:start + length]
             ss["gd_measured"] = measured
             st.caption(f"{len(load):,} hours · {sum(load):,.0f} kWh · peak {max(load):,.0f} kW "
                        f"· minimum {min(load):,.0f} kW" + _prov)
@@ -1229,7 +1256,7 @@ def render() -> None:
         fit_on = st.checkbox(
             "Scale the profile to this site's own demand", value=False, key="gd_site_on",
             # a measured load is the site's demand; refitting it would invent one
-            disabled=src == REAL,
+            disabled=site is not None,
             help="Off: the profile is used at the level it arrives with. On: its shape "
                  "is kept and refitted onto the three numbers below.")
         c1, c2, c3 = st.columns(3)
@@ -1261,7 +1288,7 @@ def render() -> None:
         # The fit comes BEFORE the connection check on purpose: the check has to
         # read the peak the solver will actually see. Reading it first reported
         # the profile's own 4,106 kW and called a 5,500 kW site merely "tight".
-        fit_on = fit_on and src != REAL
+        fit_on = fit_on and site is None
         if fit_on and load:
             if not (s_min < s_avg < s_max):
                 st.error(
@@ -1279,6 +1306,11 @@ def render() -> None:
                     f"14 % on these shapes, which is why a single exponent is solved instead.")
         elif fit_on:
             st.caption("Load a profile above and its shape will be refitted onto these three.")
+        elif site is not None:
+            st.caption(
+                "A measured plant is its own demand: the level is the meter's, and "
+                "refitting it would invent another, so the box stays off. The three "
+                "numbers matter only to an upload and to Free mode.")
         else:
             st.caption(
                 "Not scaling. The profile keeps the level it arrived with — in Free "
@@ -1484,8 +1516,8 @@ def render() -> None:
                wear=wear, grid_charge=grid_charge, capex=capex)
 
     # ---- 4b. where every input comes from -----------------------------------
-    if src == REAL and real_sites:
-        _sources_panel(units, flat, bat, cur, _real_year(ss["gd_real_site"]))
+    if site is not None:
+        _sources_panel(units, flat, bat, cur, _real_year(site, RD.stamp()))
 
     # ---- 5. scenarios ---------------------------------------------------------
     T.panel_head("Scenarios", required=True)
@@ -1527,7 +1559,7 @@ def render() -> None:
         # row at anything but 100 % silently moves the anchors the Site panel was
         # just told to hold. Measured: a 120 % row turns a 5,500 kW maximum into
         # 6,600 kW. Worth saying out loud rather than leaving in the arithmetic.
-        if bool(ss.get("gd_site_on")):
+        if fit_on:
             _scales = pd.to_numeric(scen[S_SCALE], errors="coerce").fillna(100.0)
             _off = sorted({float(x) for x in _scales if abs(float(x) - 100.0) > 1e-9})
             if _off:
@@ -1559,8 +1591,8 @@ def render() -> None:
         cover = st.radio(
             "How to cover the horizon",
             [COVER_WINDOW, COVER_DAYS], key="gd_cover", horizontal=True,
-            # a measured year is 8,760 hours of binaries: typical days by default
-            index=1 if src == REAL else 0,
+            # a measured plant is thousands of hours of binaries: typical days by default
+            index=1 if site is not None else 0,
             help="A full year of on/off units is 8,760 hours of binaries and does not "
                  "solve. Clustering the days into a few typical ones and weighting them "
                  "by how many real days each stands for is the standard answer "
@@ -1596,8 +1628,8 @@ def render() -> None:
         if year_mode:
             _kk = max(1, min(int(kdays), len(load) // 24))
             st.caption(f"{_kk} typical days × 24 h = {_kk * 24:,} hours to solve per scenario "
-                       f"instead of {len(load):,}. Annual energy is preserved exactly; the "
-                       f"year's peak is smoothed by the clustering; the starts created where "
+                       f"instead of {len(load):,}. The horizon's energy is preserved exactly; "
+                       f"its peak is smoothed by the clustering; the starts created where "
                        f"two unlike days meet are counted and charged, but a minimum up or "
                        f"down time spanning that join is not enforced.")
         elif len(load) > 168 and len(units.index):
@@ -1693,7 +1725,10 @@ def render() -> None:
                                 "price": price_used, "units": units, "bat": bat,
                                 "price_raw": list(price),
                                 "measured": (ss.get("gd_measured")
-                                             if src == REAL else None),
+                                             if site is not None else None),
+                                # the measured hours' own clock, for the period view
+                                "time": times,
+                                "source": src,
                                 "fleet_capex": fleet_capex(units),
                                 "grid_cap": grid_cap,
                                 "typical": (None if typ is None else
@@ -1712,6 +1747,12 @@ def render() -> None:
     runs, cur = out["runs"], out["currency"]
     H = out.get("hours") or len(runs[0]["res"]["series"]["load_kw"])
     T.panel_head("Scenario comparison")
+    # The results stay until the next solve. After a change of source they
+    # describe another load -- another plant, even -- so they say whose they are.
+    if out.get("source") and out["source"] != src:
+        st.warning(f"These results were solved for **{out['source']}**. The load source "
+                   f"above is now **{src}**: press **Solve scenarios** to solve it.",
+                   icon=":material/history:")
     # Named, not tabulated: a rule with no solution has no cost to compare.
     if out.get("unsolved"):
         st.warning(
@@ -1756,10 +1797,17 @@ def render() -> None:
 
     if out.get("typical"):
         t = out["typical"]
-        P.note([f"a year from <b>{t['k']}</b> typical days, weighted "
-                f"{' + '.join(str(w) for w in t['weights'])} = <b>{sum(t['weights'])}</b> days",
-                "every figure below is the weighted year, so nothing needs annualising",
-                "annual energy is exact; the peak is smoothed by the clustering; the starts "
+        n_days = sum(t["weights"])
+        # a measured plant's horizon is its measured days, not a calendar year
+        full_year = n_days * 24 == MAX_H
+        P.note([f"{'a year' if full_year else f'the {n_days:,} days of the horizon'} from "
+                f"<b>{t['k']}</b> typical days, weighted "
+                f"{' + '.join(str(w) for w in t['weights'])} = <b>{n_days}</b> days",
+                "every figure below is the weighted year, so nothing needs annualising"
+                if full_year else
+                "every figure below is these days, weighted; a row that says per year "
+                f"scales them by 8,760 / {n_days * 24:,} h",
+                "energy over the horizon is exact; the peak is smoothed by the clustering; the starts "
                 "the joins between unlike days create are counted and charged, a minimum up "
                 "or down time spanning a join is not (method: Kotzur et al. 2018)"])
     _compare(runs, cur, H, out.get("wear_h", 15.0))
@@ -1785,4 +1833,4 @@ def render() -> None:
     else:
         sav = None
     A.render_periods({"res": run["res"], "tariff": run["tariff"], "currency": cur,
-                      "savings": sav})
+                      "savings": sav, "time": out.get("time")})
