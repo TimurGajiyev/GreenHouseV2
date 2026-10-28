@@ -195,12 +195,66 @@ def t_lifecycle_identity() -> None:
               f"   pwf_fuel = {F.annuity(n, ESC_F, DISC):7.4f}")
 
 
+def t_battery_lifecycle() -> None:
+    """The dispatch study's 25-year table with the battery's own upkeep in it:
+    O&M as a share of CAPEX, one replacement, and both paybacks off one series."""
+    head("1.8  the battery over 25 years: O&M, replacement, one payback basis")
+    import year_study as Y
+    capex, save, om, rep, R = 391_000_000.0, 40_000_000.0, 0.025, 1.0, 10
+    lc = Y.lifecycle(0.0, years=N, escalation=ESC_F, discount=DISC, annual_saving=save,
+                     capex=capex, om_fraction=om, replace_year=R, replace_fraction=rep)
+    flows = [(save - om * capex) * (1 + ESC_F) ** y - (rep * capex if y == R else 0.0)
+             for y in range(1, N + 1)]
+    om_pv = sum(om * capex * (1 + ESC_F) ** y / (1 + DISC) ** y for y in range(1, N + 1))
+    check("O&M present value == 25 escalated years summed", lc.om_present_value, om_pv, 1e-5)
+    check("replacement present value == its cost discounted from year 10",
+          lc.replace_present_value, capex / (1 + DISC) ** R)
+    npv = sum(f / (1 + DISC) ** y for y, f in enumerate(flows, 1)) - capex
+    check("NPV == the 25 net cash flows discounted, less CAPEX", lc.net_present_value, npv, 1e-5)
+
+    # one series, two paybacks: the year from which the cumulative stays repaid
+    def by_hand(rate: float) -> float | None:
+        cum, out = 0.0, []
+        for y, f in enumerate(flows, 1):
+            cum += f / (1 + rate) ** y
+            out.append(cum)
+        if out[-1] < capex:
+            return None
+        y = len(out)
+        while y > 0 and out[y - 1] >= capex:
+            y -= 1
+        prev = out[y - 1] if y else 0.0
+        return y + (capex - prev) / (out[y] - prev)
+    sp, dp = by_hand(0.0), by_hand(DISC)
+    check("simple payback, undiscounted net flows", lc.simple_payback_years or -1, sp or -1)
+    check("discounted payback, the same flows discounted",
+          lc.discounted_payback_years or -1, dp or -1)
+
+    # A replacement can pull the cumulative back under the CAPEX after it was
+    # repaid: the investment has paid back only at the LAST crossing.
+    dip = Y.lifecycle(0.0, years=N, escalation=0.0, discount=0.0, annual_saving=30.0,
+                      capex=100.0, replace_year=5, replace_fraction=1.0)
+    check("a replacement after the first crossing moves payback to the last one",
+          dip.simple_payback_years or -1, 6.0 + (100.0 - 80.0) / 30.0)
+    late = Y.lifecycle(0.0, years=N, escalation=ESC_F, discount=DISC, annual_saving=save,
+                       capex=capex, replace_year=N, replace_fraction=1.0)
+    check("a replacement in the last year or later is no replacement (REopt's rule)",
+          late.replace_present_value, 0.0)
+    flat = Y.lifecycle(0.0, years=N, escalation=0.0, discount=DISC, annual_saving=save,
+                       capex=capex)
+    check("no escalation, no upkeep: simple payback is CAPEX / saving, as before",
+          flat.simple_payback_years or -1, capex / save)
+    check("no upkeep: NPV is the saving's present value less CAPEX",
+          flat.net_present_value, flat.saving_present_value - capex)
+
+
 def main() -> int:
     print(__doc__.strip().splitlines()[0])
     t_annuity()
     t_effective_cost()
     t_proforma_timing()
     t_lifecycle_identity()
+    t_battery_lifecycle()
     print(f"\n{'FAILED: ' + ', '.join(FAIL) if FAIL else 'all finance checks passed'}")
     return 1 if FAIL else 0
 

@@ -72,9 +72,25 @@ KWH_PER_MMBTU = 293.07107
 S_NAME, S_MIN, S_BAT, S_SCALE = "Scenario", "Min load % (blank = per unit)", "Battery", "Load scale %"
 S_MAXST = "Max starts/day (blank = per unit)"
 
-# the two ways a horizon can be covered
+# the ways a horizon can be covered
 COVER_WINDOW = "Solve the window as posed"
 COVER_DAYS = "A year from typical days (weighted)"
+COVER_EVERY = "Every day solved on its own"
+
+# Engine availability on a measured plant. The logger says when each engine
+# actually ran; an engine that stood still was down for maintenance, a fault or
+# the operator, and a dispatch that runs it anyway prices a plant that did not
+# exist. On ЖКПЗ the two readings of the same days are 327 and 409 M ₸/yr apart.
+AV_MEASURED = "As measured: each engine runs only in the hours it ran"
+AV_FREE = "Always available"
+ON_KW = 50.0                 # above this a logged engine counts as running
+
+# The default optimality gap, in %. A battery moves a plant's operating cost by
+# about one per cent, so a 0.5 % gap -- the old default -- is the same size as
+# the effect being measured: on Жаркент 3 it turned a 24 % error in the 90 %
+# rule's saving into 38 % (REPORT.md Part 16). One day solves to 0.01 % in a
+# fraction of a second.
+GAP_DEFAULT = 0.01
 
 # the measured plants, one load source each, and the units preset that follows
 # the plant: "Measured: <plant>" -> "Zharkent · <plant>"
@@ -261,6 +277,7 @@ def real_sources() -> dict[str, str]:
 # "не из договора" is NOT a confirmed figure, and the page says so.
 MEASURED, PASSPORT, UNCONFIRMED, TYPED = "measured", "nameplate", "NOT CONFIRMED", "typed on this page"
 RULE = "study rule"
+REOPT_DEFAULT = "REopt default"
 SOURCES = {
     "min_load": (50.0, PASSPORT, "JMC 320, разд. 1.11.10 и 2.03.02: регулирование активной мощности "
                                  "«от 100 % до 50 % (Pmin)»; TEDOM Quanto 1200 / Cento 530: «не ниже "
@@ -279,6 +296,13 @@ SOURCES = {
     "rte": (88.0, "project", "«RTE 0.88»"),
     "wear": (0.5, UNCONFIRMED, "«Износ за цикл 0.5 ₸/кВт·ч разряда — допущение»"),
     "capex": (391_000_000.0, "project", "«CAPEX накопителя 391 000 000 ₸ — 850 000 USD по курсу 460»"),
+    "bat_om": (2.5, REOPT_DEFAULT, "ElectricStorage om_cost_fraction_of_installed_cost = 0.025 "
+                                   "(electric_storage.jl:188); the workbook has no battery O&M"),
+    "bat_replace_year": (10, REOPT_DEFAULT, "ElectricStorage battery_replacement_year = 10 "
+                                            "(electric_storage.jl:186); the workbook gives no life"),
+    "bat_replace_cost": (100.0, UNCONFIRMED, "REopt's own replace_cost_per_kwh default is 0; the study "
+                                             "charges the full price — no warranty or augmentation "
+                                             "terms in the workbook"),
 }
 
 
@@ -336,7 +360,13 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                  row("Minimum SoC", round(bat["soc_min"] * 100, 6), "soc", f"{bat['soc_min']:.0%}"),
                  row("Round-trip efficiency", round(bat["rte"] * 100, 6), "rte", f"{bat['rte']:.0%}"),
                  row("Battery wear", float(bat["wear"]), "wear", f"{bat['wear']:,.2f} {cur}/kWh"),
-                 row("Battery CAPEX", float(bat["capex"]), "capex", _money(bat["capex"], cur))]
+                 row("Battery CAPEX", float(bat["capex"]), "capex", _money(bat["capex"], cur)),
+                 row("Battery O&M", round(bat.get("om_fraction", 0.0) * 100, 6), "bat_om",
+                     f"{bat.get('om_fraction', 0.0):.1%} of CAPEX a year"),
+                 row("Battery replacement year", int(bat.get("replace_year", 0)), "bat_replace_year",
+                     f"year {int(bat.get('replace_year', 0))}" if bat.get("replace_year") else "none"),
+                 row("Battery replacement cost", round(bat.get("replace_fraction", 0.0) * 100, 6),
+                     "bat_replace_cost", f"{bat.get('replace_fraction', 0.0):.0%} of CAPEX")]
         P.table(["Input", "Value", "Status", "Source"], rows)
         P.note(["<b>measured</b>: read off the logger · <b>nameplate</b> and <b>project</b>: "
                 "the workbook's passport and project configuration",
@@ -344,7 +374,8 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                 "KILLER items; the payback moves with each of them — replace them with the "
                 "contract figures in the panels above",
                 "formulas: the REopt.jl dispatch model (reopt_core), finance off; the payback "
-                "is the battery CAPEX over the cost of A minus the cost of B"])
+                "repays the battery CAPEX from the cost of A minus the cost of B, less the "
+                "battery's own O&M and replacement"])
 
 
 def unit_presets() -> dict[str, list[tuple[str, float]]]:
@@ -653,8 +684,14 @@ def _opt_int(v) -> int | None:
 
 # ------------------------------------------------------------------ scenario
 def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
-          sc: dict, grid_cap: float | None = None) -> M.ScenarioInputs:
-    """One scenario as model inputs. Finance off: the objective is operating cost."""
+          sc: dict, grid_cap: float | None = None,
+          avail: list[list[float]] | None = None) -> M.ScenarioInputs:
+    """One scenario as model inputs. Finance off: the objective is operating cost.
+
+    ``avail``, when given, holds one hourly availability series per unit row
+    with a rating, in table order: 1 = may run, 0 = down, a fraction = derated.
+    It goes to the core as the unit's ``production_factor_series``, which caps
+    output and the turndown floor alike."""
     scale = float(sc.get(S_SCALE) or 100.0) / 100.0
     loads = [x * scale for x in load]
     override = sc.get(S_MIN)
@@ -694,6 +731,8 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
             maintenance_spacing=("even" if bool(u.get(U_MSPACE, True)) else "free"),
             maintenance_interval_running_hours=max(0.0, float(u.get(U_MINT) or 0.0)),
             maintenance_cost_per_event=max(0.0, float(u.get(U_MCOST) or 0.0)),
+            production_factor_series=(list(avail[len(fleet)][:len(loads)])
+                                      if avail is not None else None),
             macrs_option_years=0, macrs_bonus_fraction=0.0, federal_itc_fraction=0.0))
     on = bool(sc.get(S_BAT)) and bat["kw"] > 0 and bat["kwh"] > 0
     eta = math.sqrt(bat["rte"])
@@ -721,6 +760,31 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
         fuel_techs=fleet if len(fleet) > 1 else None,
         max_grid_import_kw=grid_cap,
         compensation_type="no_compensation")
+
+
+def measured_availability(measured: dict | None, units: pd.DataFrame) -> list[list[float]] | None:
+    """When each engine could run, read off the logger: 1 in an hour it ran, else 0.
+
+    One series per unit row with a rating, in table order, matched to the
+    logger's engines by position -- the plant presets list them in the logger's
+    order. None when the table no longer has one row per logged engine (a row
+    added or removed), because there is then no honest way to pair them."""
+    series = (measured or {}).get("gpu_units") or []
+    live = [u for _, u in units.iterrows() if float(u[U_KW] or 0.0) > 0]
+    if not series or len(series) != len(live):
+        return None
+    return [[1.0 if v > ON_KW else 0.0 for v in s] for s in series]
+
+
+def day_availability(avail: list[list[float]] | None, typ, c: int) -> list[list[float]] | None:
+    """Typical day ``c``'s availability: its own day's when every day stands
+    alone, else the mean over the days it stands for. A mean is a derate, not
+    an outage -- an engine down on half the days becomes half an engine every
+    day -- which is why a measured plant is solved day by day by default."""
+    if avail is None:
+        return None
+    days = Y.members(typ, c)
+    return [[sum(a[24 * d + h] for d in days) / len(days) for h in range(24)] for a in avail]
 
 
 def account(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> dict:
@@ -775,11 +839,21 @@ def _money(x: float, cur: str) -> str:
         (f"{'−' if x < 0 else ''}{s} {cur}")
 
 
-def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0) -> None:
+def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0,
+             out: dict | None = None) -> None:
     head = ["Metric"] + [r["name"] for r in runs]
     acc = [r["acc"] for r in runs]
     base = acc[0]["total"]
     k = MAX_H / hours
+    out = out or {}
+    timed = bool(out.get("time")) and len(out["time"]) == hours
+    # per year on the page's one basis: by calendar month when the hours carry
+    # their dates, else by hours (see _annual)
+    years = [_run_year(r, out, hours) for r in runs]
+    starts_year = ([Y.month_year(out["time"], r["hourly"]["starts"])[0] for r in runs]
+                   if timed else [a["starts_year"] for a in acc])
+    per_year = "" if hours == MAX_H and not timed else (
+        " (by calendar month)" if timed else f" (× {k:,.2f})")
 
     def line(lab, key, fmt):
         return [lab] + [fmt(a[key]) for a in acc]
@@ -797,8 +871,7 @@ def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0) -> No
         line("Starts", "starts", lambda v: f"{v:,.0f}"),
         line("Starts per day, average (fleet)", "starts_day_avg", lambda v: f"{v:,.2f}"),
         line("Starts on the busiest day (fleet)", "starts_day_max", lambda v: f"{v:,.0f}"),
-        line("Starts per year" + ("" if hours == MAX_H else " (annualised)"), "starts_year",
-             lambda v: f"{v:,.0f}"),
+        ["Starts per year" + per_year] + [f"{v:,.0f}" for v in starts_year],
         line("Unit-hours", "unit_hours", lambda v: f"{v:,.0f}"),
         ["Effective hours (running + starts × " + f"{wear_h:g} h)"]
         + [f"{a['unit_hours'] + a['starts'] * wear_h:,.0f}" for a in acc],
@@ -812,12 +885,11 @@ def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0) -> No
                              "ghp-neg" if a["total"] > base + 0.5 else "ghp-pos"))
         for i, a in enumerate(acc)]
     rows.append(delta)
-    rows.append([f"Operating cost per year{'' if hours == MAX_H else f' (× {k:,.2f})'}"]
-                + [money(a["total"] * k) for a in acc])
+    rows.append(["Operating cost per year" + per_year] + [money(y) for y in years])
     rows.append(["vs first scenario, per year"] + [
-        ("—" if i == 0 else (_money((a["total"] - base) * k, cur),
-                             "ghp-neg" if a["total"] > base + 0.5 else "ghp-pos"))
-        for i, a in enumerate(acc)])
+        ("—" if i == 0 else (_money(y - years[0], cur),
+                             "ghp-neg" if y > years[0] + 0.5 else "ghp-pos"))
+        for i, y in enumerate(years)])
     # HiGHS reports an infinite MIP gap for a model with no integers in it at
     # all -- a scenario with no fuel-fired units is a plain LP -- and "gap inf%"
     # is not a thing to show anybody. There is no gap to report, so report none.
@@ -915,18 +987,22 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
     adds and the years that CAPEX takes to pay back."""
     cur, capex = out["currency"], out["bat"].get("capex", 0.0)
     A._CUR = cur
-    k = MAX_H / hours
     rows = []
     for o in others:
         save = o["acc"]["total"] - run["acc"]["total"]
-        year = save * k
-        extra = (capex if run["battery"] and not o["battery"] else
-                 -capex if o["battery"] and not run["battery"] else 0.0)
+        year, extra, lc, reverse = _pair_life(run, o, out, hours)
         if extra > 0:
-            pay = (f"{extra / year:,.1f} years", "ghp-pos") if year > 0 else ("never", "ghp-neg")
+            pay = ((f"{lc.simple_payback_years:,.1f} years", "ghp-pos")
+                   if lc.simple_payback_years is not None else ("never", "ghp-neg"))
         elif extra < 0:
-            pay = ("saves the CAPEX" if year >= 0 else f"{-extra / -year:,.1f} years (the other way)",
-                   "ghp-pos" if year >= 0 else "ghp-neg")
+            # the other scenario buys the battery: this one saves its CAPEX, or
+            # the battery pays back from the other side, or neither
+            if year >= 0:
+                pay = ("saves the CAPEX", "ghp-pos")
+            elif lc.simple_payback_years is not None:
+                pay = (f"{lc.simple_payback_years:,.1f} years (the other way)", "ghp-neg")
+            else:
+                pay = ("never, either way", "ghp-neg")
         else:
             pay = ("—", "")
         cls = "ghp-pos" if save >= 0 else "ghp-neg"
@@ -935,15 +1011,45 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
     P.table(["Compared with", "Saving over the window", "Saving per year",
              "Extra battery CAPEX", "Payback"], rows)
     note = [f"<b>{run['name']}</b> against each other scenario; positive = cheaper to run",
-            f"battery CAPEX <b>{_money(capex, cur)}</b>"]
-    if hours != MAX_H:
+            f"battery CAPEX <b>{_money(capex, cur)}</b>",
+            "payback is simple — undiscounted — and counts the battery's own O&M and "
+            "replacement (Battery panel); the table below discounts it",
+            _year_basis(out, hours)]
+    if hours != MAX_H and not out.get("time") and not out.get("typical"):
         # How good that scaling is, measured rather than assumed: tools/
         # test_year_horizon.py cut a solved year 52 ways and annualised each week.
-        note.append(f"per year = window × 8,760 / {hours:,} h — an annualisation of this "
-                    f"window, not a full-year run. Measured against a solved year "
-                    f"(REPORT.md Part 16): a single week lands between −15% and +23% of "
-                    f"it, a single month up to +18%. The payback below carries that error")
+        note.append("this is an annualisation of one window, not a full-year run. Measured "
+                    "against a solved year (REPORT.md Part 16): a single week lands between "
+                    "−15% and +23% of it, a single month up to +18%. The payback carries "
+                    "that error")
     P.note(note)
+
+
+def _pair_life(run: dict, o: dict, out: dict, hours: int):
+    """``run`` against ``o`` over the analysis period.
+
+    Returns the annual saving of ``run`` over ``o``, the battery CAPEX the choice
+    involves (+ when ``run`` buys it, − when ``o`` does, 0 otherwise), the
+    lifecycle of whichever side buys the battery -- its saving net of the
+    battery's O&M and replacement -- and whether that side is ``o``."""
+    life = out.get("life") or {}
+    years = int(life.get("years", 25))
+    esc, disc = float(life.get("escalation", 0.0)), float(life.get("discount", 0.0))
+    bat = out["bat"]
+    capex = float(bat.get("capex", 0.0))
+    terms = dict(om_fraction=float(bat.get("om_fraction", 0.0)),
+                 replace_year=int(bat.get("replace_year", 0) or 0),
+                 replace_fraction=float(bat.get("replace_fraction", 0.0)))
+    year = _run_year(o, out, hours) - _run_year(run, out, hours)
+    if run["battery"] and not o["battery"]:
+        return year, capex, Y.lifecycle(_run_year(run, out, hours), years=years, escalation=esc,
+                                        discount=disc, annual_saving=year, capex=capex,
+                                        **terms), False
+    if o["battery"] and not run["battery"]:
+        return year, -capex, Y.lifecycle(_run_year(o, out, hours), years=years, escalation=esc,
+                                         discount=disc, annual_saving=-year, capex=capex,
+                                         **terms), True
+    return year, 0.0, None, False
 
 
 def measured_account(meas: dict, price: list[float], units: pd.DataFrame,
@@ -984,6 +1090,104 @@ def measured_account(meas: dict, price: list[float], units: pd.DataFrame,
                 start_cost=start_cost, total=gen_cost + grid_cost + start_cost)
 
 
+def measured_hourly(meas: dict, price: list[float], units: pd.DataFrame,
+                    on_kw: float = ON_KW) -> list[float]:
+    """``measured_account``'s cost, hour by hour: what each logged hour cost.
+
+    Same pricing, same starts (an hour whose output rises past ``on_kw`` carries
+    that start's cost), so the hours add up to ``measured_account(...)["total"]``.
+    It exists so that a measured year can be weighted by calendar month."""
+    gpu, grid = meas["gpu"], meas["grid"]
+    H = len(gpu)
+    live = [u for _, u in units.iterrows() if float(u[U_KW] or 0.0) > 0]
+    per_unit = meas.get("gpu_units") or []
+    cost = [p * max(0.0, g) for p, g in zip(price, grid)]
+    if per_unit and len(per_unit) == len(live):
+        for u, series in zip(live, per_unit):
+            sc = float(u[U_START] or 0.0)
+            for t, kw in enumerate(series):
+                cost[t] += unit_hour_cost(u, kw, 1.0 if kw > on_kw else 0.0)
+                if t and series[t - 1] < on_kw <= kw:
+                    cost[t] += sc
+        return cost
+    rows = [(float(u[U_COST] or 0.0) + float(u.get(U_OM) or 0.0), float(u[U_START] or 0.0))
+            for u in live]
+    e_cost = sum(r[0] for r in rows) / len(rows) if rows else 0.0
+    s_cost = sum(r[1] for r in rows) / len(rows) if rows else 0.0
+    for t in range(H):
+        cost[t] += gpu[t] * e_cost
+        if t and gpu[t - 1] < on_kw <= gpu[t]:
+            cost[t] += s_cost
+    return cost
+
+
+def _run_hourly_cost(run: dict) -> list[float]:
+    """A scenario's operating cost hour by hour (energy + starts + wear)."""
+    h = run["hourly"]
+    return [e + o for e, o in zip(h["energy"], h["ops"])]
+
+
+def _annual(out: dict, hours: int, total: float, hourly_values: list[float] | None = None) -> float:
+    """A horizon's figure carried to a year.
+
+    With the hours' own timestamps (a measured plant) the year is weighted by
+    calendar month (``year_study.month_year``); without them the horizon is
+    scaled by 8,760 / hours, which is all a timeless upload allows."""
+    t = out.get("time")
+    if t and hourly_values is not None and len(t) == len(hourly_values):
+        return Y.month_year(t, hourly_values)[0]
+    return Y.annualise(total, hours)
+
+
+def _run_year(run: dict, out: dict, hours: int) -> float:
+    return _annual(out, hours, run["acc"]["total"], _run_hourly_cost(run))
+
+
+_MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _year_basis(out: dict, hours: int) -> str:
+    """How 'per year' was reached, in words for the notes under a table."""
+    t = out.get("time")
+    if t and len(t) == hours:
+        _, missing = Y.month_year(t, [0.0] * hours)
+        gap = (" Months with no measured hour, filled from the measured months either "
+               "side: <b>" + ", ".join(_MONTHS[m - 1] for m in missing) + "</b>.") if missing else ""
+        return ("per year = each calendar month's measured hours averaged and multiplied "
+                "by the month's length, so a month measured twice counts once." + gap)
+    if hours == MAX_H:
+        return "the horizon is a year: nothing is annualised"
+    return f"per year = the horizon × 8,760 / {hours:,} h"
+
+
+def _unresolved(runs: list[dict]) -> list[tuple[str, str, float, float]]:
+    """Battery comparisons the solver did not resolve.
+
+    A battery's saving is a difference of two costs, each known only to within
+    the gap the solver stopped at. When the saving is no bigger than the two
+    gaps together, its sign is not established. Returns (battery scenario,
+    its base, saving over the horizon, tolerance) for each such pair."""
+    def tol(a: dict) -> float:
+        g = a.get("gap")
+        ok = isinstance(g, float) and g == g and abs(g) != float("inf")
+        return (abs(g) if ok else 0.0) * abs(a["total"])
+    out = []
+    for r in runs:
+        if not r["battery"]:
+            continue
+        others = [o for o in runs if o is not r]
+        if not others:
+            continue
+        b = _default_base(r, others)
+        if b["battery"]:
+            continue
+        save = b["acc"]["total"] - r["acc"]["total"]
+        t = tol(r["acc"]) + tol(b["acc"])
+        if t > 0 and abs(save) <= t:
+            out.append((r["name"], b["name"], save, t))
+    return out
+
+
 def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
     """The logged year beside the optimised ones, on the same prices."""
     meas, H = out.get("measured"), out.get("hours")
@@ -1008,25 +1212,33 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
     rows.append(["Saving against measured, window", "—"] + [
         (money(m["total"] - a["total"]),
          "ghp-pos" if a["total"] < m["total"] - 0.5 else "ghp-neg") for a in acc])
-    # the same per year, as the comparison above annualises: by hours
-    k = MAX_H / H
-    rows.append([f"Saving against measured, per year (× {k:,.2f})", "—"] + [
-        (money((m["total"] - a["total"]) * k),
-         "ghp-pos" if a["total"] < m["total"] - 0.5 else "ghp-neg") for a in acc])
-    P.table(head, rows, [f"Operating cost per year (× {k:,.2f})", money(m["total"] * k)]
-            + [money(a["total"] * k) for a in acc])
+    # the same per year, on the same basis as the comparison above
+    price = out.get("price_raw") or out["price"]
+    m_year = _annual(out, H, m["total"], measured_hourly(meas, price, out["units"]))
+    years = [_run_year(r, out, H) for r in runs]
+    rows.append(["Saving against measured, per year", "—"] + [
+        (money(m_year - y), "ghp-pos" if y < m_year - 0.5 else "ghp-neg") for y in years])
+    P.table(head, rows, ["Operating cost per year", money(m_year)] + [money(y) for y in years])
+    measured_av = out.get("availability") == AV_MEASURED
     P.note(["<b>Measured</b> is the logger's own hours priced with this page's inputs: each "
             "engine at its own hourly output, on its part-load curve where it has one; a "
             "start whenever output rises past 50 kW; the grid at the grid price",
             "load here is engines + grid as logged; it differs from the plant meter by the "
             "balance error (within 20 kW on most hours)",
             "what the site sent to the city is priced at zero, as in every scenario",
+            _year_basis(out, H),
             "a typical-days year is the clustered year, so its load is not hour for hour "
             "the logged one — compare totals, not hours",
             "<b>this saving is not the battery's</b>: a scenario without a battery saves "
             "nearly as much. It is the distance between how the engines ran and how they "
-            "could have run — and the model knows no outage, no service stop and no "
-            "limit the site's own control imposed, so part of it may not be reachable"])
+            "could have run"
+            + (" with the availability they really had — each engine runs only in the hours "
+               "the logger shows it running. The model still knows no limit the site's own "
+               "control imposed (gas, derating, set-points), so part of it may not be reachable"
+               if measured_av else
+               " — and the engines are taken as always available: the model knows no outage, "
+               "no service stop and no limit the site's own control imposed, so much of it "
+               "is not reachable. Choose availability as measured in the Units panel")])
 
 
 def _pay(simple: float | None, disc: float | None, tail: str = "") -> tuple[str, str]:
@@ -1048,61 +1260,63 @@ def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
     scenario already reported and applies REopt's own present-worth factor, the
     one ``reopt_core.finance.annuity`` builds. See ``year_study.lifecycle``.
     """
-    cur, capex = out["currency"], out["bat"].get("capex", 0.0)
+    cur, bat = out["currency"], out["bat"]
+    capex = float(bat.get("capex", 0.0))
     A._CUR = cur                 # _signed() formats in it; do not inherit it by luck
     life = out.get("life") or {}
     years = int(life.get("years", 25))
     esc, disc = float(life.get("escalation", 0.0)), float(life.get("discount", 0.0))
-    own = Y.lifecycle(Y.annualise(run["acc"]["total"], hours),
-                      years=years, escalation=esc, discount=disc)
+    own = Y.lifecycle(_run_year(run, out, hours), years=years, escalation=esc, discount=disc)
 
     rows = []
     for o in others:
-        year = Y.annualise(o["acc"]["total"] - run["acc"]["total"], hours)
-        extra = (capex if run["battery"] and not o["battery"] else
-                 -capex if o["battery"] and not run["battery"] else 0.0)
-        lc = Y.lifecycle(Y.annualise(run["acc"]["total"], hours), years=years,
-                         escalation=esc, discount=disc, annual_saving=year,
-                         capex=max(0.0, extra))
+        year, extra, lc, reverse = _pair_life(run, o, out, hours)
+        pv = own.pwf * year
         cls = "ghp-pos" if year >= 0 else "ghp-neg"
         # Net present value of choosing this scenario over that one: the present
-        # value of what it saves, less the capital it has to spend to save it. A
-        # negative ``extra`` means the OTHER scenario is the one spending, so not
-        # spending it counts in this scenario's favour -- hence minus extra, not
-        # minus max(0, extra).
-        net = lc.saving_present_value - extra
-        if extra > 0:
-            pay = _pay(lc.simple_payback_years, lc.discounted_payback_years)
-        elif extra < 0:
-            # The comparison read from the other side, the way the savings strip
-            # above words it: it is that scenario's CAPEX being repaid, or not.
-            back = Y.lifecycle(0.0, years=years, escalation=esc, discount=disc,
-                               annual_saving=-year, capex=-extra)
-            pay = _pay(back.simple_payback_years, back.discounted_payback_years,
-                       " reversed")
+        # value of what it saves, less what the battery costs over the period --
+        # its CAPEX, its O&M and its replacement -- when this scenario is the one
+        # that buys it, plus all of that when the OTHER one does.
+        if lc is None:
+            cost_pv, net, pay = 0.0, pv, ("—", "")
         else:
-            pay = ("—", "")
+            whole = lc.capex + lc.om_present_value + lc.replace_present_value
+            cost_pv = -whole if reverse else whole
+            net = -lc.net_present_value if reverse else lc.net_present_value
+            pay = _pay(lc.simple_payback_years, lc.discounted_payback_years,
+                       " reversed" if reverse else "")
         rows.append([
             o["name"],
             (A._signed(year), cls),
-            (A._signed(lc.saving_present_value), cls),
-            _money(extra, cur) if extra else "—",
+            (A._signed(pv), cls),
+            _money(cost_pv, cur) if cost_pv else "—",
             (A._signed(net), "ghp-pos" if net >= 0 else "ghp-neg"),
             pay,
         ])
     P.table(["Compared with", "Saving per year", f"Present value, {years} yr",
-             "Extra CAPEX", "Net present value", "Payback"], rows,
+             "Battery: CAPEX + O&M + replacement", "Net present value", "Payback"], rows,
             [f"{run['name']} — operating cost", _money(own.annual_cost, cur) + " / yr",
              _money(own.present_value, cur), "", "", ""])
+    b = Y.lifecycle(0.0, years=years, escalation=esc, discount=disc, capex=capex,
+                    om_fraction=float(bat.get("om_fraction", 0.0)),
+                    replace_year=int(bat.get("replace_year", 0) or 0),
+                    replace_fraction=float(bat.get("replace_fraction", 0.0)))
     P.note([
         f"present worth factor <b>{own.pwf:.4f}</b> over <b>{years}</b> years "
         f"at {100 * esc:.2f}% escalation and {100 * disc:.2f}% discount",
         "the factor is REopt's own <b>annuity</b> (utils.jl:11), which charges year 1 "
         "already escalated once",
-        "payback reads <b>simple / discounted</b>: undiscounted CAPEX ÷ year-one saving, "
-        "then the year in which the discounted savings have repaid it",
-        "<b>reversed</b> marks a row where it is the other scenario's CAPEX being repaid",
+        f"the battery over the period, in present value: CAPEX <b>{_money(capex, cur)}</b> + "
+        f"O&M {100 * b.om_fraction:.1f} % of it a year, escalated (<b>{_money(b.om_present_value, cur)}</b>)"
+        + (f" + replacement at {100 * b.replace_fraction:.0f} % of it in year {b.replace_year} "
+           f"(<b>{_money(b.replace_present_value, cur)}</b>)" if b.replace_present_value else
+           " + no replacement inside the period"),
+        "payback reads <b>simple / discounted</b>, both from the same yearly cash flows — the "
+        "escalated saving less the battery's O&M and, in its year, its replacement: the year "
+        "from which the cumulative stays above the CAPEX, undiscounted and then discounted",
+        "<b>reversed</b> marks a row where it is the other scenario's battery being repaid",
         "one year repeated with escalation — REopt's own lifetime convention",
+        _year_basis(out, hours),
     ])
 
 
@@ -1477,6 +1691,33 @@ def render() -> None:
                    "start cost, and minimum up and down times. Leave a row's rating at 0 to "
                    "drop it; an empty table means grid (and battery) only.")
         _maint_note(units, len(load))
+        # A measured plant's engines were not always there to run: the logger
+        # shows when each one stood still. "As measured" lets an engine run only
+        # in its logged running hours; "always available" is the plant with no
+        # outage at all, which on these sites is a different, cheaper plant.
+        avail_mode, avail = None, None
+        if measured is not None and measured.get("gpu_units"):
+            avail_mode = st.radio(
+                "Engine availability", [AV_MEASURED, AV_FREE], index=0, key="gd_avail",
+                horizontal=True,
+                help="As measured: an engine may run only in the hours the logger shows it "
+                     f"running (above {ON_KW:.0f} kW) — its outages, services and the "
+                     "operator's stops are kept. Always available: the dispatch may run any "
+                     "engine in any hour, which no real plant can.")
+            if avail_mode == AV_MEASURED:
+                avail = measured_availability(measured, units)
+                if avail is None:
+                    st.warning("The units table no longer has one row per logged engine, so "
+                               "the logger's hours cannot be paired with the rows. The engines "
+                               "are taken as always available for this run.",
+                               icon=":material/link_off:")
+                    avail_mode = AV_FREE
+                else:
+                    live_names = [str(u[U_NAME]) for _, u in units.iterrows()
+                                  if float(u[U_KW] or 0.0) > 0]
+                    st.caption("Down in the logger: " + " · ".join(
+                        f"{n} {sum(1 for v in a if v < 0.5):,} h of {len(a):,}"
+                        for n, a in zip(live_names, avail)) + ".")
         # What the Site panel above will count as the fleet on the next rerun.
         # The edited frame itself is deliberately NOT written back to
         # gd_units_df: st.data_editor holds its edits as a delta against the
@@ -1502,18 +1743,47 @@ def render() -> None:
                                    step=0.1, key="gd_wear")
             capex = st.number_input(f"Battery CAPEX ({cur})", 0.0, value=391_000_000.0,
                                     step=1_000_000.0, format="%.0f", key="gd_capex",
-                                    help="Only for payback: CAPEX divided by the annual saving "
-                                         "against a scenario without the battery.")
+                                    help="Only for the economics: the payback and the net "
+                                         "present value against a scenario without the "
+                                         "battery. It never enters the dispatch.")
             grid_charge = st.checkbox("Allow grid charging", value=False, key="gd_gridchg")
         with c4:
             soc_mode = st.radio("State of charge at the start",
                                 ["Cyclic (end = start)", "Fixed"], key="gd_socmode")
             soc_init = st.number_input("Start SoC (%)", 0.0, 100.0, 50.0, step=5.0,
                                        key="gd_socinit", disabled=soc_mode != "Fixed")
+        # What the battery costs to KEEP, not to run: these never enter the
+        # dispatch, only the payback and the net present value. The wear cost
+        # above is per kWh discharged and does enter the dispatch.
+        c5, c6, c7 = st.columns(3)
+        with c5:
+            om_pct = st.number_input(
+                "Battery O&M (% of CAPEX per year)", 0.0, 20.0, SOURCES["bat_om"][0], step=0.1,
+                key="gd_bat_om",
+                help="Fixed upkeep of the battery, escalated each year like the operating "
+                     "costs. 2.5 % is REopt's own default for ElectricStorage "
+                     "(om_cost_fraction_of_installed_cost, electric_storage.jl:188).")
+        with c6:
+            rep_year = int(st.number_input(
+                "Replacement in year (0 = none)", 0, 40, int(SOURCES["bat_replace_year"][0]),
+                step=1, key="gd_bat_rep_year",
+                help="One replacement of the battery in this year of the analysis period, "
+                     "discounted to today. 10 is REopt's own battery_replacement_year; a year "
+                     "at or beyond the period means no replacement, as in REopt."))
+        with c7:
+            rep_pct = st.number_input(
+                "Replacement cost (% of CAPEX)", 0.0, 200.0, SOURCES["bat_replace_cost"][0],
+                step=5.0, key="gd_bat_rep_cost",
+                help="Paid in the replacement year, in that year's money. REopt's own default "
+                     "replacement cost is 0; the study charges the battery's full price "
+                     "because the project has no warranty or augmentation terms. Lower it "
+                     "when you have them.")
         st.caption("Size is fixed; each scenario below switches the battery on or off.")
     bat = dict(kw=b_kw, kwh=b_kwh, rte=rte / 100.0, soc_min=soc_min / 100.0,
                soc_init=soc_init / 100.0, cyclic=soc_mode.startswith("Cyclic"),
-               wear=wear, grid_charge=grid_charge, capex=capex)
+               wear=wear, grid_charge=grid_charge, capex=capex,
+               om_fraction=om_pct / 100.0, replace_year=rep_year,
+               replace_fraction=rep_pct / 100.0)
 
     # ---- 4b. where every input comes from -----------------------------------
     if site is not None:
@@ -1582,7 +1852,14 @@ def render() -> None:
                                         "A year of commitment can take a long time; the page "
                                         "waits for it.")
         with c2:
-            gap = st.number_input("Optimality gap (%)", 0.0, 10.0, 0.5, step=0.1, key="gd_gap")
+            gap = st.number_input(
+                "Optimality gap (%)", 0.0, 10.0, GAP_DEFAULT, step=0.01, format="%.2f",
+                key="gd_gap",
+                help="How close to the proven optimum the solver must get. A battery changes "
+                     "the operating cost by about 1 %, so the gap has to be well below that "
+                     "for a battery comparison to mean anything; 0.01 % costs a fraction of "
+                     "a second on a day. A comparison the gap cannot resolve is named under "
+                     "the results.")
 
     # ---- 6. how a year is covered, and what 25 of them are worth ----------------
     T.panel_head("A year, and twenty-five of them")
@@ -1590,18 +1867,27 @@ def render() -> None:
         whole = len(load) % 24 == 0 and len(load) // 24 >= 4
         cover = st.radio(
             "How to cover the horizon",
-            [COVER_WINDOW, COVER_DAYS], key="gd_cover", horizontal=True,
-            # a measured plant is thousands of hours of binaries: typical days by default
-            index=1 if site is not None else 0,
+            [COVER_WINDOW, COVER_DAYS, COVER_EVERY], key="gd_cover", horizontal=True,
+            # A measured plant is thousands of hours of binaries, so it is never
+            # solved as one window. It is solved day by day: its few hundred days
+            # take about a minute, each day keeps its own engine availability, and
+            # a scenario difference -- the battery's saving -- survives, which it
+            # does not through 12 typical days (REPORT.md Part 16).
+            index=2 if site is not None else 0,
             help="A full year of on/off units is 8,760 hours of binaries and does not "
-                 "solve. Clustering the days into a few typical ones and weighting them "
-                 "by how many real days each stands for is the standard answer "
-                 "(Kotzur et al., Applied Energy 213 (2018) 123-135). Measured on this "
-                 "calculator: 12 typical days reproduced a solved year to 0.01 %.")
+                 "solve as one window. Typical days cluster the days into a few and weight "
+                 "them by how many real days each stands for (Kotzur et al., Applied Energy "
+                 "213 (2018) 123-135): 12 of them reproduce a year's total cost to a few "
+                 "tenths of a percent, but not the difference between two scenarios — on "
+                 "the measured Zharkent plants the battery's saving came out 17 % low. "
+                 "Every day solved on its own keeps every day, and each day's measured "
+                 "engine availability, at the price of solving them all.")
         year_mode = cover == COVER_DAYS and whole
-        if cover == COVER_DAYS and not whole:
-            st.warning(f"Typical days need at least four whole days of load; this horizon "
-                       f"is {len(load):,} hours. Solving the window as posed instead.",
+        every_mode = cover == COVER_EVERY and whole
+        if cover in (COVER_DAYS, COVER_EVERY) and not whole:
+            st.warning(f"{'Typical days' if cover == COVER_DAYS else 'Solving day by day'} "
+                       f"needs at least four whole days of load; this horizon is "
+                       f"{len(load):,} hours. Solving the window as posed instead.",
                        icon=":material/warning:")
         c1, c2, c3 = st.columns(3)
         with c1:
@@ -1611,8 +1897,11 @@ def render() -> None:
             kdays = st.number_input("Typical days", 2, 60, Y.suggest_k(365),
                                     step=1, key="gd_kdays", disabled=not year_mode,
                                     help="Each one is solved once, then laid down on every "
-                                         "real day of its cluster. 4 already lands within "
-                                         "0.5 %, 8 within 0.02 %, 12 within 0.01 %.")
+                                         "real day of its cluster. On a synthetic year 12 "
+                                         "landed within 0.01 % of the total cost; on the "
+                                         "measured plants within 0.3 %, but a scenario "
+                                         "difference such as a battery's saving was off by "
+                                         "up to 17 % at 12 and still 4 % at 60.")
         with c2:
             yrs = st.number_input("Analysis period (years)", 1, 40, 25, step=1, key="gd_years",
                                   help="REopt's own default is 25 years.")
@@ -1631,7 +1920,17 @@ def render() -> None:
                        f"instead of {len(load):,}. The horizon's energy is preserved exactly; "
                        f"its peak is smoothed by the clustering; the starts created where "
                        f"two unlike days meet are counted and charged, but a minimum up or "
-                       f"down time spanning that join is not enforced.")
+                       f"down time spanning that join is not enforced."
+                       + (" A typical day's engine availability is the mean of its days: an "
+                          "outage becomes a derate. Solve every day on its own to keep the "
+                          "outages." if avail is not None else ""))
+        elif every_mode:
+            st.caption(f"All {len(load) // 24:,} days solved one by one, each as a 24-hour "
+                       f"cycle{' with its own measured engine availability' if avail is not None else ''}, "
+                       f"then laid end to end: nothing is clustered and nothing smoothed. The "
+                       f"starts created where two days meet are counted and charged; a minimum "
+                       f"up or down time spanning midnight is not enforced, and the battery "
+                       f"cannot carry energy from one day to the next.")
         elif len(load) > 168 and len(units.index):
             st.info(f"{len(load):,} hours with on/off units means "
                     f"{len(load) * len(units.index):,} commitment binaries per scenario; "
@@ -1657,13 +1956,17 @@ def render() -> None:
             # build(), after the day has been chosen.
             # Never ask for more typical days than the load has days to give.
             kk = max(1, min(int(kdays), len(load) // 24))
-            typ = Y.cluster(load, price, kk) if year_mode else None
+            typ = (Y.every_day(load, price) if every_mode else
+                   Y.cluster(load, price, kk) if year_mode else None)
+            if typ is not None:
+                kk = typ.k
             price_used = list(price)
             if typ is not None:
                 price_used = [p for c in typ.day_of for p in typ.price[c]]
+            day_word = "day" if every_mode else "typical day"
             for i, sc in enumerate(rows):
                 prog.progress(i / len(rows), text=f"Solving {sc[S_NAME]} ({i + 1} of {len(rows)})")
-                inp = build(load, price, units, bat, sc, grid_cap)
+                inp = build(load, price, units, bat, sc, grid_cap, avail=avail)
                 if typ is not None:
                     # The year the design will show is the typical days replayed,
                     # so the tariff it prices hours with has to be the replayed
@@ -1681,13 +1984,18 @@ def render() -> None:
                     # out, a year the wire cannot carry came back Optimal: 415 h
                     # above a 2,500 kW cap on the fitted default site, where the
                     # window solved as posed is Infeasible.
+                    # Each day is posed with its own engine availability: the
+                    # day's own when every day stands alone, its days' mean
+                    # when it stands for a cluster.
                     res = Y.solve_year(
-                        lambda dl, dp, _sc=sc: build(dl, dp, units, bat, _sc, grid_cap),
-                        load, price, kk, typical=typ,
+                        None, load, price, kk, typical=typ,
+                        day_pose=lambda c, dl, dp, _sc=sc: build(
+                            dl, dp, units, bat, _sc, grid_cap,
+                            avail=day_availability(avail, typ, c)),
                         time_limit=lim, mip_gap=float(gap) / 100.0,
                         on_day=lambda c, k, _n=sc[S_NAME], _i=i: prog.progress(
                             (i + c / k) / len(rows),
-                            text=f"Solving {_n}: typical day {c + 1} of {k}"))
+                            text=f"Solving {_n}: {day_word} {c + 1} of {k}"))
                 else:
                     res = M.solve(inp, time_limit=lim, mip_gap=float(gap) / 100.0)
                 # A rule the solver could not answer is not a cheap rule. Its
@@ -1732,7 +2040,9 @@ def render() -> None:
                                 "fleet_capex": fleet_capex(units),
                                 "grid_cap": grid_cap,
                                 "typical": (None if typ is None else
-                                            {"k": typ.k, "weights": list(typ.weights)}),
+                                            {"k": typ.k, "weights": list(typ.weights),
+                                             "every": bool(every_mode)}),
+                                "availability": avail_mode,
                                 "life": {"years": int(yrs), "escalation": float(esc) / 100.0,
                                          "discount": float(disc) / 100.0}}
         except Exception as exc:  # show the real reason
@@ -1795,22 +2105,49 @@ def render() -> None:
               "the horizon before reading anything into a difference.",
             icon=":material/rule:")
 
+    # A battery's saving is a difference of two costs, each known only to the gap
+    # the solver stopped at. When the saving fits inside those gaps its sign is
+    # not established, however many digits the table prints.
+    _unres = _unresolved(runs)
+    if _unres:
+        st.warning(
+            "Not resolved by the solver: "
+            + "; ".join(f"**{n}** against **{b}** saves {_money(s, cur)} over the horizon, "
+                        f"inside the {_money(t, cur)} the two remaining gaps allow"
+                        for n, b, s, t in _unres)
+            + ". Lower the optimality gap (0.01 % is the default) and solve again before "
+              "reading a payback off it.",
+            icon=":material/rule:")
+
     if out.get("typical"):
         t = out["typical"]
         n_days = sum(t["weights"])
         # a measured plant's horizon is its measured days, not a calendar year
         full_year = n_days * 24 == MAX_H
-        P.note([f"{'a year' if full_year else f'the {n_days:,} days of the horizon'} from "
-                f"<b>{t['k']}</b> typical days, weighted "
-                f"{' + '.join(str(w) for w in t['weights'])} = <b>{n_days}</b> days",
-                "every figure below is the weighted year, so nothing needs annualising"
-                if full_year else
-                "every figure below is these days, weighted; a row that says per year "
-                f"scales them by 8,760 / {n_days * 24:,} h",
-                "energy over the horizon is exact; the peak is smoothed by the clustering; the starts "
-                "the joins between unlike days create are counted and charged, a minimum up "
-                "or down time spanning a join is not (method: Kotzur et al. 2018)"])
-    _compare(runs, cur, H, out.get("wear_h", 15.0))
+        if t.get("every"):
+            how = (f"{'a year' if full_year else f'the {n_days:,} days of the horizon'}, "
+                   f"<b>every day solved on its own</b> and laid end to end — nothing clustered")
+            edge = ("energy, peak and every day's own load are exact; the starts the joins "
+                    "between days create are counted and charged, a minimum up or down time "
+                    "spanning midnight is not, and the battery closes each day where it began")
+        else:
+            how = (f"{'a year' if full_year else f'the {n_days:,} days of the horizon'} from "
+                   f"<b>{t['k']}</b> typical days, weighted "
+                   f"{' + '.join(str(w) for w in t['weights'])} = <b>{n_days}</b> days")
+            edge = ("energy over the horizon is exact; the peak is smoothed by the clustering; "
+                    "the starts the joins between unlike days create are counted and charged, "
+                    "a minimum up or down time spanning a join is not (method: Kotzur et al. "
+                    "2018). The total cost survives clustering better than a difference "
+                    "between scenarios does")
+        P.note([how,
+                "every figure below is the horizon itself; a row that says per year is "
+                "carried to a year as stated beside it",
+                edge])
+    if out.get("availability"):
+        P.note([f"engine availability: <b>{out['availability']}</b>"
+                + ("" if out["availability"] == AV_MEASURED else
+                   " — the plant as if no engine ever stopped; the logger says otherwise")])
+    _compare(runs, cur, H, out.get("wear_h", 15.0), out)
     _measured_vs(out, runs, cur)
 
     T.panel_head("Economics of one scenario against the others")

@@ -1277,7 +1277,7 @@ is not REopt and cannot be checked against the site.
 | Fuel-fired units | one row per unit: rated kW, energy cost per kWh (on rated output, spill included), start cost, minimum load %, minimum up / down hours, spill allowed; presets for the JSX's 2- and 3-unit fleets |
 | Battery | power, energy, round-trip efficiency, minimum SoC, wear cost per kWh discharged, grid charging, cyclic or fixed starting SoC |
 | Scenarios | any number of rows, each solved separately: minimum-load override, battery on / off, **load scale %** — the variability axis; the JSX's A / B / C are filled in |
-| Coverage and lifetime | solve the window as posed, or **a year from k typical days** (weighted, k = 12 by default); analysis period, operating-cost escalation and discount rate for the 25-year table |
+| Coverage and lifetime | solve the window as posed, **a year from k typical days** (weighted, k = 12), or **every day solved on its own** (the default for a measured plant); analysis period, operating-cost escalation and discount rate for the 25-year table |
 
 The engine is the same MILP with the finance switched off (one period, no discounting,
 tax or capital cost), so the objective is the plain operating cost of the horizon — the
@@ -1339,10 +1339,16 @@ up to 3 a day. A cap of one start per unit per day holds on every unit-day and c
 cap reproduces the uncapped week to the tenge (`tools/test_dispatch_study.py`).
 
 **A year, and twenty-five of them.** A sixth panel, *Coverage and lifetime*, decides how the
-horizon is covered and what a lifetime of it is worth. Two choices:
+horizon is covered and what a lifetime of it is worth. Three choices:
 
 * **Solve the window as posed** — the original behaviour, unchanged, down to the tenge
   (`tools/test_year_cases.py` case 5).
+* **Every day solved on its own** — `year_study.every_day`: no clustering, day *c* of
+  the horizon is solved as a 24-hour cycle and laid back in its place, with the joins
+  between days counted as below. The default for a measured plant since the real-data
+  check in Part 16: its few hundred days take about a minute, a scenario *difference*
+  survives (it does not through 12 typical days), and each day can carry its own measured
+  engine availability (Units panel, *Engine availability*, "as measured" by default).
 * **A year from typical days (weighted)** — the load's days are clustered into *k* typical
   ones (k-means++ on each day's 24 load hours beside its 24 price hours, each part
   normalised by its own maximum), each typical day is solved **by the core, as an ordinary
@@ -1389,15 +1395,45 @@ the REopt panels'. This is also REopt's own lifetime convention, in NREL's words
 one year of resource and cost data with present worth factors to account for life-time costs,
 assuming that one year repeats with degradation and escalation factors". Analysis period
 (25 yr), escalation (3.4 %/yr, REopt's fuel default) and discount rate (6.24 %/yr, REopt's
-offtaker default) are inputs, because this section is not REopt and says so. Simple payback
-is undiscounted CAPEX ÷ year-one saving; discounted payback is the year in which the
-discounted savings have repaid the CAPEX, interpolated inside that year, and "never" when
-they do not. Read from the other side of a comparison the table mirrors itself and says "(the
-other way)", as the savings strip above it already does.
+offtaker default) are inputs, because this section is not REopt and says so.
+
+The battery also costs money to keep, and the table counts it:
+* **O&M** — 2.5 % of CAPEX a year, escalated: REopt's own ElectricStorage default,
+  `electric_storage.jl:188`.
+* **One replacement** — in year 10 (REopt's `battery_replacement_year`) at 100 % of
+  CAPEX. REopt's own replacement-cost default is 0; the project has no warranty or
+  augmentation terms, so the study charges the full price and marks it *not confirmed*.
+* Both are inputs in the Battery panel. A replacement at or beyond the analysis period is
+  none, REopt's rule.
+
+Both paybacks are read off one series of yearly cash flows — the escalated saving, less the
+battery's O&M and, in its year, its replacement:
+* **simple** is undiscounted;
+* **discounted** uses the discount rate.
+
+Each is the year from which the cumulative stays above the CAPEX, interpolated inside that
+year, and "never" when it never does. A replacement can pull the cumulative back under the
+CAPEX after it first crossed; the payback is then the second crossing. Read from the other
+side of a comparison the table mirrors itself and says "(the other way)", as the savings
+strip above it already does.
+
+**Per year** on a measured plant is weighted by calendar month (`year_study.month_year`):
+* each month is the mean of its measured hours times the month's length;
+* a month measured twice counts once — Жаркент 3's data run from September to the next
+  October;
+* a month never measured takes the mean of its measured neighbours — ЖКПЗ has no December
+  or February, and the page names them.
+
+Without timestamps (an upload), per year is still the horizon × 8,760 / hours.
+
+The optimality gap defaults to **0.01 %**. A battery moves the operating cost by about 1 %,
+which the old 0.5 % could not resolve. When a battery's saving still fits inside the two
+remaining gaps, the page says so above the comparison.
 
 In the browser the default A / B / C day solves in under a minute; beyond a week, on/off
 units add one binary per unit per hour and a run may stop at its time limit with a small
-remaining gap, which the comparison table shows.
+remaining gap, which the comparison table shows. A measured plant solved day by day takes
+about a minute and a half for two scenarios (ЖКПЗ, 164 days).
 
 ---
 
@@ -1701,11 +1737,15 @@ the same quantity a second way. 60 checks, all passing.
 
 | Case | Load | Plant | What it proves | Simple / discounted payback |
 | --- | --- | --- | --- | ---: |
-| 1 Factory on an expensive grid | DOE hospital year, 2,194 kW mean, 19.223 GWh | 3 engines (1,067 + 1,200 + 1,100 kW), 90 % floor, 15,000 ₸/start, BESS 2,500 kW / 5,500 kWh | the app's weighted year equals the core solved day by day, to the tenge | **9.57 / 11.26 yr** |
-| 2 Cold store, deep nights | DOE warehouse year, peak 6,763 kW, quietest hour 330 kW | 2 × 900 kW, BESS 1,500 kW / 6,000 kWh with grid charging | a two-zone price survives clustering exactly, and the period view's energy charge is the study's own grid cost | **3.76 / 4.02 yr** |
-| 3 Data centre, flat | 4,200 kW every hour, 36.8 GWh; price 0.14 before 07:00, 0.38 after | 1 × 3,000 kW, BESS 1,200 kW / 4,800 kWh | a year of identical days clusters to **one** typical day and reproduces the whole solved year to the cent, 20× faster | **6.41 / 7.15 yr**, identical both ways |
-| 4 Island, no usable grid | DOE large-office year, peak 5,863 kW | 3 × 2,000 kW diesel, no commitment rules, BESS 2,000 kW / 8,000 kWh | the clustering error, measured against a year that can be solved whole | **260 yr / never** — the battery does not pay here |
-| 5 The JSX week, window mode | the artifact's own 168 hours | 2 engines + BESS | the old path is untouched, and what annualising one week does | **6.38 / 7.11 yr** against **6.14 / 6.82** from the year |
+| 1 Factory on an expensive grid | DOE hospital year, 2,194 kW mean, 19.223 GWh | 3 engines (1,067 + 1,200 + 1,100 kW), 90 % floor, 15,000 ₸/start, BESS 2,500 kW / 5,500 kWh | the app's weighted year equals the core solved day by day, to the tenge | **8.18 / 11.26 yr** |
+| 2 Cold store, deep nights | DOE warehouse year, peak 6,763 kW, quietest hour 330 kW | 2 × 900 kW, BESS 1,500 kW / 6,000 kWh with grid charging | a two-zone price survives clustering exactly, and the period view's energy charge is the study's own grid cost | **3.48 / 4.02 yr** |
+| 3 Data centre, flat | 4,200 kW every hour, 36.8 GWh; price 0.14 before 07:00, 0.38 after | 1 × 3,000 kW, BESS 1,200 kW / 4,800 kWh | a year of identical days clusters to **one** typical day and reproduces the whole solved year to the cent, 20× faster | **5.72 / 7.15 yr**, identical both ways |
+| 4 Island, no usable grid | DOE large-office year, peak 5,863 kW | 3 × 2,000 kW diesel, no commitment rules, BESS 2,000 kW / 8,000 kWh | the clustering error, measured against a year that can be solved whole | **never / never** — the battery does not pay here |
+| 5 The JSX week, window mode | the artifact's own 168 hours | 2 engines + BESS | the old path is untouched, and what annualising one week does | **5.69 / 7.11 yr** against **5.50 / 6.82** from the year |
+
+Simple paybacks now come from the same escalated yearly cash flows as the discounted ones
+(Part 13). They used to be CAPEX ÷ an unescalated year-one saving, which put case 1 at 9.57
+years and case 4 at 260. These cases charge no battery O&M or replacement; the page does.
 
 Case 4 is the measurement that matters, because both routes are available on it:
 
@@ -1722,7 +1762,7 @@ the whole year comes to 668,757,031 and 12 typical days to 668,625,580, again �
 
 Case 5 puts a number on the old shortcut on a case where the plant is the same and only the
 basis differs: one week annualised gives an operating cost 5.60 % below the year's, a saving
-3.62 % low and a payback 3.76 % long (6.38 against 6.14 years). That is the same defect Part
+3.62 % low and a payback 3.5 % long (5.69 against 5.50 years). That is the same defect Part
 16 measured in the abstract, arriving in the one figure a reader acts on.
 
 One trap found while building these cases and worth leaving written down: asking for a
@@ -1730,6 +1770,69 @@ One trap found while building these cases and worth leaving written down: asking
 because enabling storage creates one binary (the cost constant, `model.py:517`) and HiGHS
 then chases a gap the relaxation cannot close. At the app's own default of 0.5 % the same
 model solves in 8 seconds.
+
+## On the measured plants: what the section got wrong, and what changed
+
+Everything above was measured on synthetic years. Run on the Zharkent meters (Part 18), the
+machinery held — energy and accounting exact, the 25-year arithmetic exact — but the year it
+built answered a different question from the plant's.
+
+**Twelve typical days keep the total, not the difference.** The page's own path
+(`build` → `solve_year` → `account`, engines free), against every measured day solved alone:
+
+| k typical days | ЖКПЗ A | battery D − A, M ₸/yr | 90 % rule B − A | Жаркент 3 A | battery D − A | B − A |
+|---|---:|---:|---:|---:|---:|---:|
+| reference: every day alone | — | 4.58 | +0.61 | — | 5.10 | −3.85 |
+| 4 | −0.48 % | 2.49 | −2.47 | −1.03 % | 3.65 | −8.82 |
+| 12 (the old default) | −0.22 % | 3.62 | −0.93 | −0.27 % | 5.05 | −4.73 |
+| 12 at the old 0.5 % gap | −0.22 % | 3.62 | −0.96 | −0.27 % | 4.69 | −5.26 |
+| 60 (the old maximum) | −0.04 % | 4.17 | −0.41 | −0.45 % | 4.62 | −4.48 |
+| all days, through the same replay | +0.01 % | 4.34 | +0.35 | 0.00 % | 5.04 | −3.81 |
+
+* The total cost is within half a percent from k = 8.
+* A battery's saving is about 1 % of that cost, so the clustering error is the same size as
+  the answer. At k = 12 ЖКПЗ's battery saving came out 17–21 % low, and the 90 % rule's
+  saving changed sign. At the old 0.5 % gap the error on Жаркент 3's B − A grew from 24 %
+  to 38 %.
+* Clustering also smooths ЖКПЗ's peak from 2,549 to 2,127 kW and miscounts starts: 22 a
+  year against 33.
+* Solving every day costs about a minute for a measured plant's 164–293 days.
+
+**The day boundary is small.** Seven consecutive measured days solved as one 168-hour
+horizon, against the same days solved alone (8 weeks of ЖКПЗ, 23 of Жаркент 3):
+* cost moves by 0.04–0.33 %;
+* Жаркент 3's battery saves 8 % more when it may carry energy across midnight;
+* fewer starts are counted.
+
+None of this changes a decision here.
+
+**The year assumed engines that never stop.** ЖКПЗ's model A costs 327 M ₸/yr with the
+engines free, 409 M ₸/yr with only the hours they really ran, and 477 M ₸/yr as logged.
+
+**Per year scaled the measured days.** That left out ЖКПЗ's December and February (−3 %
+on its logged cost) and counted Жаркент 3's September and October twice.
+
+**The 25-year table left the battery's upkeep out.** At REopt's defaults that is O&M of
+9.8 M ₸ a year (PV 175 M ₸) and a replacement worth 213 M ₸ today in year 10.
+
+**The simple payback** divided by an unescalated saving while the discounted one escalated
+it.
+
+What changed, each with its test (`tools/test_year_measured.py`, `tools/test_year_finance.py`
+§1.8):
+
+1. **Engine availability "as measured"**, the default for a measured plant. The logger's
+   running hours (> 50 kW) reach the core as each engine's `production_factor_series`; an
+   engine the logger shows down produces nothing.
+2. **Every day solved on its own**, the default coverage for a measured plant
+   (`year_study.every_day`). The page path reproduces the reference run of Part 18 day for
+   day, to the tenge, with the engines free and as measured.
+3. **Optimality gap 0.01 % by default**, and a warning above the comparison whenever a
+   battery's saving fits inside the two remaining gaps.
+4. **Per year by calendar month** on any horizon with timestamps
+   (`year_study.month_year`), with the filled months named on the page.
+5. **Battery O&M (2.5 %/yr) and one replacement (year 10, 100 %)** in the 25-year table,
+   both editable. Both paybacks come from one series of cash flows.
 
 ## What this means for a 25-year answer over a custom dispatch
 
@@ -1811,6 +1914,7 @@ python calculator/tools/test_year_cases.py      # five cases end to end, each to
 python calculator/tools/reopt_jl.py <scenario.json>  # any REopt JSON through the local REopt.jl
 python calculator/tools/test_battery_real_data.py  # the measured-data battery study, fast checks
 python calculator/tools/battery_real_data.py all   # Part 18 in full on the meters (~10 min)
+python calculator/tools/test_year_measured.py      # the page's year on a measured plant (Part 16)
 ```
 
 ## Regenerating the UI spec after the real tool changes
@@ -1901,27 +2005,37 @@ What the meters show, and what limits the study:
   table below.
 * The lifecycle is `year_study.lifecycle`: REopt's annuity, 25 years, 3.4 % escalation,
   6.24 % discount.
-* **Break-even** is a saving of **21.8 M ₸/yr** with no battery replacement, or **30.6 M
-  ₸/yr** with one replacement at the same price in year 15.
+* The battery costs more than its CAPEX over the period. Its O&M is 2.5 % of CAPEX a year,
+  escalated: REopt's default. One replacement comes in year 10 at the full price: REopt's
+  year and the study's assumption. These are the study page's Battery panel defaults since
+  Part 16's real-data check.
+* **Break-even** is a saving of **43.5 M ₸/yr** against CAPEX + O&M + replacement, or
+  21.8 M ₸/yr against the CAPEX alone.
 
 ## Results
 
-The battery alone, D − A, in M ₸ per year; payback in years, simple / discounted; NPV over
-25 years without a replacement.
+The battery alone, D − A, in M ₸ per year; NPV over 25 years with its O&M and replacement.
+Payback is "never" in every case but one, so it is left out of the table.
 
 | | Optimiser, engines free | Optimiser, availability as measured | Engines as logged + battery by rule |
 |---|---:|---:|---:|
-| ЖКПЗ | 5.4 · 71.8 / never · −293 M ₸ | **18.3 · 21.4 / never · −63 M ₸ (−$137k)** | 7.9 · 49.8 / never · −250 M ₸ |
-| Жаркент 3 | 5.0 · 78.1 / never · −301 M ₸ | 8.2 · 47.4 / never · −243 M ₸ | 6.4 · 61.4 / never · −277 M ₸ |
-| Three engines, one pool | 4.0 · 96.6 / never · −318 M ₸ | 14.2 · 27.5 / never · −136 M ₸ | 19.7 · 19.9 / never · −39 M ₸ |
+| ЖКПЗ | 5.4 · −682 M ₸ | **18.3 · −452 M ₸ (−$982k)** | 7.9 · −639 M ₸ |
+| Жаркент 3 | 5.0 · −690 M ₸ | 8.2 · −632 M ₸ | 6.4 · −666 M ₸ |
+| Three engines, one pool | 4.0 · −707 M ₸ | 14.2 · −524 M ₸ | 19.7 · −427 M ₸ |
 
-* No case reaches the 21.8 M ₸/yr threshold.
-* The closest, ЖКПЗ with the availability it really had, would break even at a CAPEX of
-  about 328 M ₸ (~$713k), and only without a replacement.
+* No case comes near the 43.5 M ₸/yr threshold. None reaches even the 21.8 M ₸ of the
+  CAPEX alone: against the CAPEX only, ЖКПЗ with the availability it really had would
+  still be −63 M ₸ (21.4 years simple, never discounted).
+* At that saving the battery would have to cost about 328 M ₸ (~$713k) to break even on
+  its CAPEX alone, and it cannot break even at any price once its O&M is counted: 18.3 M ₸
+  a year against 9.8 M ₸ of upkeep leaves 8.5 M ₸.
 * The page's default comparison, B − A, is lower still in every case: −3.9 to 16.0 M ₸/yr.
 * For the pool, the rule view lets one plant's export offset the other's purchase in the
   same hour before the battery acts. Without that netting the battery would be credited
-  with 34.0 M ₸/yr — but a wire between the plants earns that, not a battery.
+  with 34.0 M ₸/yr — and an NPV of −170 M ₸ — but a wire between the plants earns that,
+  not a battery.
+* The study page now reaches the middle column itself on a measured plant: availability as
+  measured and every day solved on its own are its defaults (Part 16).
 
 **Sensitivity.** At the published retail tariff of 46.25 ₸/kWh (Алматы, with VAT; see
 `SOURCES`) the rule view falls to 5.0 / 4.2 / 12.6 M ₸/yr — 78, 92 and 31 years. A lower
@@ -1959,8 +2073,11 @@ question for operations before it is one for a battery.
 
 ```bash
 python calculator/tools/test_battery_real_data.py   # fast checks: data, annualisation, rule, invariants
+python calculator/tools/test_year_measured.py       # the study page's path reproduces this run
 python calculator/tools/battery_real_data.py all    # every measured day (~10 min, 4 cores) + tables
 python calculator/tools/battery_real_data.py report --grid-price 46.25   # after a solve at that price
+python calculator/tools/battery_real_data.py report --bat-om 1.5 --replace-year 15 --replace-cost 50
+                                                    # other battery upkeep: report only, no solve
 ```
 
 The reference run is kept in `real_data/zharkent/battery/`:

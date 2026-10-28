@@ -23,7 +23,7 @@ import battery_real_data as B   # noqa: E402
 
 FAIL: list[str] = []
 P = dict(grid_price=60.0, gas_cost=22.0, start_cost=15_000.0, capex=391_000_000.0,
-         replace_year=15, workers=1)
+         bat_om=2.5, replace_year=10, replace_cost=100.0, workers=1)
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
