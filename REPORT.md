@@ -29,6 +29,7 @@ the limits are.
 - [Part 15 — IEEE PES pglib-uc: the commitment maths, cross-validated](#part-15--ieee-pes-pglib-uc-the-commitment-maths-cross-validated)
 - [Part 16 — A year, and twenty-five of them: the methodology re-checked](#part-16--a-year-and-twenty-five-of-them-the-methodology-re-checked)
 - [Part 17 — Repository layout and how to reproduce](#part-17--repository-layout-and-how-to-reproduce)
+- [Part 18 — The battery on the measured Zharkent data](#part-18--the-battery-on-the-measured-zharkent-data)
 
 ---
 
@@ -1021,6 +1022,10 @@ right, and its reasoning is not.** For two engines the same isolation gives 727,
 about 38 M ₸/year and a ten-year payback, consistent with the 9.5 years the twelve-month
 decomposition in the CHP+BESS work produced.
 
+Everything in this section runs on the artifact's synthetic profiles. For the Zharkent
+plants themselves, on their own meters, see Part 18: the verdict holds there too, for a
+different reason.
+
 ```bash
 python calculator/tools/jsx_case.py check   # the artifact's own arithmetic
 python calculator/tools/jsx_case.py day     # 24-hour case, both fleets
@@ -1749,6 +1754,8 @@ GreenHouseV2/
   reopt_jl/                    local Julia env running that source (setup.jl, run.jl)
   benchmarks/                  pglib-uc clone (gitignored) + uc_reference_highs.jl
   docs/reopt-jl/               offline docs capture (14 pages, INDEX.md is the map)
+  real_data/zharkent/          the plants' own meters (build.py, combine.py -> data/)
+    battery/                   Part 18 reference run: per-day results, inputs + data hash, summary
   calculator/
     streamlit_app.py           steps 1-5 UI
     app_results.py             results drawers + charts
@@ -1802,6 +1809,8 @@ python calculator/tools/test_year_horizon.py    # horizon vs year; window annual
 python calculator/tools/test_year_profile.py    # the year free mode builds, and the day/week slices
 python calculator/tools/test_year_cases.py      # five cases end to end, each to a payback
 python calculator/tools/reopt_jl.py <scenario.json>  # any REopt JSON through the local REopt.jl
+python calculator/tools/test_battery_real_data.py  # the measured-data battery study, fast checks
+python calculator/tools/battery_real_data.py all   # Part 18 in full on the meters (~10 min)
 ```
 
 ## Regenerating the UI spec after the real tool changes
@@ -1817,6 +1826,151 @@ python calculator/tools/gen_ui_fields.py
 map. Regenerate text with `node .playwright/scripts/extract.mjs`; verify nesting fidelity
 with `node .playwright/scripts/nestverify.mjs`, which compares every page's HTML list-depth
 profile against the markdown indent profile — all 14 must read OK.
+
+---
+
+# Part 18 — The battery on the measured Zharkent data
+
+The question: does the project battery — 2,500 kW / 5,500 kWh, **391,000,000 ₸ (US$850,000
+at 460 ₸/$)** — pay for itself beside the three Zharkent engines? Parts 11 and 13 answered
+it on the artifact's synthetic day and week. This part answers it on the plants' own meters
+and nothing else: `real_data/zharkent/data/zharkent_all_hourly.csv`, built by
+`real_data/zharkent/build.py` and `combine.py`, fully measured days only, nothing inside a
+day interpolated.
+
+**Answer: no — on either plant, and on all three engines taken together.** The engines'
+OEM part-load curves are in every run, so a kWh at part load costs what the data sheets say.
+
+## The data as it is
+
+| Plant | Engines | Fully measured days | Load | Bought from the city | Sent to the city |
+|---|---|---:|---:|---:|---:|
+| ЖКПЗ | TEDOM Quanto 1200 (Жаркент) + J320 (Жаркент 2, logger CC42) | 164 (23.10.2025 – 04.10.2026) | 6,404 MWh | 1,530 MWh | 75 MWh |
+| Жаркент 3 | J320 (logger CR06) | 293 (15.09.2025 – 04.10.2026) | 4,364 MWh | 787 MWh | 473 MWh |
+| Both, same days | all three | 135 | 7,308 MWh | 1,356 MWh | 309 MWh |
+
+What the meters show, and what limits the study:
+
+* **ЖКПЗ has no measured day in December 2025 or February 2026.** The dashboard export
+  that carries the TEDOM has no rows at all for those months, and only part of January,
+  June and July. These are gaps in the export, not stops: a stopped TEDOM is logged as
+  zero (23,683 five-minute zeros in the file).
+* **Two plants, not one.** `combine.py` finds Жаркент 3 uncorrelated with ЖКПЗ at any
+  shift, and each has its own city meter. "Three engines as one pool" therefore assumes a
+  common bus the meters do not show. It is computed because it was asked for, and labelled.
+  The two loggers keep different clocks (CC42 UTC+6, CR06 UTC+5), so CR06 is shifted +1 h
+  for it.
+* **The load almost never exceeds the engines.** ЖКПЗ is above 2,267 kW in 14 of 3,936
+  hours, Жаркент 3 above 1,067 kW in 7 of 7,032. What the plants buy comes from engines
+  that are off or under-loaded:
+  * ЖКПЗ: 580 MWh bought with both engines running, 610 MWh with one off, 339 MWh with
+    both off. **711 MWh of purchases fell in hours when the running engines had that much
+    headroom.**
+  * Жаркент 3: 705 of its 787 MWh were bought while the J320 stood (1,370 h). While it
+    ran, the plant sent 473 MWh to the city, unpaid.
+* **Outages are long.** 67–77 % of engine-off hours are in stops longer than 12 hours. The
+  battery holds 3,850 kWh above its 30 % floor — two to three hours of one engine.
+* About 30 % of J320 hours are rebuilt from the logger's own balance, engine = plant − grid
+  (`build.py`). The TEDOM runs below its 50 % minimum in 31 % of its running hours;
+  hourly means include starts and stops.
+
+## Method
+
+`calculator/tools/battery_real_data.py`. Three views of the same days bracket the answer:
+
+| View | What it assumes |
+|---|---|
+| Optimiser, engines free | each measured day solved alone (24 h, cyclic) by the study's own `build()`; engines may run in any hour — what the study page assumes |
+| Optimiser, availability as measured | the same, but an engine may run only in the hours it actually ran (> 50 kW in the logger) |
+| Engines as logged + battery by rule | no optimiser: the engines run exactly as logged; the battery charges, in hours without a purchase, from what the plant sent to the city (free) and from running engines' headroom at their marginal gas cost (20.1–20.2 ₸/kWh on the OEM curves), and discharges into every purchase |
+
+* Scenarios are the page's: A = engines from 50 %, no battery; B = from 90 % + battery (the
+  page's default); plus D = from 50 % + battery. **D − A is the battery alone**; B − A
+  also changes the rule.
+* All other inputs are the page's defaults: grid 60 ₸/kWh, gas 22 ₸/kWh at full load,
+  start 15,000 ₸, minimum up / down 4 / 5 h, battery RTE 88 %, SoC ≥ 30 %, wear
+  0.5 ₸/kWh, no grid charging. The page itself marks grid, gas and start cost as **not
+  confirmed** (`app_dispatch.SOURCES`).
+* Optimality gap 0.01 % instead of the page's 0.5 %: the battery's effect is about 1 % of
+  the cost and would drown in the default. All 3,552 day-solves are Optimal; the worst
+  gap is 1.0e-4.
+* A year is weighted by calendar month. A month with no measured day takes the mean of the
+  measured months either side; a calendar date measured in both years counts in its
+  month's mean. The page's own scaling of the kept days to 365 is written beside it in
+  the summary file; it differs by at most 1.6 M ₸/yr on any battery figure in the results
+  table below.
+* The lifecycle is `year_study.lifecycle`: REopt's annuity, 25 years, 3.4 % escalation,
+  6.24 % discount.
+* **Break-even** is a saving of **21.8 M ₸/yr** with no battery replacement, or **30.6 M
+  ₸/yr** with one replacement at the same price in year 15.
+
+## Results
+
+The battery alone, D − A, in M ₸ per year; payback in years, simple / discounted; NPV over
+25 years without a replacement.
+
+| | Optimiser, engines free | Optimiser, availability as measured | Engines as logged + battery by rule |
+|---|---:|---:|---:|
+| ЖКПЗ | 5.4 · 71.8 / never · −293 M ₸ | **18.3 · 21.4 / never · −63 M ₸ (−$137k)** | 7.9 · 49.8 / never · −250 M ₸ |
+| Жаркент 3 | 5.0 · 78.1 / never · −301 M ₸ | 8.2 · 47.4 / never · −243 M ₸ | 6.4 · 61.4 / never · −277 M ₸ |
+| Three engines, one pool | 4.0 · 96.6 / never · −318 M ₸ | 14.2 · 27.5 / never · −136 M ₸ | 19.7 · 19.9 / never · −39 M ₸ |
+
+* No case reaches the 21.8 M ₸/yr threshold.
+* The closest, ЖКПЗ with the availability it really had, would break even at a CAPEX of
+  about 328 M ₸ (~$713k), and only without a replacement.
+* The page's default comparison, B − A, is lower still in every case: −3.9 to 16.0 M ₸/yr.
+* For the pool, the rule view lets one plant's export offset the other's purchase in the
+  same hour before the battery acts. Without that netting the battery would be credited
+  with 34.0 M ₸/yr — but a wire between the plants earns that, not a battery.
+
+**Sensitivity.** At the published retail tariff of 46.25 ₸/kWh (Алматы, with VAT; see
+`SOURCES`) the rule view falls to 5.0 / 4.2 / 12.6 M ₸/yr — 78, 92 and 31 years. A lower
+grid price only weakens a battery whose value is displaced purchases.
+
+## Where the money is instead
+
+The same optimiser, with the same on/off pattern the engines really had and no battery,
+costs less than the logged operation, priced identically:
+
+| | Measured operation, M ₸/yr | A, availability as measured | Difference |
+|---|---:|---:|---:|
+| ЖКПЗ | 477.1 | 409.3 | **−67.8** |
+| Жаркент 3 | 175.0 | 161.5 | −13.5 |
+| Three engines, one pool | 640.3 | 521.1 | −119.2 |
+
+That is three to five times what the battery could save, with no capital at all: mostly
+running engines up to their available output instead of buying from the city. It is an
+upper bound. The model does not know why the engines were held back — gas supply, derating,
+set-points, heat demand or a contract — so part of it may not be reachable. That is a
+question for operations before it is one for a battery.
+
+## What this changes
+
+* **Part 11's verdict for three engines stands on the real plants, for a different reason.**
+  The synthetic week left almost nothing to import. The real plants import a lot, but
+  from long outages and under-loading that a battery cannot fix.
+* **The 4.5-year payback in the CHP+BESS work (`PROJECT_FULL.md` 10.3) does not carry over.**
+  It measured the battery against engines confined to 90–100 % of nameplate, which the
+  data sheets do not require (`docs/equipment/README.md`).
+* **`real_data/zharkent/payback.py` predates the TEDOM in the table.** It sums the two loggers
+  as "both stations" and is superseded by this part.
+
+## Reproduce
+
+```bash
+python calculator/tools/test_battery_real_data.py   # fast checks: data, annualisation, rule, invariants
+python calculator/tools/battery_real_data.py all    # every measured day (~10 min, 4 cores) + tables
+python calculator/tools/battery_real_data.py report --grid-price 46.25   # after a solve at that price
+```
+
+The reference run is kept in `real_data/zharkent/battery/`:
+* `days_grid60_gas22.csv` — every case, view, scenario and day;
+* `meta_grid60_gas22.json` — the inputs, the SHA-256 of the data table and the commit;
+* `summary_grid60_gas22.md` — the tables above.
+
+`report` warns when the data table no longer matches the hash it was solved on. A run at
+other prices (`--grid-price`, `--gas-cost`, `--start-cost`, `--capex`) writes its own files
+beside the reference instead of overwriting it.
 
 ---
 
