@@ -10,7 +10,8 @@ used and nothing inside a day is interpolated: no synthetic load anywhere.
 
 Options -- the defaults are the dispatch study page's own:
     --grid-price 60   --gas-cost 22   --start-cost 15000   --capex 391000000
-    --replace-year 15 --workers 4
+    --bat-om 2.5      --replace-year 10 --replace-cost 100  --workers 4
+(the last three only change the report: the battery's O&M and replacement)
 
 Cases
   zhkpz     ЖКПЗ: TEDOM Quanto 1200 (Жаркент) + Jenbacher J320 (Жаркент 2) + city
@@ -211,21 +212,10 @@ def by_month(daily: dict) -> tuple[float, list[int]]:
     Each month is its measured days' mean times its length; a month with no
     measured day takes the mean of the nearest measured months either side.
     A date measured in two years counts in its month once per year, i.e. the
-    month's mean uses both."""
-    acc = collections.defaultdict(list)
-    for d, v in daily.items():
-        acc[int(d[5:7])].append(v)
-    mean = {m: sum(v) / len(v) for m, v in acc.items()}
-    year = 0.0
-    for m in range(1, 13):
-        if m in mean:
-            year += mean[m] * DAYS_IN[m]
-            continue
-        # neighbours are measured months only, never a month filled here
-        prev = next(mean[(m - k - 2) % 12 + 1] for k in range(12) if (m - k - 2) % 12 + 1 in mean)
-        nxt = next(mean[(m + k) % 12 + 1] for k in range(12) if (m + k) % 12 + 1 in mean)
-        year += (prev + nxt) / 2 * DAYS_IN[m]
-    return year, sorted(set(range(1, 13)) - set(mean))
+    month's mean uses both. The study page's own rule (``year_study.month_year``,
+    which works on hours): a day's total is spread evenly over its 24 hours."""
+    days = list(daily)
+    return Y.month_year(days, [daily[d] / 24.0 for d in days])
 
 
 def by_hours(daily: dict) -> float:
@@ -233,17 +223,28 @@ def by_hours(daily: dict) -> float:
     return sum(daily.values()) * 365.0 / len(daily) if daily else 0.0
 
 
+def _battery_terms(p: dict) -> dict:
+    return dict(om_fraction=p["bat_om"] / 100.0, replace_year=p["replace_year"],
+                replace_fraction=p["replace_cost"] / 100.0)
+
+
 def economics(save: float, p: dict) -> dict:
+    """The battery over the period, as the study page's 25-year table reads it:
+    the saving less the battery's O&M and replacement, against its CAPEX."""
     lc = Y.lifecycle(0.0, years=YEARS, escalation=ESCALATION, discount=DISCOUNT,
-                     annual_saving=save, capex=p["capex"])
-    return dict(npv=lc.saving_present_value - p["capex"], simple=lc.simple_payback_years,
-                discounted=lc.discounted_payback_years, pwf=lc.pwf)
+                     annual_saving=save, capex=p["capex"], **_battery_terms(p))
+    return dict(npv=lc.net_present_value, npv_capex_only=lc.saving_present_value - p["capex"],
+                simple=lc.simple_payback_years, discounted=lc.discounted_payback_years,
+                pwf=lc.pwf, om_pv=lc.om_present_value, replace_pv=lc.replace_present_value)
 
 
 def break_even(p: dict) -> tuple[float, float]:
-    pwf = Y.lifecycle(0.0, years=YEARS, escalation=ESCALATION, discount=DISCOUNT).pwf
-    replace = p["capex"] / (1 + DISCOUNT) ** p["replace_year"]
-    return p["capex"] / pwf, (p["capex"] + replace) / pwf
+    """The annual saving at which the battery's NPV is zero: against its CAPEX
+    alone, and against CAPEX + O&M + replacement."""
+    lc = Y.lifecycle(0.0, years=YEARS, escalation=ESCALATION, discount=DISCOUNT,
+                     capex=p["capex"], **_battery_terms(p))
+    whole = p["capex"] + lc.om_present_value + lc.replace_present_value
+    return p["capex"] / lc.pwf, whole / lc.pwf
 
 
 def marginal_gas_cost(u) -> float:
@@ -336,9 +337,12 @@ def report(p: dict) -> str:
          f"{ESCALATION:.1%}, discount {DISCOUNT:.2%}.", "",
          f"Solves {len(rows):,}, not Optimal {bad}, worst gap {worst:.1e}. Data table SHA-256 "
          f"`{meta['data_sha256'][:16]}…`, commit `{(meta.get('git_commit') or '?')[:7]}`.", "",
-         f"Break-even saving: **{_m(be)} M ₸/yr** without a battery replacement, "
-         f"**{_m(be_rep)} M ₸/yr** with one replacement at the same price in year "
-         f"{p['replace_year']}.", ""]
+         f"The battery over {YEARS} years: CAPEX + O&M {p['bat_om']:g} % of it a year, escalated"
+         + (f" + replacement at {p['replace_cost']:g} % of it in year {p['replace_year']}"
+            if 0 < p["replace_year"] < YEARS and p["replace_cost"] else " (no replacement)")
+         + " — the study page's defaults. NPV and payback below count all of it.", "",
+         f"Break-even saving: **{_m(be_rep)} M ₸/yr** against CAPEX + O&M + replacement "
+         f"({_m(be)} M ₸/yr against the CAPEX alone).", ""]
     if meta["data_sha256"] != table_sha():
         L += ["> **The data table has changed since this run was solved.** Run `solve` again.", ""]
     for case in CASES:
@@ -354,7 +358,7 @@ def report(p: dict) -> str:
               f"{sum(x['buy']) / 1e3:,.0f} MWh, sent to the city {sum(x['export']) / 1e3:,.0f} MWh.", "",
               f"Measured operation, priced as a scenario: **{_m(m_year)} M ₸/yr** "
               f"({_m(by_hours(meas))} scaled by hours).", "",
-              "| View | A, M ₸/yr | A − measured | Battery D−A, M ₸/yr | by hours | NPV, M ₸ | Payback simple / disc., yr | Page default B−A, M ₸/yr |",
+              "| View | A, M ₸/yr | A − measured | Battery D−A, M ₸/yr | by hours | NPV incl. O&M + replacement, M ₸ | Payback simple / disc., yr | Page default B−A, M ₸/yr |",
               "|---|---:|---:|---:|---:|---:|---:|---:|"]
         for mode in MODES:
             a = res[(case, mode, "A")]
@@ -396,13 +400,20 @@ def main() -> None:
     ap.add_argument("--gas-cost", type=float, default=22.0)
     ap.add_argument("--start-cost", type=float, default=15_000.0)
     ap.add_argument("--capex", type=float, default=391_000_000.0)
-    ap.add_argument("--replace-year", type=int, default=15)
+    # the study page's Battery panel defaults (app_dispatch.SOURCES)
+    ap.add_argument("--bat-om", type=float, default=D.SOURCES["bat_om"][0],
+                    help="battery O&M, %% of CAPEX a year (REopt default 2.5)")
+    ap.add_argument("--replace-year", type=int, default=int(D.SOURCES["bat_replace_year"][0]),
+                    help="battery replacement year, 0 = none (REopt default 10)")
+    ap.add_argument("--replace-cost", type=float, default=D.SOURCES["bat_replace_cost"][0],
+                    help="battery replacement cost, %% of CAPEX")
     ap.add_argument("--workers", type=int, default=4)
     a = ap.parse_args()
     if not RD.available():
         sys.exit(f"No measured table at {RD.TABLE}; run real_data/zharkent/build.py and combine.py.")
     p = dict(grid_price=a.grid_price, gas_cost=a.gas_cost, start_cost=a.start_cost,
-             capex=a.capex, replace_year=a.replace_year, workers=a.workers)
+             capex=a.capex, bat_om=a.bat_om, replace_year=a.replace_year,
+             replace_cost=a.replace_cost, workers=a.workers)
     if a.action in ("solve", "all"):
         solve(p)
     if a.action in ("report", "all"):

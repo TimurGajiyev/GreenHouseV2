@@ -194,6 +194,31 @@ def cluster(load: Sequence[float], price: Sequence[float], k: int,
     return Typical(load=cl, price=cp, weights=w, day_of=labels)
 
 
+def every_day(load: Sequence[float], price: Sequence[float]) -> Typical:
+    """Every day its own "typical" day, in calendar order: no clustering at all.
+
+    Twelve typical days reproduce a year's total cost to a few tenths of a
+    percent, but not the DIFFERENCE between two scenarios, which is what a
+    battery decision reads. On the measured Zharkent plants the battery's saving
+    came out 17 % low at k = 12, and the 90 %-rule's changed sign (REPORT.md
+    Part 16). A measured plant has a few hundred days, and a day solves in a
+    fraction of a second, so it can simply be solved day by day. Day ``c`` of the
+    result is day ``c`` of the horizon, which also lets a caller hand each day
+    its own engine availability (``solve_year(day_pose=...)``).
+    """
+    n_days = len(load) // HOURS_PER_DAY
+    if n_days < 1 or len(load) % HOURS_PER_DAY:
+        raise ValueError(f"{len(load)} hours is not a whole number of days")
+    return Typical(load=[list(load[d * 24:(d + 1) * 24]) for d in range(n_days)],
+                   price=[list(price[d * 24:(d + 1) * 24]) for d in range(n_days)],
+                   weights=[1] * n_days, day_of=list(range(n_days)))
+
+
+def members(typ: Typical, c: int) -> list[int]:
+    """The horizon's days that typical day ``c`` stands for."""
+    return [d for d, cc in enumerate(typ.day_of) if cc == c]
+
+
 # ------------------------------------------------------------------- the year
 def _concat(days: list[dict], order: Sequence[int], key: str):
     """Lay the typical days out over the real calendar, in the order they occur."""
@@ -358,17 +383,23 @@ def replay(days: list[dict], typ: Typical, price_year: list[float],
     }
 
 
-def solve_year(pose: Callable[[list[float], list[float]], "M.ScenarioInputs"],
+def solve_year(pose: Callable[[list[float], list[float]], "M.ScenarioInputs"] | None,
                load: Sequence[float], price: Sequence[float], k: int, *,
                seed: int = 0, time_limit: int = 120, mip_gap: float = 0.005,
                on_day: Callable[[int, int], None] | None = None,
-               typical: Typical | None = None) -> dict:
+               typical: Typical | None = None,
+               day_pose: Callable[[int, list[float], list[float]], "M.ScenarioInputs"] | None = None
+               ) -> dict:
     """Cluster, solve each typical day with the core, replay them over the year.
 
     ``pose`` turns one day's load and price into ``ScenarioInputs`` -- the caller
     owns the scenario, so the units, battery and rules are whatever the study's
-    own tables say. Nothing here knows about them.
+    own tables say. Nothing here knows about them. ``day_pose``, when given, is
+    used instead and also receives the typical day's index, so the caller can
+    attach what belongs to that day alone -- the engines' measured availability.
     """
+    if pose is None and day_pose is None:
+        raise ValueError("solve_year needs pose or day_pose")
     # One clustering serves every scenario of a study: the days are a property of
     # the load, not of the operating rule, and two scenarios compared on different
     # calendars would not be comparable at all.
@@ -378,7 +409,8 @@ def solve_year(pose: Callable[[list[float], list[float]], "M.ScenarioInputs"],
     for c in range(typ.k):
         if on_day:
             on_day(c, typ.k)
-        inp = pose(typ.load[c], typ.price[c])
+        inp = (day_pose(c, typ.load[c], typ.price[c]) if day_pose is not None
+               else pose(typ.load[c], typ.price[c]))
         if not start_cost:
             # What a start costs is the scenario's business, not this module's, so
             # it is read off the inputs the caller posed rather than guessed.
@@ -412,11 +444,36 @@ class Lifecycle:
     simple_payback_years: float | None = None
     discounted_payback_years: float | None = None
     cumulative: list[float] = field(default_factory=list)
+    # what the asset itself costs to keep over the period, in present value
+    om_fraction: float = 0.0
+    om_present_value: float = 0.0
+    replace_year: int = 0
+    replace_fraction: float = 0.0
+    replace_present_value: float = 0.0
+    net_present_value: float = 0.0
+
+
+def _payback(cum: list[float], capex: float) -> float | None:
+    """The year from which ``cum`` stays at or above ``capex``, interpolated.
+
+    "Stays" matters once a replacement is in the cash flows: the cumulative can
+    cross the CAPEX, fall back below it in the replacement year and cross again.
+    The investment has paid back only at the last crossing; ``None`` when the
+    final year is still short, or when there is no CAPEX to repay."""
+    if capex <= 0 or not cum or cum[-1] < capex:
+        return None
+    y = len(cum)
+    while y > 0 and cum[y - 1] >= capex:
+        y -= 1
+    prev = cum[y - 1] if y > 0 else 0.0
+    step = cum[y] - prev
+    return y + ((capex - prev) / step if step > 0 else 0.0)
 
 
 def lifecycle(annual_cost: float, *, years: int = 25, escalation: float = 0.0,
               discount: float = 0.0, annual_saving: float = 0.0,
-              capex: float = 0.0) -> Lifecycle:
+              capex: float = 0.0, om_fraction: float = 0.0, replace_year: int = 0,
+              replace_fraction: float = 0.0) -> Lifecycle:
     """Present value of an annual figure repeated ``years`` times, and the payback.
 
     The present-worth factor is ``reopt_core.finance.annuity`` -- REopt's own
@@ -425,29 +482,46 @@ def lifecycle(annual_cost: float, *, years: int = 25, escalation: float = 0.0,
     Using anything else here would put the study's 25-year numbers on a different
     footing from the REopt panels', which is the one thing worth avoiding.
 
-    Simple payback is CAPEX over the year-one saving, undiscounted -- that is
-    what makes it simple, and it is the same quantity the study already showed.
-    Discounted payback is the first year in which the discounted savings have
-    repaid the CAPEX, interpolated inside that year; it is ``None`` when they
-    never do, which is a real answer and not a failure.
+    The asset bought with ``capex`` also costs money to keep, and that belongs in
+    the same cash flows as the saving it earns:
+
+    * O&M, ``om_fraction`` of the CAPEX every year, escalated like every other
+      operating cost -- REopt's ElectricStorage charges 2.5 % of installed cost a
+      year by default (``electric_storage.jl:188``);
+    * one replacement, ``replace_fraction`` of the CAPEX paid in
+      ``replace_year`` and discounted to today, and only when that year falls
+      inside the period -- REopt's own rule (``effective_cost``, ``utils.jl:83``).
+
+    Year y's net cash flow is ``(annual_saving - om_fraction * capex) *
+    (1 + escalation)**y`` less the replacement in its year. Both paybacks are
+    read off that one series -- simple undiscounted, discounted with the discount
+    rate -- as the year from which the cumulative stays at or above the CAPEX,
+    interpolated inside that year; ``None`` when it never does, which is a real
+    answer and not a failure. Year one is already escalated once, as in REopt,
+    so a simple payback is a little shorter than CAPEX / saving when costs rise.
     """
     pwf = annuity(years, escalation, discount)
-    cum, run = [], 0.0
-    disc_pay = None
+    om = om_fraction * capex
+    rep = replace_fraction * capex if 0 < replace_year < years else 0.0
+    plain, disc, run_p, run_d = [], [], 0.0, 0.0
     for y in range(1, years + 1):
-        run += annual_saving * (1 + escalation) ** y / (1 + discount) ** y
-        cum.append(run)
-        if disc_pay is None and run >= capex > 0:
-            prev = cum[-2] if len(cum) > 1 else 0.0
-            step = run - prev
-            disc_pay = (y - 1) + ((capex - prev) / step if step > 0 else 0.0)
+        net = (annual_saving - om) * (1 + escalation) ** y - (rep if y == replace_year else 0.0)
+        run_p += net
+        run_d += net / (1 + discount) ** y
+        plain.append(run_p)
+        disc.append(run_d)
+    om_pv = pwf * om
+    rep_pv = rep / (1 + discount) ** replace_year if rep else 0.0
     return Lifecycle(
         years=years, escalation=escalation, discount=discount, pwf=pwf,
         annual_cost=annual_cost, present_value=pwf * annual_cost,
         annual_saving=annual_saving, saving_present_value=pwf * annual_saving,
-        capex=capex,
-        simple_payback_years=(capex / annual_saving if capex > 0 and annual_saving > 0 else None),
-        discounted_payback_years=disc_pay, cumulative=cum)
+        capex=capex, simple_payback_years=_payback(plain, capex),
+        discounted_payback_years=_payback(disc, capex), cumulative=disc,
+        om_fraction=om_fraction, om_present_value=om_pv,
+        replace_year=replace_year if rep else 0, replace_fraction=replace_fraction if rep else 0.0,
+        replace_present_value=rep_pv,
+        net_present_value=pwf * annual_saving - om_pv - rep_pv - capex)
 
 
 def annualise(window_cost: float, hours: int) -> float:
@@ -456,6 +530,47 @@ def annualise(window_cost: float, hours: int) -> float:
     if hours <= 0:
         return 0.0
     return window_cost * HOURS_PER_YEAR / hours
+
+
+DAYS_IN_MONTH = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+
+def _month(stamp) -> int:
+    """1-12 from a datetime, a pandas Timestamp or an ISO string."""
+    m = getattr(stamp, "month", None)
+    return int(m) if m is not None else int(str(stamp)[5:7])
+
+
+def month_year(stamps: Sequence, values: Sequence[float]) -> tuple[float, list[int]]:
+    """An hourly series with real timestamps, carried to a calendar year.
+
+    Scaling the hours to 8,760 (``annualise``) treats them as a fair sample of
+    the year, and measured data rarely is one: ЖКПЗ's table has no December or
+    February at all (the dashboard export is missing them), while Жаркент 3's
+    runs from September to the next October, so two months count twice. Here
+    each calendar month is the mean of its own measured hours times the hours
+    in that month, so a month measured twice counts once and a month measured
+    on one day counts as a whole month. A month with no measured hour takes the
+    mean of the nearest measured months either side, never of a month filled
+    here. Returns the annual figure and the months that were filled.
+    """
+    if len(stamps) != len(values):
+        raise ValueError(f"{len(stamps)} timestamps for {len(values)} values")
+    acc: dict[int, list[float]] = {}
+    for t, v in zip(stamps, values):
+        acc.setdefault(_month(t), []).append(float(v))
+    if not acc:
+        return 0.0, list(range(1, 13))
+    mean = {m: sum(v) / len(v) for m, v in acc.items()}
+    year = 0.0
+    for m in range(1, 13):
+        if m in mean:
+            year += mean[m] * DAYS_IN_MONTH[m - 1] * HOURS_PER_DAY
+            continue
+        prev = next(mean[(m - k - 2) % 12 + 1] for k in range(12) if (m - k - 2) % 12 + 1 in mean)
+        nxt = next(mean[(m + k) % 12 + 1] for k in range(12) if (m + k) % 12 + 1 in mean)
+        year += (prev + nxt) / 2 * DAYS_IN_MONTH[m - 1] * HOURS_PER_DAY
+    return year, sorted(set(range(1, 13)) - set(mean))
 
 
 def suggest_k(days: int) -> int:
