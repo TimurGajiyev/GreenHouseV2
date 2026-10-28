@@ -28,6 +28,7 @@ import pandas as pd
 import streamlit as st
 
 import app_periods as A
+import passports as PP
 import profile_ui as P
 import real_data as RD
 import ui_theme as T
@@ -283,14 +284,28 @@ SOURCES = {
 
 
 # The engines the OEM documents describe: (kW, efficiency 100 %, 50 %) -> source.
-OEM = {
-    (1067.0, 40.5, 37.4): "Jenbacher JMC 320 (J 320 GS-D25), техописание INNIO 04.09.2023, разд. 0.01: "
-                          "1 067 кВт эл., КПД 40,5 / 39,5 / 37,4 % при 100 / 75 / 50 %",
-    (1200.0, 43.6, 40.2): "TEDOM Quanto 1200 NG, TS_Quanto_1200_MWM_NG_OM_SE_C_LB_50Hz_S_500_RU_04_2021: "
-                          "1 200 kW, к.п.д. электрический 43,6 / 42,4 / 40,2 % при 100 / 75 / 50 %",
-    (528.0, 40.4, 37.5): "TEDOM Cento 530 NG SE, TS_Cento_530_MAN_NG_SE_LB_50Hz_S_EN_12_2019: "
-                         "528 kW, electrical efficiency 40,4 / 39,7 / 37,5 % at 100 / 75 / 50 %",
-}
+OEM = {PP.unit(k): PP.source(k) for k in PP.PASSPORTS}
+
+
+def _pp(field: str, fmt) -> str:
+    """One passport figure for every machine, with where each document gives it."""
+    return " · ".join(f"{k} {fmt(p)}" + (f" ({p['where'][field]})" if field in p["where"] else "")
+                      for k, p in PP.PASSPORTS.items())
+
+
+_UPDOWN_HELP = ("NOT in the passports: a controller setting (the workbook: «параметр "
+                "контроллера, не предел машины»). The JMC 320 description: "
+                + PP.PASSPORTS["JMC 320"]["where"]["times"]
+                + "; the TEDOM sheets give no times. 4 / 5 h is the workbook's.")
+
+
+def _num(v) -> float:
+    """A table cell as a number; blank or not a number is 0."""
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if math.isnan(x) else x
 
 
 def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dict) -> None:
@@ -337,7 +352,8 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                  row("Round-trip efficiency", round(bat["rte"] * 100, 6), "rte", f"{bat['rte']:.0%}"),
                  row("Battery wear", float(bat["wear"]), "wear", f"{bat['wear']:,.2f} {cur}/kWh"),
                  row("Battery CAPEX", float(bat["capex"]), "capex", _money(bat["capex"], cur))]
-        P.table(["Input", "Value", "Status", "Source"], rows)
+        # the source texts stay in each row, but the page shows three columns
+        P.table(["Input", "Value", "Status"], [r[:3] for r in rows])
         P.note(["<b>measured</b>: read off the logger · <b>nameplate</b> and <b>project</b>: "
                 "the workbook's passport and project configuration",
                 "<b>NOT CONFIRMED</b>: the workbook itself marks these as assumptions or "
@@ -351,7 +367,7 @@ def unit_presets() -> dict[str, list[tuple[str, float]]]:
     """The JSX fleets, plus the engines each measured site actually runs."""
     out = dict(JSX_UNITS)
     for site in RD.available():
-        out[REAL_PRESET + site] = RD.SITES[site][4]
+        out[REAL_PRESET + site] = RD.units(site)
     return out
 
 
@@ -386,16 +402,22 @@ def unit_hour_cost(u, kw: float, on: float) -> float:
 
 
 def default_units(preset: str) -> pd.DataFrame:
+    """The units table for a preset, the passports' own columns first.
+
+    Rated kW, the two efficiencies and the minimum load are what the OEM
+    documents give (passports.py); a preset with an OEM curve carries it, the
+    JSX ones do not. Every column after them is not in any passport.
+    """
     fleets = unit_presets()
-    return pd.DataFrame([{U_NAME: n, U_KW: kw, U_COST: 22.0, U_START: 15_000.0, U_MIN: 50.0,
-                          U_UP: 4, U_DOWN: 5, U_SPILL: True, U_MAXST: None,
-                          U_MEV: 0, U_MDUR: 8, U_MPU: 100.0, U_MSPACE: True,
-                          U_MINT: 0, U_MCOST: 0.0,
+    return pd.DataFrame([{U_NAME: n, U_KW: kw,
+                          U_EFF100: (eff[0] if eff else None), U_EFF50: (eff[1] if eff else None),
+                          U_MIN: 50.0,
+                          U_COST: 22.0,
                           # O&M at 0 and the machines already bought: the fleet
                           # prices exactly as it did before these columns
-                          U_OM: 0.0, U_OWN: OWN_PAID, U_CAPEX: 0.0,
-                          # a preset with an OEM curve carries it; the JSX ones do not
-                          U_EFF100: (eff[0] if eff else None), U_EFF50: (eff[1] if eff else None)}
+                          U_OM: 0.0, U_START: 15_000.0, U_UP: 4, U_DOWN: 5, U_MAXST: None,
+                          U_SPILL: True, U_MEV: 0, U_MDUR: 8, U_MPU: 100.0, U_MSPACE: True,
+                          U_MINT: 0, U_MCOST: 0.0, U_OWN: OWN_PAID, U_CAPEX: 0.0}
                          for n, kw, *eff in fleets[preset]])
 
 
@@ -957,8 +979,12 @@ def measured_account(meas: dict, price: list[float], units: pd.DataFrame,
     priced at the mean flat cost. A start is an hour output crosses `on_kw`
     upwards, and only a positive grid hour is bought -- what the site sent to
     the city earns nothing here, as an export earns nothing in any scenario.
+    A pooled site brings each plant's own purchase and export (buy, sell):
+    its net grid would set one plant's export against the other's purchase.
     """
     gpu, grid = meas["gpu"], meas["grid"]
+    buy = meas.get("buy") or [max(0.0, g) for g in grid]
+    sell = meas.get("sell") or [max(0.0, -g) for g in grid]
     live = [u for _, u in units.iterrows() if float(u[U_KW] or 0.0) > 0]
     per_unit = meas.get("gpu_units") or []
     gen = sum(gpu)
@@ -976,10 +1002,9 @@ def measured_account(meas: dict, price: list[float], units: pd.DataFrame,
         s_cost = sum(r[1] for r in rows) / len(rows) if rows else 0.0
         starts = sum(1 for a, b in zip(gpu, gpu[1:]) if a < on_kw <= b)
         gen_cost, start_cost = gen * e_cost, starts * s_cost
-    buy = [max(0.0, g) for g in grid]
     grid_cost = sum(p * b for p, b in zip(price, buy))
-    return dict(load=sum(g + q for g, q in zip(gpu, grid)), gen_kwh=gen, grid_kwh=sum(buy),
-                export=-sum(min(0.0, g) for g in grid), peak=max(buy, default=0.0),
+    return dict(load=sum(g + b - s for g, b, s in zip(gpu, buy, sell)), gen_kwh=gen,
+                grid_kwh=sum(buy), export=sum(sell), peak=max(buy, default=0.0),
                 starts=starts, gen_cost=gen_cost, grid_cost=grid_cost,
                 start_cost=start_cost, total=gen_cost + grid_cost + start_cost)
 
@@ -1110,13 +1135,6 @@ def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
 def render() -> None:
     ss = st.session_state
     T.step("Custom dispatch study")
-    st.warning(
-        "**Not REopt.** This section is GreenHouse's own. It takes inputs the REopt web "
-        "tool does not have — an hourly load of any length, start cost and minimum run "
-        "times per unit, a battery wear cost and several operating rules side by side — "
-        "and solves them with the same optimisation engine, finance switched off: the "
-        "result is the plain operating cost of the horizon. Nothing here can be checked "
-        "against reopt.nlr.gov.", icon=":material/science:")
 
     # ---- 1. load ------------------------------------------------------------
     T.panel_head("Load", required=True)
@@ -1154,8 +1172,11 @@ def render() -> None:
             help="Measured: a plant's own meters over the whole period the data covers. "
                  "ЖКПЗ is one plant fed by two engines — the TEDOM Quanto 1200 "
                  "(Жаркент) and the Jenbacher J320 of Жаркент 2 — and the city; "
-                 "Жаркент 3 is a plant of its own with one J320. Built by "
-                 "real_data/zharkent/combine.py." if real else None)
+                 "Жаркент 3 is a plant of its own with one J320. All three adds the "
+                 "two plants' meters hour by hour on the days both measured in full, "
+                 "as if one bus joined them — the meters show two plants, so that is "
+                 "an assumption; Жаркент 3's logger keeps UTC+5 and is moved +1 h. "
+                 "Built by real_data/zharkent/combine.py." if real else None)
         site = real.get(src)        # the measured plant, or None
         # The units table below follows the plant: arriving at a measured plant,
         # from another plant or from any other source, sets its preset to the
@@ -1179,6 +1200,7 @@ def render() -> None:
         if site is not None:
             y = _real_year(site, RD.stamp())
             load, measured = list(y["load"]), {"gpu": y["gpu"], "grid": y["grid"],
+                                               "buy": y["buy"], "sell": y["sell"],
                                                "gpu_units": y["gpu_units"]}
             times = list(y["time"])
             p0, p1 = y["period"]
@@ -1235,10 +1257,9 @@ def render() -> None:
                                              min(MAX_H, n - start), key=f"gd_len_{wk}_{start}"))
             load = load[start:start + length]
             if measured is not None:
-                measured = {"gpu": measured["gpu"][start:start + length],
-                            "grid": measured["grid"][start:start + length],
-                            "gpu_units": [g[start:start + length]
-                                          for g in measured.get("gpu_units") or []]}
+                measured = {k: ([g[start:start + length] for g in v] if k == "gpu_units"
+                                else v[start:start + length])
+                            for k, v in measured.items()}
             if times is not None:
                 times = times[start:start + length]
             ss["gd_measured"] = measured
@@ -1394,22 +1415,29 @@ def render() -> None:
         units = st.data_editor(
             ss["gd_units_df"], num_rows="dynamic", use_container_width=True, key="gd_units",
             column_config={
-                U_KW: st.column_config.NumberColumn(min_value=0.0, step=10.0, format="%.0f"),
+                U_KW: st.column_config.NumberColumn(
+                    min_value=0.0, step=10.0, format="%.0f",
+                    help="Passport: " + _pp("kw", lambda p: f"{p['kw']:,.0f} kW") + "."),
                 U_COST: st.column_config.NumberColumn(
                     f"Fuel cost ({cur}/kWh)", min_value=0.0,
                     help="Gas only, per kWh generated. With the two efficiency columns "
                          "set it is the cost at FULL load, and part load is priced by "
                          "the data sheet's curve; blank, every kWh costs this. Spill "
-                         "included."),
+                         "included. NOT in the passports: they give the gas an engine "
+                         "burns (" + _pp("eff", lambda p: f"{p['fuel_kw'][100]:,.0f} kW of "
+                                        f"fuel at {p['kw']:,.0f} kW") + "), not its price. "
+                         "22 is the workbook's unconfirmed «всё включено»."),
                 U_EFF100: st.column_config.NumberColumn(
                     min_value=1.0, max_value=100.0, step=0.1, format="%.1f",
-                    help="Electrical efficiency at 100 % load, from the data sheet "
-                         "(JMC 320: 40,5 %). With both efficiencies set, the fuel cost "
-                         "column is the cost per kWh at full load and lower loads cost "
-                         "more per kWh. Blank = one price for every kWh."),
+                    help="Electrical efficiency at 100 % load. Passport: "
+                         + _pp("eff", lambda p: f"{p['eff'][100]} %") + ". With both "
+                         "efficiencies set, the fuel cost column is the cost per kWh at "
+                         "full load and lower loads cost more per kWh. Blank = one price "
+                         "for every kWh."),
                 U_EFF50: st.column_config.NumberColumn(
                     min_value=1.0, max_value=100.0, step=0.1, format="%.1f",
-                    help="Electrical efficiency at 50 % load (JMC 320: 37,4 %)."),
+                    help="Electrical efficiency at 50 % load. Passport: "
+                         + _pp("eff", lambda p: f"{p['eff'][50]} %") + "."),
                 U_OM: st.column_config.NumberColumn(
                     f"Variable O&M ({cur}/kWh)", min_value=0.0,
                     help="Стоимость моточаса per kWh generated — oil, filters, plugs, "
@@ -1426,11 +1454,16 @@ def render() -> None:
                     help="Only read when Ownership is Purchase. It is an investment "
                          "figure, not an operating one: it never enters the dispatch "
                          "objective, exactly as the battery CAPEX does not."),
-                U_START: st.column_config.NumberColumn(f"Start cost ({cur})", min_value=0.0),
-                U_MIN: st.column_config.NumberColumn(min_value=0.0, max_value=100.0,
-                                                     help="Minimum load while running, % of rated."),
-                U_UP: st.column_config.NumberColumn(min_value=1, step=1),
-                U_DOWN: st.column_config.NumberColumn(min_value=1, step=1),
+                U_START: st.column_config.NumberColumn(
+                    f"Start cost ({cur})", min_value=0.0,
+                    help="NOT in the passports: a service-contract figure. 15,000 is the "
+                         "workbook's, which marks it KILLER."),
+                U_MIN: st.column_config.NumberColumn(
+                    min_value=0.0, max_value=100.0,
+                    help="Minimum load while running, % of rated. Passport: "
+                         + _pp("min_load", lambda p: f"{p['min_load']:.0f} %") + "."),
+                U_UP: st.column_config.NumberColumn(min_value=1, step=1, help=_UPDOWN_HELP),
+                U_DOWN: st.column_config.NumberColumn(min_value=1, step=1, help=_UPDOWN_HELP),
                 U_SPILL: st.column_config.CheckboxColumn(
                     help="Output above the load may be spilled (paid for, not used)."),
                 U_MAXST: st.column_config.NumberColumn(
@@ -1476,6 +1509,20 @@ def render() -> None:
         st.caption("Each unit runs at a fixed nameplate: on/off, a minimum load while on, a "
                    "start cost, and minimum up and down times. Leave a row's rating at 0 to "
                    "drop it; an empty table means grid (and battery) only.")
+        # which rows carry their passport, read off the rows themselves
+        _rows = [(str(u[U_NAME]), OEM.get((_num(u[U_KW]), _num(u.get(U_EFF100)),
+                                           _num(u.get(U_EFF50)))))
+                 for _, u in units.iterrows()]
+        if any(src for _, src in _rows):
+            st.caption(
+                "**From the passports** (docs/equipment): rated kW, electrical efficiency "
+                "at 100 % and 50 % load and the 50 % minimum load — "
+                + ", ".join(f"{n} ✓" if src else f"{n}: not a passport row"
+                            for n, src in _rows)
+                + ". Not in any passport, so assumptions until a contract replaces them: "
+                  "fuel cost (the gas tariff), start cost, minimum up / down, starts per "
+                  "day, services and O&M. Every value and its status: **Data sources** "
+                  "below.")
         _maint_note(units, len(load))
         # What the Site panel above will count as the fleet on the next rerun.
         # The edited frame itself is deliberately NOT written back to
@@ -1833,4 +1880,6 @@ def render() -> None:
     else:
         sav = None
     A.render_periods({"res": run["res"], "tariff": run["tariff"], "currency": cur,
-                      "savings": sav, "time": out.get("time")})
+                      "savings": sav, "time": out.get("time"),
+                      # the plant these results were solved for, when it is measured
+                      "measured_site": real_sources().get(out.get("source"))})

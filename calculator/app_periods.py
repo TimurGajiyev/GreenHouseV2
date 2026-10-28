@@ -27,12 +27,17 @@ import calendar
 import pandas as pd
 import streamlit as st
 
+import app_measured as AM
 import profile_ui as P
 import ui_theme as T
 
 HOURS = 8760            # a full REopt year; any horizon is accepted
 DAYS = 365
 MINUS = "−"        # true minus, as the reference uses for discharge
+# The hour-by-hour tables (hour, day and all-hours) keep their spill column
+# but do not show it: the spill is still solved, summed and reported in the
+# hover panel, the window note and the per-unit table. True shows it again.
+SHOW_HOUR_SPILL = False
 
 
 def horizon(series: dict) -> int:
@@ -432,7 +437,7 @@ def _hour_head(sh: dict, *lead: str) -> list[str]:
         head.append("SOC %" if sh["cap_kwh"] > 0 else "SOC kWh")
     if sh["any_on"]:
         head.append("ON")          # units running -- the reference's `uon`
-    if sh["any_spill"]:
+    if sh["any_spill"] and SHOW_HOUR_SPILL:
         head.append("SPILL")
     if sh["any_export"]:
         head.append("EXPORT")
@@ -455,7 +460,7 @@ def _hour_row(r: dict, sh: dict, *lead: str) -> list:
                    else _n(r["soc"]))
     if sh["any_on"]:
         row.append(str(int(sum(1 for v in r["on"] if v > 0.5))))
-    if sh["any_spill"]:
+    if sh["any_spill"] and SHOW_HOUR_SPILL:
         row.append(_n(sum(r["spill"])) if sum(r["spill"]) > 0.5 else "—")
     if sh["any_export"]:
         row.append(_n(r["export"]) if r["export"] > 0.5 else "—")
@@ -481,7 +486,7 @@ def _hour_foot(rows: list[dict], sh: dict, label: str = "Total",
     if sh["any_on"]:
         # unit-hours over the window, the total the "ON" column sums to
         foot.append(str(int(sum(1 for r in rows for v in r["on"] if v > 0.5))))
-    if sh["any_spill"]:
+    if sh["any_spill"] and SHOW_HOUR_SPILL:
         foot.append(_n(sum(sum(r["spill"]) for r in rows)))
     if sh["any_export"]:
         foot.append(_n(tot("export")))
@@ -629,6 +634,9 @@ def render_periods(state: dict) -> None:
     rep, pk = representative_day(load), peak_day(load)
 
     T.panel_head("Dispatch by period", icon="calendar_month")
+    # a measured plant's own meters first, above what the optimiser made of them
+    if state.get("measured_site"):
+        AM.render(state["measured_site"])
 
     # ---- switches -------------------------------------------------------
     # Each switch is drawn only where it has something to switch between. They

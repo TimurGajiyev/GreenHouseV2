@@ -24,6 +24,8 @@ looping over whatever units the solved result carries.
 
 from __future__ import annotations
 
+import json
+
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -442,7 +444,7 @@ def table(head: list[str], rows: list[list[Cell]], foot: list[Cell] | None = Non
 
 
 # ------------------------------------------------------------------- chart
-def _axis(values=None, title=None, fmt=None, grid=True, domain=True):
+def _axis(values=None, title=None, fmt=None, grid=True, domain=True, label_expr=None):
     # The reference's axes: no tick marks on either, a rule under the hours and
     # none beside the kW, and a grid of horizontal dashes 2 on 4 off.
     # Altair rejects an explicit None for these, so only pass what is set
@@ -456,10 +458,12 @@ def _axis(values=None, title=None, fmt=None, grid=True, domain=True):
         kw["title"] = title
     if fmt is not None:
         kw["format"] = fmt
+    if label_expr is not None:
+        kw["labelExpr"] = label_expr
     return alt.Axis(**kw)
 
 
-def _tooltip_palette(colors: list[str]) -> None:
+def _tooltip_palette(colors: list[str], scope: str | None = None) -> None:
     """Colour the hover panel's figures, one rule per row.
 
     Vega's tooltip is plain escaped text in an element of its own, so a mark
@@ -469,10 +473,15 @@ def _tooltip_palette(colors: list[str]) -> None:
     panel carries a dash rather than dropping a row that does not apply -- a
     reflowing table would break both the colours and the reading.
 
-    One dispatch chart is drawn per page, so this global sheet is unambiguous.
+    Every chart on the page shares the one tooltip element, so a second chart
+    with other rows would recolour the first. ``scope`` names the keyed
+    container (Streamlit's st-key- class) a chart sits in: its rules then hold
+    only while the pointer is inside that container, and the extra selectors
+    outrank the page's unscoped sheet whatever the order they arrive in.
     """
+    pre = f":root:has(.st-key-{scope}:hover) " if scope else ""
     rules = "".join(
-        f"#vg-tooltip-element table tr:nth-child({i}) td.value{{color:{c};}}"
+        f"{pre}#vg-tooltip-element table tr:nth-child({i}) td.value{{color:{c};}}"
         for i, c in enumerate(colors, start=1))
     st.html(f"<style>{rules}</style>")
 
@@ -482,11 +491,20 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
                    *, ceiling_kw: float | None = None, week: bool = False,
                    height: int | None = None,
                    detail: list[list[tuple[str, str, str]]] | None = None,
-                   veil: list[float] | None = None):
+                   veil: list[float] | None = None,
+                   xlabels: dict[int, str] | None = None, xtitle: str | None = None,
+                   seps: list[float] | None = None, tip_scope: str | None = None):
     """Stacked supply, signed battery bar, load line -- the reference chart.
 
     ``stack`` is a list of ``(name, colour, series)`` built by the caller from
     however many units the result carries, so this function never names a unit.
+    A value of None is a reading nobody took: no bar, and the load line breaks
+    there rather than running straight across the hole.
+
+    ``xlabels`` (position -> text) replaces the hour numbers with the caller's
+    own ticks, ``xtitle`` the axis title and ``seps`` the day separators;
+    ``tip_scope`` scopes the hover colours to a keyed container (see
+    ``_tooltip_palette``) for a page that draws a second chart.
 
     ``detail`` is the reference's hover panel: for each hour, the rows of its
     Tip component as ``(label, text, colour)``, already formatted. Every hour
@@ -499,13 +517,20 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
     """
     n = len(hours)
     bar = 3 if week else 13
+    # a month of hours or a year of days is more columns than a week's bar fits
+    long = n > 168
+    if long:
+        bar = 1 if n > 400 else 2
     if height is None:
         height = 420 if week else 380
+
+    def _ok(v) -> bool:
+        return v is not None and v == v
 
     rows = []
     for name, color, vals in stack:
         for i in range(n):
-            if abs(vals[i]) > 1e-9:
+            if _ok(vals[i]) and abs(vals[i]) > 1e-9:
                 rows.append({"h": hours[i], "src": name, "kw": vals[i], "t": labels[i]})
     stack_df = pd.DataFrame(rows or [{"h": hours[0], "src": "", "kw": 0.0, "t": labels[0]}])
     order = {name: i for i, (name, _, _) in enumerate(stack)}
@@ -515,9 +540,15 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
     bess_df = pd.DataFrame({"h": hours, "kw": bess, "t": labels,
                             "sgn": ["charge" if v >= 0 else "discharge" for v in bess]})
     bess_df = bess_df[bess_df["kw"].abs() > 1e-9]
-    load_df = pd.DataFrame({"h": hours, "kw": load, "t": labels})
+    load_df = pd.DataFrame({"h": hours, "kw": [v if _ok(v) else None for v in load],
+                            "t": labels})
+    # each unbroken run of readings is a line of its own
+    gap = load_df["kw"].isna()
+    load_df["seg"] = gap.cumsum()
+    load_df = load_df[~gap]
 
-    top = max([sum(v[i] for _, _, v in stack) for i in range(n)] + list(load) + [1.0]
+    top = max([sum(v[i] for _, _, v in stack if _ok(v[i])) for i in range(n)]
+              + [v for v in load if _ok(v)] + [1.0]
               + ([load[i] - veil[i] for i in range(n)] if veil else []))
     if ceiling_kw:
         top = max(top, ceiling_kw)
@@ -534,13 +565,23 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
         ticks = [v for v in range(int(bot), int(top) + 1, step)]
 
     # the reference labels every second hour counting from the first
-    xticks = ([1] + list(range(24, n + 1, 24)) if week
-              else [h for h in hours if h % 2 == 1])
-    xtitle = "hour of week" if week else "hour of day"
+    label_expr = None
+    if xlabels:
+        xticks = sorted(xlabels)
+        names_at = [""] * (max(hours) + 1)
+        for h, text in xlabels.items():
+            names_at[h] = text
+        label_expr = f"{json.dumps(names_at, ensure_ascii=False)}[datum.value] || ''"
+    else:
+        xticks = ([1] + list(range(24, n + 1, 24)) if week
+                  else [h for h in hours if h % 2 == 1])
+    if xtitle is None:
+        xtitle = "hour of week" if week else "hour of day"
     # horizontal rules only, as in the reference grid
     xscale = alt.Scale(domain=[hours[0] - 0.5, hours[-1] + 0.5], nice=False)
     yscale = alt.Scale(domain=[bot, top], nice=False)
-    xenc = alt.X("h:Q", axis=_axis(values=xticks, title=xtitle, grid=False), scale=xscale)
+    xaxis = _axis(values=xticks, title=xtitle, grid=False, label_expr=label_expr)
+    xenc = alt.X("h:Q", axis=xaxis, scale=xscale)
     yenc = alt.Y("kw:Q", axis=_axis(values=ticks, title="kW", fmt=",.0f", domain=False), scale=yscale)
 
     names = [nm for nm, _, _ in stack]
@@ -572,14 +613,13 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
             tips.append(alt.Tooltip(f"f{k}:N", title=key))
             palette.append(col)
     else:
-        tip_df["f0"] = [f"{v:,.0f} kW" for v in load]
+        tip_df["f0"] = [f"{v:,.0f} kW" if _ok(v) else "—" for v in load]
         tips.append(alt.Tooltip("f0:N", title="site load"))
         palette.append(INK)
     # the same axis definitions as every other layer, so Vega-Lite merges them
     # into the one pair of axes; an `axis=None` on either drops both
     _band = alt.Chart(tip_df).mark_rect().encode(
-        x=alt.X("x0:Q", scale=xscale,
-                axis=_axis(values=xticks, title=xtitle, grid=False)), x2="x1:Q",
+        x=alt.X("x0:Q", scale=xscale, axis=xaxis), x2="x1:Q",
         y=alt.Y("y0:Q", scale=yscale,
                 axis=_axis(values=ticks, title="kW", fmt=",.0f", domain=False)), y2="y1:Q")
     # Recharts paints its cursor behind the marks, so the wash and the surface
@@ -607,12 +647,14 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
                                                  range=[CHARGE, DISCHARGE]), legend=None),
     )
     # a day gets the reference's hollow markers, a week a fine ink dot
-    point = (alt.OverlayMarkDef(color=INK, size=6, filled=True) if week
+    # and anything longer none at all: hundreds of dots are only a thicker line
+    point = (False if long
+             else alt.OverlayMarkDef(color=INK, size=6, filled=True) if week
              else alt.OverlayMarkDef(color=PANEL, stroke=INK, strokeWidth=1.6,
                                      size=26, filled=False))
     line = alt.Chart(load_df).mark_line(
         color=INK, strokeWidth=1.1 if week else 1.6, point=point,
-    ).encode(x=xenc, y=yenc)
+    ).encode(x=xenc, y=yenc, detail="seg:N")
     # the reference's activeDot: the hovered hour's marker fills in and swells
     active = alt.Chart(load_df).mark_point(
         size=80, filled=True, fill=INK, stroke=PANEL, strokeWidth=2,
@@ -620,9 +662,11 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
              opacity=alt.when(hover).then(alt.value(1.0)).otherwise(alt.value(0.0)))
 
     layers = [wash]
-    if week:
-        seps = pd.DataFrame({"x": list(range(24, n, 24))})
-        layers.append(alt.Chart(seps).mark_rule(color=RULE, strokeWidth=1).encode(x="x:Q"))
+    if seps is None and week:
+        seps = list(range(24, n, 24))
+    if seps:
+        layers.append(alt.Chart(pd.DataFrame({"x": seps}))
+                      .mark_rule(color=RULE, strokeWidth=1).encode(x="x:Q"))
     if veil:
         # beneath the bars, as in the reference, and straight-edged: the band's
         # area is the money, so a smoothing curve would misstate it
@@ -655,7 +699,7 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
             font=MONO, fontSize=11).encode(y="y:Q", x="x:Q", text="lab:N"))
     layers += [line, active, cursor]
 
-    _tooltip_palette(palette)
+    _tooltip_palette(palette, tip_scope)
     return (alt.layer(*layers)
             .properties(height=height, background=PANEL, padding={"left": 4, "right": 8,
                                                                   "top": 6, "bottom": 2})
