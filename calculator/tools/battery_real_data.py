@@ -114,26 +114,15 @@ def units_for(case: str, p: dict) -> pd.DataFrame:
 
 
 def data_for(case: str) -> dict:
-    """time, load, per-engine output, purchase and export on fully measured days."""
-    if case in ("zhkpz", "site3"):
-        y = RD.year(RD.ZHKPZ if case == "zhkpz" else RD.SITE3)
-        return dict(time=[str(t) for t in y["time"]], load=y["load"], gpu_units=y["gpu_units"],
-                    buy=[max(0.0, g) for g in y["grid"]], export=[max(0.0, -g) for g in y["grid"]])
-    t = pd.read_csv(RD.TABLE, index_col=0, parse_dates=True)
-    s3 = t[["j320_3_kw", "site3_import_kw", "site3_plant_kw", "site3_complete"]].copy()
-    s3.index = s3.index + pd.Timedelta(hours=1)          # CR06 UTC+5 -> UTC+6
-    c = t[["tedom_kw", "j320_2_kw", "zhkpz_import_kw", "zhkpz_plant_kw", "zhkpz_complete"]].join(s3)
-    ok = c["zhkpz_complete"].astype(bool) & c["site3_complete"].fillna(False).astype(bool)
-    day = c.index.floor("D")
-    full = (ok.groupby(day).transform("size") == 24) & ok.groupby(day).transform("all")
-    k = c[full]
-    return dict(
-        time=[str(x) for x in k.index],
-        load=list((k.zhkpz_plant_kw.clip(lower=0) + k.site3_plant_kw.clip(lower=0)).astype(float)),
-        gpu_units=[list(k.tedom_kw.astype(float)), list(k.j320_2_kw.astype(float)),
-                   list(k.j320_3_kw.astype(float))],
-        buy=list((k.zhkpz_import_kw.clip(lower=0) + k.site3_import_kw.clip(lower=0)).astype(float)),
-        export=list((-k.zhkpz_import_kw.clip(upper=0) - k.site3_import_kw.clip(upper=0)).astype(float)))
+    """time, load, per-engine output, purchase and export on fully measured days.
+
+    real_data.year, the study page's own: a day is kept only when every meter
+    read all 24 of its hours, a reading the logger missed and the same hour's
+    balance supplies (engine = plant - grid) kept and flagged. The combined case is real_data.ALL3: Жаркент 3 moved
+    +1 h (CR06 keeps UTC+5), and each plant's purchase and export its own."""
+    y = RD.year({"zhkpz": RD.ZHKPZ, "site3": RD.SITE3, "combined": RD.ALL3}[case])
+    return dict(time=[str(t) for t in y["time"]], load=y["load"], gpu_units=y["gpu_units"],
+                buy=y["buy"], export=y["sell"])
 
 
 def battery(p: dict) -> dict:
@@ -168,11 +157,10 @@ def jobs(p: dict):
 
 
 def table_sha() -> str:
-    h = hashlib.sha256()
+    """SHA-256 of the table's content, line endings as LF: a Windows checkout
+    (core.autocrlf) writes CRLF, and that is not a change to the data."""
     with open(RD.TABLE, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest()
+        return hashlib.sha256(fh.read().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def git_commit() -> str | None:
@@ -206,21 +194,29 @@ def solve(p: dict) -> None:
 
 
 # ------------------------------------------------------------------ report
-def by_month(daily: dict) -> tuple[float, list[int]]:
-    """{'YYYY-MM-DD': value} -> a year weighted by calendar month.
+def by_month(daily: dict) -> tuple[float | None, list[int]]:
+    """{'YYYY-MM-DD': value} -> a year weighted by calendar month, or None.
 
-    Each month is its measured days' mean times its length; a month with no
-    measured day takes the mean of the nearest measured months either side.
-    A date measured in two years counts in its month once per year, i.e. the
-    month's mean uses both. The study page's own rule (``year_study.month_year``,
+    Each month is its measured days' mean times its length. A date measured
+    in two years counts in its month once per year, i.e. the month's mean uses
+    both. A month with no measured day means no year: None, with the months
+    that lack one. The study page's own rule (``year_study.month_year``,
     which works on hours): a day's total is spread evenly over its 24 hours."""
     days = list(daily)
     return Y.month_year(days, [daily[d] / 24.0 for d in days])
 
 
-def by_hours(daily: dict) -> float:
-    """The study page's own annualisation: the kept days scaled to 365."""
-    return sum(daily.values()) * 365.0 / len(daily) if daily else 0.0
+def month_range(daily: dict) -> tuple[float, float, list[int]]:
+    """``by_month`` as a range: a month with no measured day is not filled but
+    taken at the lowest and at the highest measured month
+    (``year_study.month_range``). Returns (low, high, the months not measured)."""
+    days = list(daily)
+    return Y.month_range(days, [daily[d] / 24.0 for d in days])
+
+
+def over_days(daily: dict) -> float:
+    """The measured days' own total: no year, nothing scaled."""
+    return sum(daily.values())
 
 
 def _battery_terms(p: dict) -> dict:
@@ -345,48 +341,71 @@ def report(p: dict) -> str:
          f"({_m(be)} M ₸/yr against the CAPEX alone).", ""]
     if meta["data_sha256"] != table_sha():
         L += ["> **The data table has changed since this run was solved.** Run `solve` again.", ""]
+    def yr(r: tuple) -> str:
+        return _m(r[0]) if abs(r[1] - r[0]) < 0.5 else f"{_m(r[0])} … {_m(r[1])}"
+
+    def life(r: tuple) -> tuple[str, str]:
+        """NPV and payback at the low and at the high saving; the better first."""
+        lo, hi = (economics(v, p) for v in r[:2])
+        pays = [f"{_yrs(e['simple'])} / {_yrs(e['discounted'])}" for e in (hi, lo)]
+        npv = (_npv(lo["npv"]) if abs(hi["npv"] - lo["npv"]) < 0.5
+               else f"{_npv(lo['npv'])} … {_npv(hi['npv'])}")
+        return npv, pays[0] if pays[0] == pays[1] else f"{pays[0]} … {pays[1]}"
+
     for case in CASES:
         x = data_for(case)
         units = units_for(case, p)
         days = sorted({t[:10] for t in x["time"]})
         meas = measured_daily(x, units, p)
-        m_year, missing = by_month(meas)
+        m_year = month_range(meas)
+        missing = m_year[2]
+        gap = ", ".join(calendar.month_abbr[m] for m in missing)
         L += [f"## {LABEL[case]}", "",
               f"{len(days)} fully measured days, {days[0]} – {days[-1]}"
-              + (f"; months with no measured day, filled from their neighbours: {missing}" if missing else "")
+              + (f"; no measured day in {gap}, so every M ₸/yr below is a range" if missing else "")
               + f". Over those days: load {sum(x['load']) / 1e3:,.0f} MWh, bought "
               f"{sum(x['buy']) / 1e3:,.0f} MWh, sent to the city {sum(x['export']) / 1e3:,.0f} MWh.", "",
-              f"Measured operation, priced as a scenario: **{_m(m_year)} M ₸/yr** "
-              f"({_m(by_hours(meas))} scaled by hours).", "",
-              "| View | A, M ₸/yr | A − measured | Battery D−A, M ₸/yr | by hours | NPV incl. O&M + replacement, M ₸ | Payback simple / disc., yr | Page default B−A, M ₸/yr |",
+              f"Measured operation, priced as a scenario: **{_m(over_days(meas))} M ₸** over "
+              f"those days, **{yr(m_year)} M ₸/yr**.", "",
+              "| View | A, M ₸/yr | A − measured | Battery D−A, M ₸/yr | D−A over the days, M ₸ | NPV incl. O&M + replacement, M ₸ | Payback simple / disc., yr | Page default B−A, M ₸/yr |",
               "|---|---:|---:|---:|---:|---:|---:|---:|"]
         for mode in MODES:
-            a = res[(case, mode, "A")]
-            if len(a) != len(days):
-                L.append(f"| {mode} | incomplete: {len(a)} of {len(days)} days | | | | | | |")
+            # the saved run may hold days since dropped (a rule tightened): only
+            # the days measured now count
+            got = {k: {d: v for d, v in res[(case, mode, k)].items() if d in meas} for k in "ADB"}
+            if any(len(g) != len(days) for g in got.values()):
+                L.append(f"| {mode} | incomplete: {len(got['A'])} of {len(days)} days; run `solve` "
+                         f"| | | | | | |")
                 continue
-            a_y, _ = by_month(a)
-            dsave = {d: a[d] - res[(case, mode, "D")][d] for d in a}
-            bsave = {d: a[d] - res[(case, mode, "B")][d] for d in a}
-            dm, _ = by_month(dsave)
-            bm, _ = by_month(bsave)
-            e = economics(dm, p)
+            a = got["A"]
+            dsave = {d: a[d] - got["D"][d] for d in a}
+            bsave = {d: a[d] - got["B"][d] for d in a}
+            # each difference ranged on its own days, not as a difference of ranges
+            vs_meas = month_range({d: a[d] - meas[d] for d in a})
+            dm = month_range(dsave)
+            npv, pay = life(dm)
             name = "optimiser, engines free" if mode == "free" else "optimiser, availability as measured"
-            L.append(f"| {name} | {_m(a_y)} | {_m(a_y - m_year)} | **{_m(dm)}** | {_m(by_hours(dsave))} | "
-                     f"{_npv(e['npv'])} | {_yrs(e['simple'])} / {_yrs(e['discounted'])} | {_m(bm)} |")
+            L.append(f"| {name} | {yr(month_range(a))} | {yr(vs_meas)} | "
+                     f"**{yr(dm)}** | {_m(over_days(dsave))} | {npv} | {pay} | "
+                     f"{yr(month_range(bsave))} |")
         for bus in ((False, True) if case == "combined" else (False,)):
             rb = rule_battery(x, units, p, common_bus=bus)
             rd = {d: rb.get(d, 0.0) for d in days}
-            ry, _ = by_month(rd)
-            e = economics(ry, p)
+            ry = month_range(rd)
+            npv, pay = life(ry)
             name = ("engines as logged + battery by rule"
                     + (", common bus (export offsets the other plant first)" if bus else
                        (", no bus netting (credits the battery with a wire's work)" if case == "combined" else "")))
-            L.append(f"| {name} | — | — | **{_m(ry)}** | {_m(by_hours(rd))} | {_npv(e['npv'])} | "
-                     f"{_yrs(e['simple'])} / {_yrs(e['discounted'])} | — |")
+            L.append(f"| {name} | — | — | **{yr(ry)}** | {_m(over_days(rd))} | {npv} | {pay} | — |")
         L.append("")
-    L += [f"US$ at {KZT_PER_USD:,.0f} ₸/$. Annual figures are weighted by calendar month; "
-          "'by hours' is the study page's own scaling of the kept days to a year.", ""]
+    L += [f"US$ at {KZT_PER_USD:,.0f} ₸/$. A day counts only when every meter read all 24 of its "
+          "hours. Where a logger missed the engine or the grid reading, the same hour's balance "
+          "supplies it (engine = plant − grid), kept and flagged: the J320 loggers mostly stop "
+          "writing an engine that stopped, so dropping those hours would drop the outages. "
+          "Annual figures are weighted by calendar month. A month with no measured day is not "
+          "filled: it is taken at the lowest and at the highest measured month, so the figure "
+          "is a range 'low … high' (NPV likewise; payback with its shorter end first). 'Over "
+          "the days' is the measured days' own total.", ""]
     text = "\n".join(L)
     with open(os.path.join(OUT_DIR, f"summary_{tag(p)}.md"), "w", encoding="utf-8") as fh:
         fh.write(text + "\n")

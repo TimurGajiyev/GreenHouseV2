@@ -22,11 +22,20 @@ This module hands the study the measured days of one site, and nothing else:
     than a year, so a calendar date can be in it twice (Жаркент 3 has
     September and early October of 2025 and of 2026); the period the plant's
     own meters cover is reported with it;
+  * where a logger missed one of engine and grid, build.py / combine.py
+    rebuilt it from the same hour's balance (engine = plant - grid, grid =
+    plant - engine). That reading is kept, and flagged: column "rebuilt" and
+    one "rebuilt <series>" column per series. It is arithmetic on two meters
+    of the same hour, not a value from another hour, and dropping it would be
+    a bias, not a precaution -- the J320 loggers mostly stop writing the
+    engine's output when the engine stops, so the hours without it are the
+    outages (REPORT.md Part 18);
   * a day is kept only if all 24 of its hours are measured in full
     (combine.py's *_complete columns). Nothing is interpolated or copied
     from another day: a day with a hole in it is left out whole;
-  * the kept days are laid end to end. The study annualises by hours, so a
-    figure "per year" is the kept days scaled to 8,760 h.
+  * the kept days are laid end to end, with their own timestamps. A figure
+    "per year" is weighted by calendar month; a month with no kept day is
+    not filled, and the year becomes a range (year_study.month_range).
 
 The table is local data and is not in the repository; with it absent,
 available() is empty and the study offers no real-data source.
@@ -106,9 +115,21 @@ def _table() -> pd.DataFrame:
     return pd.read_csv(TABLE, index_col=0, parse_dates=True)
 
 
+# A reading the logger missed, rebuilt by build.py / combine.py from the
+# plant's balance in the same hour: the column, and the column that flags it
+FROM_BALANCE = {"j320_2_kw": "j320_2_from_balance", "zhkpz_import_kw": "import_2_from_balance",
+                "j320_3_kw": "j320_3_from_balance", "site3_import_kw": "import_3_from_balance"}
+
+
 def _plant(t: pd.DataFrame, site: str, shift: bool = False) -> pd.DataFrame:
     """One metered plant in the module's own columns, on its own clock or the pool's."""
     plant, grid, engines, complete, plant_units, _ = SITES[site]
+
+    def rebuilt(col: str) -> pd.Series:
+        if col not in FROM_BALANCE:
+            return pd.Series(False, index=t.index)
+        return t[FROM_BALANCE[col]].fillna(False).astype(bool)
+
     # a plant reading of a few kW below zero is meter noise; demand is not negative
     out = pd.DataFrame({"load": t[plant].clip(lower=0), "grid": t[grid],
                         "buy": t[grid].clip(lower=0), "sell": (-t[grid]).clip(lower=0)},
@@ -116,13 +137,18 @@ def _plant(t: pd.DataFrame, site: str, shift: bool = False) -> pd.DataFrame:
     for (name, *_), col in zip(plant_units, engines):
         out[name] = t[col]
     out["complete"] = t[complete].astype(bool)
+    out["rebuilt grid"] = rebuilt(grid)
+    for (name, *_), col in zip(plant_units, engines):
+        out[f"rebuilt {name}"] = rebuilt(col)
+    out["rebuilt"] = out.filter(like="rebuilt ").any(axis=1)
     if shift and site in SHIFT:
         out.index = out.index + SHIFT[site]
     return out
 
 
 def _site(site: str) -> pd.DataFrame:
-    """Every hour of a site: load, grid (net), buy, sell, one column per engine, complete.
+    """Every hour of a site: load, grid (net), buy, sell, one column per engine,
+    complete, and the rebuilt flags (any, grid, per engine).
 
     A NaN is a reading nobody took; sums keep it NaN, so a pooled hour with
     either plant unmeasured is unmeasured.
@@ -134,10 +160,13 @@ def _site(site: str) -> pd.DataFrame:
     idx = parts[0].index.union(parts[1].index)
     a, b = (p.reindex(idx) for p in parts)
     out = pd.DataFrame({c: a[c] + b[c] for c in ("load", "grid", "buy", "sell")}, index=idx)
+    pooled = ["load", "grid", "buy", "sell", "complete", "rebuilt grid", "rebuilt"]
     for p in (a, b):
-        for name in p.columns.drop(["load", "grid", "buy", "sell", "complete"]):
-            out[name] = p[name]
+        for name in p.columns.drop(pooled):
+            out[name] = p[name].eq(True) if name.startswith("rebuilt ") else p[name]
     out["complete"] = a["complete"].eq(True) & b["complete"].eq(True)
+    for c in ("rebuilt grid", "rebuilt"):
+        out[c] = a[c].eq(True) | b[c].eq(True)
     return out
 
 
@@ -146,10 +175,11 @@ def hours(site: str) -> pd.DataFrame:
 
     Columns: load (the plant, kW), grid (the city meter, minus = sent to the
     city), buy and sell (what was bought from and sent to the city), one
-    column per engine named as in the units list, and complete (every one of
-    them measured). An hour a meter did not report is NaN in that column and
-    stays NaN: unlike year(), no day is dropped and nothing is laid end to
-    end, so the gaps are where they were.
+    column per engine named as in the units list, complete (every one of
+    them measured), rebuilt (any of them rebuilt from the hour's balance) and
+    "rebuilt grid" / "rebuilt <engine>" (which). An hour a meter did not
+    report is NaN in that column and stays NaN: unlike year(), no day is
+    dropped and nothing is laid end to end, so the gaps are where they were.
     """
     return _site(site)
 
@@ -160,8 +190,10 @@ def year(site: str) -> dict:
     Returns load (plant, kW), gpu, grid, buy and sell (kW, as measured), each
     engine's own output (gpu_units, in the order of the units list), the
     timestamps, the days kept, the period the meters cover (first and last
-    hour on which all of them report) with its length in calendar days, and
-    how many calendar dates the kept days hold twice.
+    hour on which all of them report) with its length in calendar days, how
+    many calendar dates the kept days hold twice, and how many kept hours
+    carry a reading rebuilt from the balance (rebuilt_hours; per series in
+    rebuilt).
     """
     t = _site(site)
     names = [u[0] for u in units(site)]
@@ -184,4 +216,6 @@ def year(site: str) -> dict:
             "period": (span[0], span[-1]),
             "days_period": (span[-1].floor("D") - span[0].floor("D")).days + 1,
             "repeat": int(pd.Series(kept.strftime("%m-%d")).duplicated().sum()),
-            "hours": len(k)}
+            "hours": len(k),
+            "rebuilt_hours": int(k["rebuilt"].eq(True).sum()),
+            "rebuilt": {c: int(k[f"rebuilt {c}"].eq(True).sum()) for c in ("grid", *names)}}

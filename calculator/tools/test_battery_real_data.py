@@ -58,12 +58,16 @@ def annualisation() -> None:
     check("a constant over every day of a year is 365", abs(y - 365.0) < 1e-9 and not miss)
     gaps = {d: 1.0 for d in year if d[5:7] not in ("02", "12")}
     y, miss = B.by_month(gaps)
-    check("missing February and December are filled from neighbours", abs(y - 365.0) < 1e-9
-          and miss == [2, 12], f"missing {miss}")
-    ramp = {d: float(int(d[5:7])) for d in year if d[5:7] != "02"}
-    y, _ = B.by_month(ramp)
-    want = sum(m * B.DAYS_IN[m] for m in range(1, 13) if m != 2) + 2.0 * B.DAYS_IN[2]
-    check("a gap takes the mean of the measured months either side", abs(y - want) < 1e-9)
+    check("missing February and December mean no year, and are named",
+          y is None and miss == [2, 12], f"missing {miss}")
+    lo, hi, miss = B.month_range(gaps)
+    check("the report's range: a constant stays 365 whichever month stands in",
+          abs(lo - 365.0) < 1e-9 and abs(hi - 365.0) < 1e-9 and miss == [2, 12])
+    # February measured from the 15th only: its days' mean stands for the month
+    ramp = {d: float(int(d[5:7])) for d in year if d[5:7] != "02" or d[8:] >= "15"}
+    y, miss = B.by_month(ramp)
+    want = sum(m * B.DAYS_IN[m] for m in range(1, 13))
+    check("a month counts at its measured days' mean", not miss and abs(y - want) < 1e-9)
 
 
 def rule() -> None:

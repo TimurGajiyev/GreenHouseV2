@@ -541,36 +541,41 @@ def _month(stamp) -> int:
     return int(m) if m is not None else int(str(stamp)[5:7])
 
 
-def month_year(stamps: Sequence, values: Sequence[float]) -> tuple[float, list[int]]:
+def month_range(stamps: Sequence, values: Sequence[float]) -> tuple[float, float, list[int]]:
     """An hourly series with real timestamps, carried to a calendar year.
 
     Scaling the hours to 8,760 (``annualise``) treats them as a fair sample of
-    the year, and measured data rarely is one: ЖКПЗ's table has no December or
-    February at all (the dashboard export is missing them), while Жаркент 3's
-    runs from September to the next October, so two months count twice. Here
-    each calendar month is the mean of its own measured hours times the hours
-    in that month, so a month measured twice counts once and a month measured
-    on one day counts as a whole month. A month with no measured hour takes the
-    mean of the nearest measured months either side, never of a month filled
-    here. Returns the annual figure and the months that were filled.
+    the year, and measured data rarely is one: Жаркент 3's table runs from
+    September to the next October, so two months count twice. Here each
+    calendar month is the mean of its own measured hours times the hours in
+    that month, so a month measured twice counts once.
+
+    A month with no measured hour is not filled. It is taken at the lowest and
+    at the highest of the measured months' means, which gives the year's low
+    and high -- a range on one stated assumption, that the month lies within
+    what the measured months span (the worst-case-bounds idea, narrowed to
+    the observed range). Every month measured, low == high. Returns (low,
+    high, the months with no measured hour).
     """
     if len(stamps) != len(values):
         raise ValueError(f"{len(stamps)} timestamps for {len(values)} values")
     acc: dict[int, list[float]] = {}
     for t, v in zip(stamps, values):
         acc.setdefault(_month(t), []).append(float(v))
+    missing = sorted(set(range(1, 13)) - set(acc))
     if not acc:
-        return 0.0, list(range(1, 13))
+        return 0.0, 0.0, missing
     mean = {m: sum(v) / len(v) for m, v in acc.items()}
-    year = 0.0
-    for m in range(1, 13):
-        if m in mean:
-            year += mean[m] * DAYS_IN_MONTH[m - 1] * HOURS_PER_DAY
-            continue
-        prev = next(mean[(m - k - 2) % 12 + 1] for k in range(12) if (m - k - 2) % 12 + 1 in mean)
-        nxt = next(mean[(m + k) % 12 + 1] for k in range(12) if (m + k) % 12 + 1 in mean)
-        year += (prev + nxt) / 2 * DAYS_IN_MONTH[m - 1] * HOURS_PER_DAY
-    return year, sorted(set(range(1, 13)) - set(mean))
+    have = sum(mean[m] * DAYS_IN_MONTH[m - 1] * HOURS_PER_DAY for m in mean)
+    gap = sum(DAYS_IN_MONTH[m - 1] for m in missing) * HOURS_PER_DAY
+    return have + min(mean.values()) * gap, have + max(mean.values()) * gap, missing
+
+
+def month_year(stamps: Sequence, values: Sequence[float]) -> tuple[float | None, list[int]]:
+    """``month_range`` when it is one figure: the year, or None with the months
+    that have no measured hour."""
+    low, _, missing = month_range(stamps, values)
+    return (None if missing else low), missing
 
 
 def suggest_k(days: int) -> int:

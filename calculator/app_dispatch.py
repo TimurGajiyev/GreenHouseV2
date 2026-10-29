@@ -745,7 +745,9 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
             min_kw=kw, max_kw=kw, min_turn_down_fraction=td,
             start_cost=float(u[U_START] or 0.0),
             min_up_hours=max(1, int(u[U_UP] or 1)), min_down_hours=max(1, int(u[U_DOWN] or 1)),
-            can_curtail=bool(u[U_SPILL]),
+            # the column is hidden, so a row added on the page has no value;
+            # it spills like the preset rows do
+            can_curtail=bool(True if pd.isna(u.get(U_SPILL)) else u.get(U_SPILL)),
             max_starts_per_day=(st_over if st_over is not None else _opt_int(u.get(U_MAXST))),
             maintenance_events=max(0, _opt_int(u.get(U_MEV)) or 0),
             maintenance_duration_hours=max(0, _opt_int(u.get(U_MDUR)) or 0),
@@ -872,9 +874,11 @@ def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0,
     # per year on the page's one basis: by calendar month when the hours carry
     # their dates, else by hours (see _annual)
     years = [_run_year(r, out, hours) for r in runs]
-    starts_year = ([Y.month_year(out["time"], r["hourly"]["starts"])[0] for r in runs]
-                   if timed else [a["starts_year"] for a in acc])
+    starts_year = ([Y.month_range(out["time"], r["hourly"]["starts"])[:2] for r in runs]
+                   if timed else [(a["starts_year"],) * 2 for a in acc])
+    gap = _year_gap(out, hours)
     per_year = "" if hours == MAX_H and not timed else (
+        f" (range: {', '.join(_MONTHS[m - 1] for m in gap)} not measured)" if gap else
         " (by calendar month)" if timed else f" (× {k:,.2f})")
 
     def line(lab, key, fmt):
@@ -889,11 +893,12 @@ def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0,
         line("Peak grid purchase (kW)", "peak", kwh),
         line("Battery charged (kWh)", "charge", kwh),
         line("Battery discharged (kWh)", "discharge", kwh),
-        line("Spill (kWh)", "spill", kwh),
+        *([line("Spill (kWh)", "spill", kwh)] if A.SHOW_SPILL else []),
         line("Starts", "starts", lambda v: f"{v:,.0f}"),
         line("Starts per day, average (fleet)", "starts_day_avg", lambda v: f"{v:,.2f}"),
         line("Starts on the busiest day (fleet)", "starts_day_max", lambda v: f"{v:,.0f}"),
-        ["Starts per year" + per_year] + [f"{v:,.0f}" for v in starts_year],
+        ["Starts per year" + per_year] + [_span(v, lambda x: f"{x:,.0f}")
+                                          for v in starts_year],
         line("Unit-hours", "unit_hours", lambda v: f"{v:,.0f}"),
         ["Effective hours (running + starts × " + f"{wear_h:g} h)"]
         + [f"{a['unit_hours'] + a['starts'] * wear_h:,.0f}" for a in acc],
@@ -907,11 +912,10 @@ def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0,
                              "ghp-neg" if a["total"] > base + 0.5 else "ghp-pos"))
         for i, a in enumerate(acc)]
     rows.append(delta)
-    rows.append(["Operating cost per year" + per_year] + [money(y) for y in years])
+    rows.append(["Operating cost per year" + per_year] + [_span(y, money) for y in years])
     rows.append(["vs first scenario, per year"] + [
-        ("—" if i == 0 else (_money(y - years[0], cur),
-                             "ghp-neg" if y > years[0] + 0.5 else "ghp-pos"))
-        for i, y in enumerate(years)])
+        "—" if i == 0 else _cost_cell(_gain_year(runs[0], r, out, hours), money)
+        for i, r in enumerate(runs)])
     # HiGHS reports an infinite MIP gap for a model with no integers in it at
     # all -- a scenario with no fuel-fired units is a plain LP -- and "gap inf%"
     # is not a thing to show anybody. There is no gap to report, so report none.
@@ -1012,23 +1016,23 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
     rows = []
     for o in others:
         save = o["acc"]["total"] - run["acc"]["total"]
-        year, extra, lc, reverse = _pair_life(run, o, out, hours)
+        year, extra, lcs, reverse = _pair_life(run, o, out, hours)
+        simple = [lc.simple_payback_years for lc in reversed(lcs)] if lcs else []
         if extra > 0:
-            pay = ((f"{lc.simple_payback_years:,.1f} years", "ghp-pos")
-                   if lc.simple_payback_years is not None else ("never", "ghp-neg"))
+            pay = _years_cell(simple)
         elif extra < 0:
             # the other scenario buys the battery: this one saves its CAPEX, or
             # the battery pays back from the other side, or neither
-            if year >= 0:
+            if year[0] >= 0:
                 pay = ("saves the CAPEX", "ghp-pos")
-            elif lc.simple_payback_years is not None:
-                pay = (f"{lc.simple_payback_years:,.1f} years (the other way)", "ghp-neg")
+            elif any(v is not None for v in simple):
+                pay = (_years_cell(simple)[0] + " (the other way)", "ghp-neg")
             else:
                 pay = ("never, either way", "ghp-neg")
         else:
             pay = ("—", "")
         cls = "ghp-pos" if save >= 0 else "ghp-neg"
-        rows.append([o["name"], (A._signed(save), cls), (A._signed(year), cls),
+        rows.append([o["name"], (A._signed(save), cls), _signed_span(year),
                      _money(extra, cur) if extra else "—", pay])
     P.table(["Compared with", "Saving over the window", "Saving per year",
              "Extra battery CAPEX", "Payback"], rows)
@@ -1050,10 +1054,12 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
 def _pair_life(run: dict, o: dict, out: dict, hours: int):
     """``run`` against ``o`` over the analysis period.
 
-    Returns the annual saving of ``run`` over ``o``, the battery CAPEX the choice
-    involves (+ when ``run`` buys it, − when ``o`` does, 0 otherwise), the
-    lifecycle of whichever side buys the battery -- its saving net of the
-    battery's O&M and replacement -- and whether that side is ``o``."""
+    Returns the annual saving of ``run`` over ``o`` as (low, high), the battery
+    CAPEX the choice involves (+ when ``run`` buys it, − when ``o`` does, 0
+    otherwise), the lifecycle of whichever side buys the battery -- its saving
+    net of the battery's O&M and replacement -- at the low and at the high end
+    of that side's saving (None when neither side buys one), and whether that
+    side is ``o``. Low and high are one figure unless a month was not measured."""
     life = out.get("life") or {}
     years = int(life.get("years", 25))
     esc, disc = float(life.get("escalation", 0.0)), float(life.get("discount", 0.0))
@@ -1062,16 +1068,17 @@ def _pair_life(run: dict, o: dict, out: dict, hours: int):
     terms = dict(om_fraction=float(bat.get("om_fraction", 0.0)),
                  replace_year=int(bat.get("replace_year", 0) or 0),
                  replace_fraction=float(bat.get("replace_fraction", 0.0)))
-    year = _run_year(o, out, hours) - _run_year(run, out, hours)
+    year = _gain_year(run, o, out, hours)
     if run["battery"] and not o["battery"]:
-        return year, capex, Y.lifecycle(_run_year(run, out, hours), years=years, escalation=esc,
-                                        discount=disc, annual_saving=year, capex=capex,
-                                        **terms), False
-    if o["battery"] and not run["battery"]:
-        return year, -capex, Y.lifecycle(_run_year(o, out, hours), years=years, escalation=esc,
-                                         discount=disc, annual_saving=-year, capex=capex,
-                                         **terms), True
-    return year, 0.0, None, False
+        buyer, saving, extra, reverse = run, year, capex, False
+    elif o["battery"] and not run["battery"]:
+        buyer, saving, extra, reverse = o, (-year[1], -year[0]), -capex, True
+    else:
+        return year, 0.0, None, False
+    cost = _run_year(buyer, out, hours)
+    lcs = tuple(Y.lifecycle(c, years=years, escalation=esc, discount=disc, annual_saving=v,
+                            capex=capex, **terms) for c, v in zip(cost, saving))
+    return year, extra, lcs, reverse
 
 
 def measured_account(meas: dict, price: list[float], units: pd.DataFrame,
@@ -1153,34 +1160,111 @@ def _run_hourly_cost(run: dict) -> list[float]:
     return [e + o for e, o in zip(h["energy"], h["ops"])]
 
 
-def _annual(out: dict, hours: int, total: float, hourly_values: list[float] | None = None) -> float:
-    """A horizon's figure carried to a year.
+def _annual(out: dict, hours: int, total: float,
+            hourly_values: list[float] | None = None) -> tuple[float, float]:
+    """A horizon's figure carried to a year, as (low, high).
 
     With the hours' own timestamps (a measured plant) the year is weighted by
-    calendar month (``year_study.month_year``); without them the horizon is
-    scaled by 8,760 / hours, which is all a timeless upload allows."""
+    calendar month (``year_study.month_range``). A calendar month with no
+    measured hour is not filled: the year becomes a range, low and high equal
+    when every month was measured. Without timestamps the horizon is scaled
+    by 8,760 / hours, which is all a timeless upload allows."""
     t = out.get("time")
     if t and hourly_values is not None and len(t) == len(hourly_values):
-        return Y.month_year(t, hourly_values)[0]
-    return Y.annualise(total, hours)
+        low, high, _ = Y.month_range(t, hourly_values)
+        return low, high
+    y = Y.annualise(total, hours)
+    return y, y
 
 
-def _run_year(run: dict, out: dict, hours: int) -> float:
+def _run_year(run: dict, out: dict, hours: int) -> tuple[float, float]:
     return _annual(out, hours, run["acc"]["total"], _run_hourly_cost(run))
 
 
+def _gain_year(a: dict, b: dict, out: dict, hours: int) -> tuple[float, float]:
+    """What ``b`` costs a year more than ``a`` -- ``a``'s saving -- as (low, high).
+
+    Ranged on the hour-by-hour difference, not as the difference of two ranges:
+    a month not measured is the same month for both scenarios."""
+    return _annual(out, hours, b["acc"]["total"] - a["acc"]["total"],
+                   [y - x for x, y in zip(_run_hourly_cost(a), _run_hourly_cost(b))])
+
+
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _span(r: tuple[float, float], fmt) -> str:
+    """One figure, or 'low … high' when a month was not measured."""
+    lo, hi = r
+    return fmt(lo) if abs(hi - lo) < 0.5 else f"{fmt(lo)} … {fmt(hi)}"
+
+
+def _signed_span(r: tuple[float, float]):
+    """A saving, or its range, coloured only when the whole range has one sign."""
+    text = _span(r, A._signed)
+    if r[0] >= 0:
+        return (text, "ghp-pos")
+    return (text, "ghp-neg") if r[1] < 0 else text
+
+
+def _cost_cell(r: tuple[float, float], money):
+    """An extra cost, or its range: red when it is a cost throughout, green when
+    it is none anywhere, plain when the range holds both."""
+    text = _span(r, money)
+    if r[0] > 0.5:
+        return (text, "ghp-neg")
+    return (text, "ghp-pos") if r[1] <= 0.5 else text
+
+
+def _saving_cell(r: tuple[float, float], money):
+    """A saving, or its range: green when it is one throughout, red when it is
+    none anywhere, plain when the range holds both."""
+    text = _span(r, money)
+    if r[0] > 0.5:
+        return (text, "ghp-pos")
+    return (text, "ghp-neg") if r[1] <= 0.5 else text
+
+
+def _years_cell(paybacks: list) -> tuple[str, str]:
+    """Simple paybacks, the shorter end first, as one cell."""
+    words = [f"{v:,.1f} years" if v is not None else "never" for v in paybacks]
+    if words[0] == words[-1]:
+        return (words[0], "ghp-neg" if paybacks[0] is None else "ghp-pos")
+    return (f"{words[0]} … {words[-1]}", "")
+
+
+def _year_gap(out: dict, hours: int) -> list[int]:
+    """The calendar months a measured horizon has no hour in; any one makes a year a range."""
+    t = out.get("time")
+    if not t or len(t) != hours:
+        return []
+    return Y.month_range(t, [0.0] * hours)[2]
+
+
+def _year_note(time: list) -> str:
+    """The measured source's caption on how its days make a year."""
+    gap = Y.month_range(time, [0.0] * len(time))[2]
+    if not gap:
+        return "Every calendar month has a measured day, so per-year figures are built by month."
+    return ("**Per-year figures are ranges**: " + ", ".join(_MONTHS[m - 1] for m in gap)
+            + (" has" if len(gap) == 1 else " have") + " no fully measured day. Nothing is "
+            "filled in: each is taken at the lowest and at the highest measured month.")
 
 
 def _year_basis(out: dict, hours: int) -> str:
     """How 'per year' was reached, in words for the notes under a table."""
     t = out.get("time")
     if t and len(t) == hours:
-        _, missing = Y.month_year(t, [0.0] * hours)
-        gap = (" Months with no measured hour, filled from the measured months either "
-               "side: <b>" + ", ".join(_MONTHS[m - 1] for m in missing) + "</b>.") if missing else ""
-        return ("per year = each calendar month's measured hours averaged and multiplied "
-                "by the month's length, so a month measured twice counts once." + gap)
+        basis = ("per year = each calendar month's measured hours averaged and multiplied "
+                 "by the month's length, so a month measured twice counts once")
+        gap = _year_gap(out, hours)
+        if gap:
+            basis += (". <b>" + ", ".join(_MONTHS[m - 1] for m in gap) + "</b> "
+                      + ("has" if len(gap) == 1 else "have") + " no fully measured day and "
+                      "nothing is filled in: each is taken at the lowest and at the highest "
+                      "measured month, so a per-year figure is a <b>range</b>, on the one "
+                      "assumption that a month not measured lies within what was measured")
+        return basis
     if hours == MAX_H:
         return "the horizon is a year: nothing is annualised"
     return f"per year = the horizon × 8,760 / {hours:,} h"
@@ -1240,11 +1324,16 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
          "ghp-pos" if a["total"] < m["total"] - 0.5 else "ghp-neg") for a in acc])
     # the same per year, on the same basis as the comparison above
     price = out.get("price_raw") or out["price"]
-    m_year = _annual(out, H, m["total"], measured_hourly(meas, price, out["units"]))
+    m_hour = measured_hourly(meas, price, out["units"])
+    m_year = _annual(out, H, m["total"], m_hour)
     years = [_run_year(r, out, H) for r in runs]
-    rows.append(["Saving against measured, per year", "—"] + [
-        (money(m_year - y), "ghp-pos" if y < m_year - 0.5 else "ghp-neg") for y in years])
-    P.table(head, rows, ["Operating cost per year", money(m_year)] + [money(y) for y in years])
+    # the saving's range from the hour-by-hour difference, as _gain_year does
+    saves = [_annual(out, H, m["total"] - r["acc"]["total"],
+                     [x - y for x, y in zip(m_hour, _run_hourly_cost(r))]) for r in runs]
+    rows.append(["Saving against measured, per year", "—"]
+                + [_saving_cell(s, money) for s in saves])
+    P.table(head, rows, ["Operating cost per year"]
+            + [_span(y, money) for y in [m_year, *years]])
     measured_av = out.get("availability") == AV_MEASURED
     P.note(["<b>Measured</b> is the logger's own hours priced with this page's inputs: each "
             "engine at its own hourly output, on its part-load curve where it has one; a "
@@ -1265,6 +1354,14 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
                " — and the engines are taken as always available: the model knows no outage, "
                "no service stop and no limit the site's own control imposed, so much of it "
                "is not reachable. Choose availability as measured in the Units panel")])
+
+
+def _pay_span(lcs, tail: str = "") -> tuple[str, str]:
+    """``_pay`` at the high and at the low end of a saving: one cell, the shorter first."""
+    hi, lo = (_pay(lc.simple_payback_years, lc.discounted_payback_years) for lc in reversed(lcs))
+    if hi[0] == lo[0]:
+        return (hi[0] + tail, hi[1])
+    return (f"{hi[0]} … {lo[0]}{tail}", "")
 
 
 def _pay(simple: float | None, disc: float | None, tail: str = "") -> tuple[str, str]:
@@ -1292,37 +1389,41 @@ def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
     life = out.get("life") or {}
     years = int(life.get("years", 25))
     esc, disc = float(life.get("escalation", 0.0)), float(life.get("discount", 0.0))
-    own = Y.lifecycle(_run_year(run, out, hours), years=years, escalation=esc, discount=disc)
+    owns = [Y.lifecycle(c, years=years, escalation=esc, discount=disc)
+            for c in _run_year(run, out, hours)]
+    own = owns[0]
 
     rows = []
     for o in others:
-        year, extra, lc, reverse = _pair_life(run, o, out, hours)
-        pv = own.pwf * year
-        cls = "ghp-pos" if year >= 0 else "ghp-neg"
+        year, extra, lcs, reverse = _pair_life(run, o, out, hours)
+        pv = (own.pwf * year[0], own.pwf * year[1])
         # Net present value of choosing this scenario over that one: the present
         # value of what it saves, less what the battery costs over the period --
         # its CAPEX, its O&M and its replacement -- when this scenario is the one
         # that buys it, plus all of that when the OTHER one does.
-        if lc is None:
+        if lcs is None:
             cost_pv, net, pay = 0.0, pv, ("—", "")
         else:
+            lc = lcs[0]
             whole = lc.capex + lc.om_present_value + lc.replace_present_value
             cost_pv = -whole if reverse else whole
-            net = -lc.net_present_value if reverse else lc.net_present_value
-            pay = _pay(lc.simple_payback_years, lc.discounted_payback_years,
-                       " reversed" if reverse else "")
+            nets = sorted(-x.net_present_value if reverse else x.net_present_value for x in lcs)
+            net = (nets[0], nets[1])
+            pay = _pay_span(lcs, " reversed" if reverse else "")
         rows.append([
             o["name"],
-            (A._signed(year), cls),
-            (A._signed(pv), cls),
+            _signed_span(year),
+            _signed_span(pv),
             _money(cost_pv, cur) if cost_pv else "—",
-            (A._signed(net), "ghp-pos" if net >= 0 else "ghp-neg"),
+            _signed_span(net),
             pay,
         ])
+    money = lambda v: _money(v, cur)
     P.table(["Compared with", "Saving per year", f"Present value, {years} yr",
              "Battery: CAPEX + O&M + replacement", "Net present value", "Payback"], rows,
-            [f"{run['name']} — operating cost", _money(own.annual_cost, cur) + " / yr",
-             _money(own.present_value, cur), "", "", ""])
+            [f"{run['name']} — operating cost",
+             _span((owns[0].annual_cost, owns[1].annual_cost), money) + " / yr",
+             _span((owns[0].present_value, owns[1].present_value), money), "", "", ""])
     b = Y.lifecycle(0.0, years=years, escalation=esc, discount=disc, capex=capex,
                     om_fraction=float(bat.get("om_fraction", 0.0)),
                     replace_year=int(bat.get("replace_year", 0) or 0),
@@ -1427,7 +1528,11 @@ def render() -> None:
                 f"{p0:%d.%m.%Y} – {p1:%d.%m.%Y}. **{y['days']} of those {y['days_period']} "
                 f"days** were measured in full and are used, end to end ({y['hours']:,} h); "
                 f"a day with any hour missing is left out whole, and nothing is "
-                f"interpolated.{twice} Per-year figures scale these days to 8,760 h. "
+                f"interpolated. In {y['rebuilt_hours']:,} of those hours the logger missed "
+                f"the engine or the grid reading and it is the other side of the same "
+                f"hour's balance (engine = plant − grid), kept and flagged: the logger "
+                f"mostly stops writing an engine that stopped, so dropping those hours "
+                f"would drop the outages.{twice} {_year_note(y['time'])} "
                 f"Source and cleaning: real_data/zharkent/build.py and combine.py.")
         elif src.startswith("Upload"):
             up = st.file_uploader("Hourly load, kW — one value per line or the first column of "
@@ -1637,8 +1742,8 @@ def render() -> None:
                     f"Fuel cost ({cur}/kWh)", min_value=0.0,
                     help="Gas only, per kWh generated. With the two efficiency columns "
                          "set it is the cost at FULL load, and part load is priced by "
-                         "the data sheet's curve; blank, every kWh costs this. Spill "
-                         "included. NOT in the passports: they give the gas an engine "
+                         "the data sheet's curve; blank, every kWh costs this. "
+                         "NOT in the passports: they give the gas an engine "
                          "burns (" + _pp("eff", lambda p: f"{p['fuel_kw'][100]:,.0f} kW of "
                                         f"fuel at {p['kw']:,.0f} kW") + "), not its price. "
                          "22 is the workbook's unconfirmed «всё включено»."),
@@ -1679,8 +1784,9 @@ def render() -> None:
                          + _pp("min_load", lambda p: f"{p['min_load']:.0f} %") + "."),
                 U_UP: st.column_config.NumberColumn(min_value=1, step=1, help=_UPDOWN_HELP),
                 U_DOWN: st.column_config.NumberColumn(min_value=1, step=1, help=_UPDOWN_HELP),
-                U_SPILL: st.column_config.CheckboxColumn(
-                    help="Output above the load may be spilled (paid for, not used)."),
+                # hidden, not removed: every row keeps its value (on by default)
+                # and the dispatch still reads it
+                U_SPILL: None,
                 U_MAXST: st.column_config.NumberColumn(
                     min_value=0, step=1, format="%d",
                     help="At most this many starts in any calendar day. Blank = no limit."),

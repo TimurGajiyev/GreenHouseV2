@@ -7,7 +7,9 @@ the hour, a year by the day, and every window ends on the date picked.
 
 Every figure is a meter reading (real_data.hours). An hour a meter did not
 report is blank -- no bar, a break in the load line, "not measured" in the
-hover panel -- and nothing is filled in. In the year view a series is drawn
+hover panel -- and nothing is filled in. A reading the logger missed and
+the same hour's balance supplies (engine = plant - grid) is drawn, and the
+hover panel says "from balance". In the year view a series is drawn
 for a day only when all 24 of its hours were measured, the rule
 real_data.year applies to the study's own days.
 """
@@ -52,8 +54,10 @@ def frame(hours: pd.DataFrame, units: list[str], start, stop, by_day: bool) -> p
     """The window, one row per hour or per day, NaN where nothing was measured.
 
     The city meter comes split in two: buy is what the plant bought, sell what
-    it sent. By day, a column is the day's mean, kept only where all 24 of its
-    hours were measured, and ``n_<column>`` says how many were.
+    it sent. ``rb <series>`` flags a reading rebuilt from the hour's balance.
+    By day, a column is the day's mean, kept only where all 24 of its hours
+    were measured, ``n_<column>`` says how many were, and ``rb <series>`` how
+    many of them were rebuilt.
     """
     idx = pd.date_range(start, stop, freq="h", inclusive="left")
     w = hours.reindex(idx)
@@ -61,6 +65,9 @@ def frame(hours: pd.DataFrame, units: list[str], start, stop, by_day: bool) -> p
     for u in units:
         h[u] = w[u]
     h["complete"] = w["complete"].eq(True)
+    rb = [f"rb {c}" for c in ("grid", *units)]
+    for c in ("grid", *units):
+        h[f"rb {c}"] = w[f"rebuilt {c}"].eq(True)
     if not by_day:
         return h
     cols = ["load", "buy", "sell", *units]
@@ -69,6 +76,7 @@ def frame(hours: pd.DataFrame, units: list[str], start, stop, by_day: bool) -> p
     d = mean.where(cnt == 24)
     for c in cols:
         d[f"n_{c}"] = cnt[c]
+    d[rb] = h[rb].groupby(h.index.floor("D")).sum()
     return d
 
 
@@ -128,16 +136,22 @@ def render(site: str) -> None:
     per_unit = [col(u) for u in units]
 
     # ---- the hover panel: one fixed set of rows, as the chart requires ----
-    def kw(v: float | None, measured: int | None) -> str:
+    def kw(v: float | None, measured: int | None, rebuilt=0) -> str:
         if v is None:
             return NOT if measured is None else f"{NOT} · {measured} of 24 h"
-        if abs(v) <= 0.5:
-            return DASH
-        return (f"{v:,.0f} kW avg · {v * 24 / 1000:,.1f} MWh" if by_day
-                else f"{v:,.0f} kW")
+        text = DASH if abs(v) <= 0.5 else (
+            f"{v:,.0f} kW avg · {v * 24 / 1000:,.1f} MWh" if by_day else f"{v:,.0f} kW")
+        # the logger missed it; the same hour's balance supplies it
+        if by_day and rebuilt:
+            text += f" · {int(rebuilt)} h from balance"
+        elif rebuilt and not by_day:
+            text += " · from balance"
+        return text
 
     n_load, n_buy, n_sell = got("load"), got("buy"), got("sell")
     n_unit = [got(u) for u in units]
+    rb_grid = list(f["rb grid"])
+    rb_unit = [list(f[f"rb {u}"]) for u in units]
     detail = []
     for i in range(n):
         vals = [s[i] for s in per_unit]
@@ -146,14 +160,14 @@ def render(site: str) -> None:
               kw(sum(vals), None) if all(v is not None for v in vals) else NOT, P.MUTED)]
         for j, u in enumerate(units):
             v = vals[j]
-            text = kw(v, n_unit[j][i])
+            text = kw(v, n_unit[j][i], rb_unit[j][i])
             # of its nameplate, not of the load: a plant that sends power to
             # the city runs its engines above its own load
             if v is not None and abs(v) > 0.5:
                 text += f" · {100.0 * v / rated[j]:.0f}% of rated"
             d.append((f"  {u}", text, P.unit_color(j)))
-        d.append(("Grid purchase", kw(buy[i], n_buy[i]), P.GRID_COLOR))
-        d.append(("Sent to the city", kw(sell[i], n_sell[i]), P.MUTED))
+        d.append(("Grid purchase", kw(buy[i], n_buy[i], rb_grid[i]), P.GRID_COLOR))
+        d.append(("Sent to the city", kw(sell[i], n_sell[i], rb_grid[i]), P.MUTED))
         detail.append(d)
 
     labels = ([_date(t, weekday=True) for t in f.index] if by_day
@@ -202,6 +216,9 @@ def render(site: str) -> None:
     P.note([b for b in (
         "meter readings only: hourly means of measured samples; a blank is an hour a "
         "meter did not report, and nothing is filled in",
+        f"<b>{int(hourly[[c for c in hourly if c.startswith('rb ')]].any(axis=1).sum()):,}</b> "
+        "h carry a reading the logger missed and the same hour's balance supplies "
+        "(engine = plant − grid), marked “from balance” in the hover panel",
         "a series is drawn for a day only when all 24 of its hours were measured"
         if by_day else "",
         "each figure sums the hours its own meter reported, of " + f"{n:,}: "

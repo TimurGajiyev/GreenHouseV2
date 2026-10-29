@@ -6,7 +6,8 @@ What REPORT.md Part 16's real-data check changed, each held to a second route:
 
   A. every day on its own   year_study.every_day: no clustering, day c is day c
   B. calendar months        year_study.month_year: a month measured twice counts
-                            once, a missing month takes its neighbours' mean
+                            once; a missing month is not filled, and the year
+                            becomes a range (month_range, test_missing_data.py)
   C. availability           the logger's on/off hours reach the core as each
                             engine's production_factor_series, and an engine the
                             logger shows down produces nothing
@@ -86,8 +87,8 @@ def b_months() -> None:
     check("one per hour over a calendar year is 8,760", close(v, 8760.0) and not miss)
     keep = [i for i, t in enumerate(year) if t.month not in (2, 12)]
     v, miss = Y.month_year([year[i] for i in keep], [1.0] * len(keep))
-    check("missing February and December are filled from their neighbours",
-          close(v, 8760.0) and miss == [2, 12], f"missing {miss}")
+    check("missing February and December mean no year, and are named",
+          v is None and miss == [2, 12], f"missing {miss}")
     # September measured in two years at two levels counts once, at their mean
     sep25 = [dt.datetime(2025, 9, 1) + dt.timedelta(hours=h) for h in range(720)]
     sep26 = [dt.datetime(2026, 9, 1) + dt.timedelta(hours=h) for h in range(720)]
@@ -98,11 +99,17 @@ def b_months() -> None:
     sys.path.insert(0, HERE)
     import battery_real_data as BR
     days = sorted({str(t)[:10] for t in year})
-    daily = {d: float(int(d[5:7])) * 24 for d in days if d[5:7] != "05"}
+    # every month measured, May only from the 11th: a year, and the same one
+    daily = {d: float(int(d[5:7])) * 24 for d in days if d[5:7] != "05" or d[8:] > "10"}
     hourly_t = [t for t in year if str(t)[:10] in daily]
     hourly_v = [daily[str(t)[:10]] / 24 for t in hourly_t]
+    by_day, by_hour = BR.by_month(daily)[0], Y.month_year(hourly_t, hourly_v)[0]
     check("hours and whole days give the same year",
-          close(BR.by_month(daily)[0], Y.month_year(hourly_t, hourly_v)[0]))
+          by_day is not None and close(by_day, by_hour))
+    no_may = {d: v for d, v in daily.items() if d[5:7] != "05"}
+    check("and with May not measured, neither gives one",
+          BR.by_month(no_may) == (None, [5])
+          and Y.month_year([t for t in year if t.month != 5], [1.0] * (8760 - 744)) == (None, [5]))
 
 
 def c_availability(site: str) -> dict:
@@ -183,11 +190,18 @@ def e_measured_costs(site: str, ctx: dict) -> None:
     check("the logged hours add up to measured_account's total",
           close(sum(h), m["total"], rel=1e-9), f"{sum(h):,.0f} vs {m['total']:,.0f}")
     out = {"time": ctx["y"]["time"]}
-    yr = D._annual(out, len(h), m["total"], h)
-    by_m, _ = Y.month_year(ctx["y"]["time"], h)
-    check("a measured horizon is carried to a year by calendar month", close(yr, by_m))
+    lo, hi = D._annual(out, len(h), m["total"], h)
+    by_lo, by_hi, gap = Y.month_range(ctx["y"]["time"], h)
+    if gap:
+        check("a month not measured makes the measured year a range, not a filled figure",
+              close(lo, by_lo) and close(hi, by_hi) and lo < hi,
+              f"not measured: {gap}; {lo:,.0f} … {hi:,.0f}")
+    else:
+        check("a measured horizon is carried to a year by calendar month",
+              close(lo, by_lo) and close(hi, lo) and close(lo, Y.month_year(out["time"], h)[0]))
+    plain = D._annual({}, len(h), m["total"], h)
     check("a horizon without dates is scaled by hours",
-          close(D._annual({}, len(h), m["total"], h), m["total"] * 8760 / len(h)))
+          close(plain[0], m["total"] * 8760 / len(h)) and plain[0] == plain[1])
 
 
 def f_resolution() -> None:

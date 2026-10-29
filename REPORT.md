@@ -1417,12 +1417,23 @@ CAPEX after it first crossed; the payback is then the second crossing. Read from
 side of a comparison the table mirrors itself and says "(the other way)", as the savings
 strip above it already does.
 
-**Per year** on a measured plant is weighted by calendar month (`year_study.month_year`):
+**Per year** on a measured plant is weighted by calendar month (`year_study.month_range`):
 * each month is the mean of its measured hours times the month's length;
 * a month measured twice counts once — Жаркент 3's data run from September to the next
   October;
-* a month never measured takes the mean of its measured neighbours — ЖКПЗ has no December
-  or February, and the page names them.
+* a month never measured is **not filled**. It is taken at the lowest and at the highest
+  measured month, so the year becomes a **range**, "low … high". The one assumption is
+  that a month not measured lies within what was measured. The per-year rows, the
+  economics table and the 25-year table show the range and name the missing months.
+  When every month is measured, the range is a single figure.
+
+A day counts only when every meter read all 24 of its hours. Where a logger missed the
+engine or the grid reading, `build.py` / `combine.py` take it from the same hour's
+balance, engine = plant − grid (`*_from_balance`). That reading is kept and flagged:
+the measured chart marks it "from balance", and the source caption counts it. Part 18
+explains why dropping it would be a bias rather than a precaution. `tools/test_missing_data.py`
+holds the rules: nothing invented, rebuilt = balance, whole days only, no selection
+bias, months not filled.
 
 Without timestamps (an upload), per year is still the horizon × 8,760 / hours.
 
@@ -2068,6 +2079,71 @@ question for operations before it is one for a battery.
   data sheets do not require (`docs/equipment/README.md`).
 * **`real_data/zharkent/payback.py` predates the TEDOM in the table.** It sums the two loggers
   as "both stations" and is superseded by this part.
+
+## Revised 29.10.2026: missing data, measured rather than assumed
+
+The days the meters do not cover were studied before deciding how to treat them
+(`tools/test_missing_data.py` keeps the result).
+
+**Why days are missing.**
+
+| | ЖКПЗ | Жаркент 3 |
+|---|---:|---:|
+| Calendar days | 349 | 389 |
+| Every meter read all 24 h | 18 | 72 |
+| Complete once the balance supplies a missed reading | 146 | 221 |
+| Partial (1–2 h missing) | 178 (38) | 93 (36) |
+| Nothing at all | 7 | 3 |
+
+* **Most of the missing readings are the J320's own output, and they are not missing at
+  random.** Where the logger wrote the engine's output, the engine was running in 98 % of
+  hours. Where it did not, the engine was running in 48 % (Жаркент 2) and 9 % (Жаркент 3).
+  The logger mostly stops writing an engine that stopped.
+* **Dropping those hours keeps only the days the engines never stopped.** Under that rule
+  (28.10) the J320 was running in 100 % and 99.5 % of the kept hours, against 80 % and 68 %
+  in the dropped days. Using complete cases only is unbiased only when data are missing at
+  random. Here it removed exactly the outages in which the plants buy from the city.
+* **The balance supplies those readings exactly.** A reading taken from the balance equals
+  max(0, plant − grid) of the same hour to 0.2 kW, the table's rounding. Where all three
+  meters read, the balance closes to a median 1.0 kW (ЖКПЗ) and 0.4 kW (Жаркент 3), within
+  20 kW in 85 % and 93 % of hours. Running or stopped by the balance agrees with the meter
+  in 98.1 % and 99.2 % of hours.
+* **ЖКПЗ's December and February are missing only from the TEDOM dashboard export.** That
+  export has no rows for 12.2025 or 02.2026, and only part of January, June and July. The
+  CC42 logger has both months (`raw/GPU2_CC42`). 92 % of ЖКПЗ's missing hours lie in 11 gaps
+  longer than a day, and relaxing the TEDOM's 10-of-12-samples rule would recover only
+  29 hours.
+
+**What the study does now.** A reading the logger missed is taken from the same hour's
+balance, kept and flagged, which keeps 164, 293 and 135 days. With the balance readings
+kept, the J320 runs in 85.6 % and 80.5 % of kept hours against 82.6 % and 76.0 % of all
+hours. A day with a real hole is still left out whole. A month with no measured day is
+not filled: the year becomes a range, the month taken at the lowest and the highest
+measured month. This follows the practice that missing data not at random be bounded
+rather than imputed. The PNNL meter-data method (PNNL-24331, 2015) never estimates gaps
+longer than 45 days, and fills only gaps of an hour or less for load profiles.
+
+**Results** (`summary_grid60_gas22.md`). The battery alone, D − A, in M ₸ a year; the
+break-even is 43.5 M ₸/yr.
+
+| | Optimiser, engines free | Optimiser, availability as measured | Engines as logged + battery by rule |
+|---|---:|---:|---:|
+| ЖКПЗ (Feb, Dec not measured) | 5.3 … 10.3 | **16.0 … 21.3** | 7.2 … 10.6 |
+| Жаркент 3 | 5.0 | 8.2 | 6.4 |
+| Three engines, one pool (Feb, Dec not measured) | 3.6 … 5.1 | 11.5 … 14.9 | 18.8 … 24.7 with a common bus |
+
+* **The answer does not depend on the missing months.** Even at the top of its range, with
+  February and December as good as the best measured month, no case reaches the 43.5 M ₸
+  break-even. Payback is "never" throughout, apart from the pool's no-netting rule view,
+  which credits the battery with what a wire between the plants would earn.
+* The figures of the 28.10 revision, on 18, 72 and 7 days, are withdrawn. Those days were
+  the days without an outage. The first table of this part (164, 293 and 135 days) used
+  the same days as now; its ЖКПЗ and pool per-year figures filled the two missing months
+  with their neighbours' mean and lie inside the ranges above.
+* **To close the range, the data has to be recovered.** That means the TEDOM's December
+  2025 and February 2026 from the monitoring system or the TEDOM controller's own log.
+  Under IPMVP practice, December 2026 and February 2027 could also stand in once they are
+  measured.
 
 ## Reproduce
 

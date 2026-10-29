@@ -34,10 +34,11 @@ import ui_theme as T
 HOURS = 8760            # a full REopt year; any horizon is accepted
 DAYS = 365
 MINUS = "−"        # true minus, as the reference uses for discharge
-# The hour-by-hour tables (hour, day and all-hours) keep their spill column
-# but do not show it: the spill is still solved, summed and reported in the
-# hover panel, the window note and the per-unit table. True shows it again.
-SHOW_HOUR_SPILL = False
+# Spill is hidden on every page: the hour tables, the summary, the hover panel,
+# the window note, the per-unit table and the scenario comparison. Every unit
+# may still spill and the model still solves and sums it; only the display is
+# off. True shows it again.
+SHOW_SPILL = False
 
 
 def horizon(series: dict) -> int:
@@ -187,7 +188,7 @@ def _period_block(series: dict, tariff, start_h: int, n_h: int, label: str,
         "Grid purchase (kWh)": sum(grid),
     }
     spill = sum(sum(v) for v in (s.get("fueltech_unit_spill_kw") or {}).values())
-    if spill > 1e-6:
+    if spill > 1e-6 and SHOW_SPILL:
         out["Spill (kWh)"] = spill
     if sum(s.get("unserved_kw", [0])) > 1e-6:
         out["Unserved load (kWh)"] = sum(s["unserved_kw"])
@@ -437,7 +438,7 @@ def _hour_head(sh: dict, *lead: str) -> list[str]:
         head.append("SOC %" if sh["cap_kwh"] > 0 else "SOC kWh")
     if sh["any_on"]:
         head.append("ON")          # units running -- the reference's `uon`
-    if sh["any_spill"] and SHOW_HOUR_SPILL:
+    if sh["any_spill"] and SHOW_SPILL:
         head.append("SPILL")
     if sh["any_export"]:
         head.append("EXPORT")
@@ -460,7 +461,7 @@ def _hour_row(r: dict, sh: dict, *lead: str) -> list:
                    else _n(r["soc"]))
     if sh["any_on"]:
         row.append(str(int(sum(1 for v in r["on"] if v > 0.5))))
-    if sh["any_spill"] and SHOW_HOUR_SPILL:
+    if sh["any_spill"] and SHOW_SPILL:
         row.append(_n(sum(r["spill"])) if sum(r["spill"]) > 0.5 else "—")
     if sh["any_export"]:
         row.append(_n(r["export"]) if r["export"] > 0.5 else "—")
@@ -486,7 +487,7 @@ def _hour_foot(rows: list[dict], sh: dict, label: str = "Total",
     if sh["any_on"]:
         # unit-hours over the window, the total the "ON" column sums to
         foot.append(str(int(sum(1 for r in rows for v in r["on"] if v > 0.5))))
-    if sh["any_spill"] and SHOW_HOUR_SPILL:
+    if sh["any_spill"] and SHOW_SPILL:
         foot.append(_n(sum(sum(r["spill"]) for r in rows)))
     if sh["any_export"]:
         foot.append(_n(tot("export")))
@@ -744,7 +745,7 @@ def render_periods(state: dict) -> None:
             d.append(("Battery discharge",
                       f"\u2212{r['dis']:,.0f} kW" if r["dis"] > 0.5 else dash, P.DISCHARGE))
         d.append(("Grid purchase", _tip_kw(r["grid"]), P.GRID_COLOR))
-        if sh["any_spill"]:
+        if sh["any_spill"] and SHOW_SPILL:
             d.append(("Spill", _tip_kw(sum(r["spill"])), P.DISCHARGE))
         if sh["any_unserved"]:
             d.append(("Unserved", _tip_kw(r["unserved"]), P.DISCHARGE))
@@ -829,7 +830,7 @@ def render_periods(state: dict) -> None:
     # only report these when the shown window actually has them; the column
     # stays because the run as a whole does
     sp = sum(sum(r["spill"]) for r in rows)
-    if sp > 0.5:
+    if sp > 0.5 and SHOW_SPILL:
         bits.append(f'spill <b class="ghp-neg">{sp:,.0f} kWh</b>')
     un = sum(r["unserved"] for r in rows)
     if un > 0.5:
@@ -918,7 +919,7 @@ def render_periods(state: dict) -> None:
         head = ["UNIT", "TYPE", "SIZE kW", "PRODUCTION kWh", "CAPACITY FACTOR",
                 "RUNNING HOURS", f"FUEL {u0['fuel_unit_name'].upper()}"]
         show_starts = any(u.get("starts") is not None for u in sh["units"])
-        show_spill = sh["any_spill"]
+        show_spill = sh["any_spill"] and SHOW_SPILL
         show_maint = sh["any_maint"]
         if show_spill:
             head.append("SPILL kWh")
