@@ -97,6 +97,9 @@ GAP_DEFAULT = 0.01
 # the plant: "Measured: <plant>" -> "Zharkent · <plant>"
 REAL_SRC = "Measured: "
 REAL_PRESET = "Zharkent · "
+# The note under a measured source (period, days kept, balance hours, months
+# not measured) is hidden, not removed. True shows it again.
+SHOW_MEASURED_NOTE = False
 
 # bess_profile_v2.jsx / CHP_BESS_model_v2.xlsx, «Допущения»
 JSX_UNITS = {
@@ -1522,18 +1525,20 @@ def render() -> None:
             p0, p1 = y["period"]
             twice = (f" The period is longer than a year: {y['repeat']} calendar dates are "
                      f"in it twice, and count twice." if y["repeat"] else "")
-            st.caption(
-                f"Measured only: the plant's own consumption ({y['source']}), hourly means "
-                f"of measured samples, over the whole period its meters cover, "
-                f"{p0:%d.%m.%Y} – {p1:%d.%m.%Y}. **{y['days']} of those {y['days_period']} "
-                f"days** were measured in full and are used, end to end ({y['hours']:,} h); "
-                f"a day with any hour missing is left out whole, and nothing is "
-                f"interpolated. In {y['rebuilt_hours']:,} of those hours the logger missed "
-                f"the engine or the grid reading and it is the other side of the same "
-                f"hour's balance (engine = plant − grid), kept and flagged: the logger "
-                f"mostly stops writing an engine that stopped, so dropping those hours "
-                f"would drop the outages.{twice} {_year_note(y['time'])} "
-                f"Source and cleaning: real_data/zharkent/build.py and combine.py.")
+            if SHOW_MEASURED_NOTE:
+                st.caption(
+                    f"Measured only: the plant's own consumption ({y['source']}), hourly "
+                    f"means of measured samples, over the whole period its meters cover, "
+                    f"{p0:%d.%m.%Y} – {p1:%d.%m.%Y}. **{y['days']} of those "
+                    f"{y['days_period']} days** were measured in full and are used, end to "
+                    f"end ({y['hours']:,} h); a day with any hour missing is left out whole, "
+                    f"and nothing is interpolated. In {y['rebuilt_hours']:,} of those hours "
+                    f"the logger missed the engine or the grid reading and it is the other "
+                    f"side of the same hour's balance (engine = plant − grid), kept and "
+                    f"flagged: the logger mostly stops writing an engine that stopped, so "
+                    f"dropping those hours would drop the outages.{twice} "
+                    f"{_year_note(y['time'])} "
+                    f"Source and cleaning: real_data/zharkent/build.py and combine.py.")
         elif src.startswith("Upload"):
             up = st.file_uploader("Hourly load, kW — one value per line or the first column of "
                                   "a CSV; any length from 24 to 8,760 hours",
