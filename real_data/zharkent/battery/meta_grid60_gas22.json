@@ -4,8 +4,10 @@
     "gas_cost": 22.0,
     "start_cost": 15000.0,
     "capex": 391000000.0,
-    "replace_year": 15,
-    "workers": 4
+    "bat_om": 2.5,
+    "replace_year": 10,
+    "replace_cost": 100.0,
+    "workers": 8
   },
   "battery": {
     "kw": 2500.0,
@@ -23,8 +25,8 @@
   "time_limit": 120,
   "mip_gap": 0.0001,
   "on_kw": 50.0,
-  "solves": 3552,
+  "solves": 3960,
   "data_table": "real_data/zharkent/data/zharkent_all_hourly.csv",
   "data_sha256": "d7452bfe5fabd2ce6ad4ceb0325daabb87495170b77ce94bbf8ab79e18261234",
-  "git_commit": "8abd10663774bfa7ba8611c0b6756fd5e4ca6be8"
+  "git_commit": "a03fbd369ce28fdc5dcc1d128e211d10fafe4dac"
 }

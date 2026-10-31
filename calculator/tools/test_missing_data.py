@@ -6,8 +6,9 @@
                          and the rebuilt flags are combine.py's
   B. rebuilt = balance   a reading the logger missed is the other side of the
                          same hour's balance, engine = plant - grid, nothing else
-  C. whole days only     a kept day has 24 complete hours; a day with a hole
-                         is left out whole
+  C. 24 hours in a row   a kept day is 24 consecutive complete hours, as many
+                         as each run of them holds, at midnight where the run
+                         has room; a run shorter than a day is left out
   D. no selection bias   the kept days run the engines about as often as all
                          the hours do -- dropping the rebuilt hours kept only
                          days the J320 never stopped (100 % / 99.5 % running)
@@ -85,19 +86,49 @@ def b_rebuilt_is_balance(t: pd.DataFrame) -> None:
               f"{int(g.sum()):,} h, worst {dg:.2f} kW")
 
 
+def _runs(ok: pd.Series) -> list[tuple[int, int]]:
+    """(first, length) of every unbroken run of complete hours."""
+    out, i, v = [], 0, ok.to_numpy()
+    while i < len(v):
+        if v[i]:
+            j = i
+            while j < len(v) and v[j]:
+                j += 1
+            out.append((i, j - i))
+            i = j
+        else:
+            i += 1
+    return out
+
+
 def c_whole_days() -> None:
-    head("C. whole days only")
+    head("C. a day is 24 measured hours in a row")
     for site in RD.available():
         h, y = RD.hours(site), RD.year(site)
         kept = pd.DatetimeIndex(y["time"])
         ok = h["complete"].eq(True)
+        runs = _runs(ok)
+        check(f"{site}: each kept day is 24 consecutive complete hours",
+              len(kept) == 24 * y["days"] and bool(ok.loc[kept].all())
+              and all(kept[i + 23] - kept[i] == pd.Timedelta(hours=23)
+                      for i in range(0, len(kept), 24)), f"{y['days']} days")
+        check(f"{site}: every run gives as many days as it holds",
+              y["days"] == sum(n // 24 for _, n in runs),
+              f"runs shorter than a day: {sum(n for _, n in runs if n < 24):,} h left out")
+        # a run with room to start at midnight keeps calendar days
+        starts = set(kept[::24])
+        room = [(i, n) for i, n in runs
+                if n >= 24 and (24 - h.index[i].hour) % 24 <= n % 24]
+        check(f"{site}: a run with room for calendar days keeps them as calendar days",
+              all(h.index[i + (24 - h.index[i].hour) % 24] in starts for i, n in room),
+              f"{len(room)} such runs; {y['off_midnight']} days start off midnight")
         by = ok.groupby(h.index.floor("D"))
-        whole = by.size().eq(24) & by.all()
-        check(f"{site}: the kept days are exactly the days with 24 complete hours",
-              set(kept.floor("D")) == set(whole.index[whole]), f"{y['days']} days")
+        whole = int((by.size().eq(24) & by.all()).sum())
+        check(f"{site}: at least as many days as midnight-to-midnight alone would keep",
+              y["days"] >= whole, f"{y['days']} vs {whole}")
         series = [y["load"], y["grid"], y["buy"], y["sell"], *y["gpu_units"]]
         check(f"{site}: no hour of a kept day is blank",
-              all(v == v for s in series for v in s) and len(kept) == 24 * y["days"])
+              all(v == v for s in series for v in s))
         check(f"{site}: the rebuilt hours are counted",
               y["rebuilt_hours"] == int(h.loc[kept, "rebuilt"].eq(True).sum()),
               f"{y['rebuilt_hours']:,} of {y['hours']:,} h")

@@ -1427,13 +1427,16 @@ strip above it already does.
   economics table and the 25-year table show the range and name the missing months.
   When every month is measured, the range is a single figure.
 
-A day counts only when every meter read all 24 of its hours. Where a logger missed the
+A day is any 24 consecutive hours in which every meter read (`real_data.days`), midnight
+to midnight wherever the run of measured hours has room for it; a day that starts later
+is labelled with its first hour on the page. Where a logger missed the
 engine or the grid reading, `build.py` / `combine.py` take it from the same hour's
 balance, engine = plant − grid (`*_from_balance`). That reading is kept and flagged:
 the measured chart marks it "from balance", and the source caption counts it. Part 18
 explains why dropping it would be a bias rather than a precaution. `tools/test_missing_data.py`
-holds the rules: nothing invented, rebuilt = balance, whole days only, no selection
-bias, months not filled.
+holds the rules: nothing invented, rebuilt = balance, 24 hours in a row, no selection
+bias, months not filled. `tools/test_year_window.py` follows a window of measured days
+through this panel to a year and to 25 years.
 
 Without timestamps (an upload), per year is still the horizon × 8,760 / hours.
 
@@ -1444,7 +1447,7 @@ remaining gaps, the page says so above the comparison.
 In the browser the default A / B / C day solves in under a minute; beyond a week, on/off
 units add one binary per unit per hour and a run may stop at its time limit with a small
 remaining gap, which the comparison table shows. A measured plant solved day by day takes
-about a minute and a half for two scenarios (ЖКПЗ, 164 days).
+about a minute and a half for two scenarios (ЖКПЗ, measured on 164 days).
 
 ---
 
@@ -1950,8 +1953,8 @@ The question: does the project battery — 2,500 kW / 5,500 kWh, **391,000,000 �
 at 460 ₸/$)** — pay for itself beside the three Zharkent engines? Parts 11 and 13 answered
 it on the artifact's synthetic day and week. This part answers it on the plants' own meters
 and nothing else: `real_data/zharkent/data/zharkent_all_hourly.csv`, built by
-`real_data/zharkent/build.py` and `combine.py`, fully measured days only, nothing inside a
-day interpolated.
+`real_data/zharkent/build.py` and `combine.py`, days of 24 fully measured hours only,
+nothing inside a day interpolated.
 
 **Answer: no — on either plant, and on all three engines taken together.** The engines'
 OEM part-load curves are in every run, so a kWh at part load costs what the data sheets say.
@@ -2145,12 +2148,129 @@ break-even is 43.5 M ₸/yr.
   Under IPMVP practice, December 2026 and February 2027 could also stand in once they are
   measured.
 
+## Revised 29.10.2026 (2): a day is any 24 measured hours in a row
+
+A day no longer has to run from midnight to midnight. The optimiser solves a day as one
+24-hour cycle: the battery ends where it started, a start is priced, and the minimum up
+and down times hold. Any 24 consecutive hours in which every meter read serve that
+equally well. Each unbroken run of complete hours now gives as many days as it holds,
+starting as near midnight as the run allows (`real_data.days`). A run that has room for
+calendar days keeps them as calendar days.
+
+| | Complete hours | Days before | Days now | Of them off midnight | Hours left out |
+|---|---:|---:|---:|---:|---:|
+| ЖКПЗ | 5,230 | 164 | **186** | 70 | 766 |
+| Жаркент 3 | 8,573 | 293 | **313** | 96 | 1,061 |
+| Three engines, one pool | 4,966 | 135 | **161** | 70 | 1,102 |
+
+The hours still left out are runs shorter than a day and what a longer run has over its
+last whole day. Solving them as shorter horizons would make each one a different problem,
+with a battery that cannot complete a night-to-day cycle. That would move the battery's
+value for reasons of the data's gaps, not of the plant. The lost hours are spread evenly
+over the hours of the day. February and December have no complete hour at ЖКПЗ at all,
+so no rule could close the year range.
+
+With the new days the J320 runs in 86.6 % and 80.3 % of kept hours against 82.6 % and
+76.0 % of all hours, so the days are still not selected for running engines.
+
+**Results**, re-solved (3,960 solves, all Optimal). The battery alone, D − A, in M ₸ a year;
+the break-even is still 43.5 M ₸/yr.
+
+| | Optimiser, engines free | Optimiser, availability as measured | Engines as logged + battery by rule |
+|---|---:|---:|---:|
+| ЖКПЗ (Feb, Dec not measured) | 5.0 … 8.8 | **16.1 … 22.1** | 9.3 … 12.3 |
+| Жаркент 3 | 5.3 | 8.1 | 6.4 |
+| Three engines, one pool (Feb, Dec not measured) | 3.7 … 5.2 | 13.0 … 15.7 | 19.3 … 24.2 with a common bus |
+
+Measured operation, priced as a scenario: ЖКПЗ 426.7 … 487.4 M ₸/yr, Жаркент 3
+173.8 M ₸/yr, the pool 577.2 … 652.3 M ₸/yr. These figures replace those of the first
+29.10 revision above. The answer is the same: no case reaches break-even, and payback is
+"never" throughout, apart from the pool's no-netting rule view (19.1 … 22.1 years simple,
+never discounted).
+
+Found while testing how a window is carried to a year (`tools/test_year_window.py`, printed
+as notes, not changed):
+
+* 48 gaps separate ЖКПЗ's measured days, and 139 of 180 week-long windows cross one.
+  "Every day solved on its own", the default for a measured plant, is unaffected. "Solve
+  the window as posed" runs straight through a gap: the battery's charge and the minimum
+  up and down times carry across hours that are days or weeks apart.
+* The window's start hour is free on the page. A start that is not a multiple of 24 splices
+  two measured days into one solved day; at hour 12, five of the first six do.
+* A window inside one month gives a single per-year figure, though eleven months are not
+  measured: with one month measured, its lowest and highest are the same month.
+
+## Revised 31.10.2026: a colleague's values on the page
+
+A colleague's calculator (`docs/zharkent-app/README.md`) reports a payback on the same plants
+where this study reports none. The study page now has a switch at its top, **Scenario values**:
+*Our study* or *Colleague's app (Zharkent)*. The second sets every input to his, so the two
+answers can be laid side by side on one engine. *Our study* stays the first option, and its
+results did not change by a digit (`tools/test_colleague_values.py`, and every suite against a
+baseline taken before the change).
+
+What the switch sets, all of it his and none of it confirmed by us: his twelve months
+(01.10.2025 – 30.09.2026), grid 44.64 ₸/kWh and gas 7.094 ₸ per kWh of gas ex VAT, his engine
+ratings and efficiencies, service of 6 ₸ per rated kWh of every engine hour, a start as 4 such
+hours, 3 MWh / 990 kW at 273,024,000 ₸, SoC 10–95 %, 15 kW own use, no battery wear, O&M,
+replacement, escalation or discount, engines always available, his way of making a year, and
+the plants' meters netted on the joined site. A third rule, **C · ГПУ от 90%, без батареи**,
+appears with it, because C against B parts the battery's saving from the rule's.
+
+Three inputs were added for this, each off by default: Maximum SoC (`soc_max_fraction`, a
+one-word change to the core's upper bound, 1.0 being REopt's own), Own use (kW), and O&M per
+running hour (the core's existing `om_cost_per_running_hour`).
+
+Per year, million ₸, against his run "Default inputs":
+
+| | ЖКПЗ ours / his | Жаркент 3 ours / his | All three ours / his |
+|---|---:|---:|---:|
+| Today, from the meters | 453.0 / 449.0 | 175.8 / 169.5 | 605.4 / 600.7 |
+| With the battery | 346.7 / 358.5 | 149.8 / 143.4 | 469.6 / 473.6 |
+| Saving against today | 106.3 / 90.5 | 26.0 / 26.1 | 135.8 / 127.2 |
+| Battery price ÷ that saving, years | 2.6 / 3.0 | 10.5 / 10.5 | 2.0 / 2.1 |
+| Same hours as his: today | −0.8 % | −0.6 % | −0.6 % |
+| Same hours as his: with the battery | −3.0 % | +0.5 % | −2.3 % |
+
+So his answer is reproduced by his values. The conclusion of this Part does not change: on the
+same run, of that saving, this much is the rule and this much the battery:
+
+| | ЖКПЗ | Жаркент 3 | All three |
+|---|---:|---:|---:|
+| The 90 % rule, no battery, against today | 81.2 | −10.5 | 109.4 |
+| The battery, on top of the rule | 25.1 | 36.5 | 26.4 |
+| The battery, against engines free from 50 % | 7.2 | 3.1 | 15.0 |
+
+What was found on the way:
+
+* **The meters agree.** On the hours both have, the mean load and engine output are within
+  0.4 % and 0.9 % on ЖКПЗ and 0.2 % and 0.1 % on Жаркент 3. A year differs because the hours
+  do: he bridges gaps up to 3 h and keeps 5,452 hours of ЖКПЗ, this study keeps 4,464.
+* **September 2025** is in our Жаркент 3 and not in his twelve months. The engine hardly ran
+  that month, and it alone lifted our year by 1.5 %.
+* **His joined "today" is already one bus.** Priced on each plant's own purchases it is
+  624.7, not 605.4: he sets one plant's unpaid export against the other's purchase.
+* **His J320 is not the passport's.** He has 1,066 kW at 43.2 / 39.6 %; the passport (Part 13)
+  gives 1,067 kW at 40.5 / 37.4 %, which is about 6 % more gas. The switch copies his figure.
+
+What the switch does not carry over: his 5-minute steps, his fixed rule, charging taper above
+85 %, 30 / 15 minute run and stop (one hour is the least here), and charge carried from day to
+day (a day closes on itself). Hours and closed days also make the operation look quieter: 512
+starts a year on ЖКПЗ to his 899, and 1,135 MWh discharged to his 1,783, so the battery life by
+cycles reads 13.5 years to his 8.6.
+
 ## Reproduce
 
 ```bash
 python calculator/tools/test_battery_real_data.py   # fast checks: data, annualisation, rule, invariants
 python calculator/tools/test_year_measured.py       # the study page's path reproduces this run
 python calculator/tools/battery_real_data.py all    # every measured day (~10 min, 4 cores) + tables
+python calculator/tools/battery_real_data.py solve --cases site3 --workers 8
+                                                    # one case; the saved rows of the others stay
+python calculator/tools/test_year_window.py         # a window of measured days to a year and 25 years
+python calculator/tools/test_colleague_values.py    # his values on the page; ours unmoved (1 min)
+python calculator/tools/test_colleague_values.py --compare=K   # a year on his values against his run
+                                                    # K, M or KM, one at a time, ~6 min each
 python calculator/tools/battery_real_data.py report --grid-price 46.25   # after a solve at that price
 python calculator/tools/battery_real_data.py report --bat-om 1.5 --replace-year 15 --replace-cost 50
                                                     # other battery upkeep: report only, no solve

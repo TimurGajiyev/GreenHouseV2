@@ -37,6 +37,7 @@ assumes cost growth in the first period. The same function the REopt panels use.
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
@@ -576,6 +577,28 @@ def month_year(stamps: Sequence, values: Sequence[float]) -> tuple[float | None,
     that have no measured hour."""
     low, _, missing = month_range(stamps, values)
     return (None if missing else low), missing
+
+
+def month_mean(stamps: Sequence, values: Sequence[float], coverage: float = 0.25) -> float:
+    """The Zharkent app's year, for the study that takes its values.
+
+    Each month of the calendar (September of two years is two months) is scaled
+    up to its full length, a month with under ``coverage`` of its hours is
+    dropped, and the year is the mean of the months left times 12. One figure
+    always, because a month not measured is taken as the mean of the others:
+    ``month_range`` states that as a range instead.
+    """
+    if len(stamps) != len(values):
+        raise ValueError(f"{len(stamps)} timestamps for {len(values)} values")
+    acc: dict[tuple[int, int], list[float]] = {}
+    for t, v in zip(stamps, values):
+        acc.setdefault((int(str(t)[:4]), _month(t)), []).append(float(v))
+    full = []
+    for (y, m), v in acc.items():
+        hours = calendar.monthrange(y, m)[1] * HOURS_PER_DAY
+        if len(v) >= coverage * hours:
+            full.append(sum(v) * hours / len(v))
+    return sum(full) * 12 / len(full) if full else 0.0
 
 
 def suggest_k(days: int) -> int:

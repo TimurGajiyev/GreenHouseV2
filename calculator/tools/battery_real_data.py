@@ -1,12 +1,15 @@
 """Battery payback on the measured Zharkent data -- REPORT.md Part 18.
 
 Every hour comes from the meters (real_data/zharkent/data/zharkent_all_hourly.csv,
-built by real_data/zharkent/build.py and combine.py). Only fully measured days are
-used and nothing inside a day is interpolated: no synthetic load anywhere.
+built by real_data/zharkent/build.py and combine.py). A day is 24 consecutive hours
+measured in full (real_data.days) and nothing inside a day is interpolated: no
+synthetic load anywhere. A day is keyed by its first hour, "YYYY-MM-DD HH:MM".
 
     python calculator/tools/battery_real_data.py solve    # every measured day, ~10 min on 4 cores
     python calculator/tools/battery_real_data.py report   # tables from the saved results
     python calculator/tools/battery_real_data.py all      # both
+    python calculator/tools/battery_real_data.py solve --cases site3   # one case; the
+                                         # saved rows of the others are kept
 
 Options -- the defaults are the dispatch study page's own:
     --grid-price 60   --gas-cost 22   --start-cost 15000   --capex 391000000
@@ -114,12 +117,13 @@ def units_for(case: str, p: dict) -> pd.DataFrame:
 
 
 def data_for(case: str) -> dict:
-    """time, load, per-engine output, purchase and export on fully measured days.
+    """time, load, per-engine output, purchase and export on the measured days.
 
-    real_data.year, the study page's own: a day is kept only when every meter
-    read all 24 of its hours, a reading the logger missed and the same hour's
-    balance supplies (engine = plant - grid) kept and flagged. The combined case is real_data.ALL3: Жаркент 3 moved
-    +1 h (CR06 keeps UTC+5), and each plant's purchase and export its own."""
+    real_data.year, the study page's own: a day is 24 consecutive hours in
+    which every meter read, a reading the logger missed and the same hour's
+    balance supplies (engine = plant - grid) kept and flagged. The combined
+    case is real_data.ALL3: Жаркент 3 moved +1 h (CR06 keeps UTC+5), and each
+    plant's purchase and export its own."""
     y = RD.year({"zhkpz": RD.ZHKPZ, "site3": RD.SITE3, "combined": RD.ALL3}[case])
     return dict(time=[str(t) for t in y["time"]], load=y["load"], gpu_units=y["gpu_units"],
                 buy=y["buy"], export=y["sell"])
@@ -145,15 +149,20 @@ def solve_day(job: tuple) -> dict:
                 **{k: acc[k] for k in FIELDS if k not in ("case", "mode", "scen", "day")})
 
 
-def jobs(p: dict):
-    for case in CASES:
+def day_key(x: dict, h: int) -> str:
+    """The day hour ``h`` belongs to, by its first hour: "YYYY-MM-DD HH:MM"."""
+    return x["time"][h - h % 24][:16]
+
+
+def jobs(p: dict, cases=CASES):
+    for case in cases:
         x = data_for(case)
         for d in range(len(x["load"]) // 24):
             sl = slice(24 * d, 24 * d + 24)
             avail = [[1.0 if v > ON_KW else 0.0 for v in s[sl]] for s in x["gpu_units"]]
             for mode in MODES:
                 for key in SCENARIOS:
-                    yield (case, mode, key, x["time"][24 * d][:10], x["load"][sl], avail, p)
+                    yield (case, mode, key, day_key(x, 24 * d), x["load"][sl], avail, p)
 
 
 def table_sha() -> str:
@@ -171,15 +180,21 @@ def git_commit() -> str | None:
         return None
 
 
-def solve(p: dict) -> None:
+def solve(p: dict, cases=CASES) -> None:
     os.makedirs(OUT_DIR, exist_ok=True)
     path = os.path.join(OUT_DIR, f"days_{tag(p)}.csv")
-    n = 0
+    # a run of some of the cases keeps the saved rows of the others
+    kept = []
+    if set(cases) != set(CASES) and os.path.exists(path):
+        with open(path, encoding="utf-8") as fh:
+            kept = [r for r in csv.DictReader(fh) if r["case"] not in cases]
+    n = len(kept)
     with open(path, "w", encoding="utf-8", newline="") as fh, \
             ProcessPoolExecutor(max_workers=p["workers"]) as ex:
         w = csv.DictWriter(fh, fieldnames=FIELDS)
         w.writeheader()
-        for r in ex.map(solve_day, jobs(p), chunksize=4):
+        w.writerows(kept)
+        for r in ex.map(solve_day, jobs(p, cases), chunksize=4):
             w.writerow(r)
             n += 1
             if n % 250 == 0:
@@ -194,24 +209,33 @@ def solve(p: dict) -> None:
 
 
 # ------------------------------------------------------------------ report
-def by_month(daily: dict) -> tuple[float | None, list[int]]:
-    """{'YYYY-MM-DD': value} -> a year weighted by calendar month, or None.
+def _hours_of(daily: dict) -> tuple[list, list[float]]:
+    """Each day's total spread evenly over its own 24 hours, with their stamps:
+    a day that starts in the evening of the 31st counts in both months."""
+    stamps, values = [], []
+    for d, v in daily.items():
+        t0 = pd.Timestamp(d)
+        stamps += [t0 + pd.Timedelta(hours=h) for h in range(24)]
+        values += [v / 24.0] * 24
+    return stamps, values
 
-    Each month is its measured days' mean times its length. A date measured
+
+def by_month(daily: dict) -> tuple[float | None, list[int]]:
+    """{'YYYY-MM-DD HH:MM': value} -> a year weighted by calendar month, or None.
+
+    Each month is its measured hours' mean times its length. A date measured
     in two years counts in its month once per year, i.e. the month's mean uses
-    both. A month with no measured day means no year: None, with the months
+    both. A month with no measured hour means no year: None, with the months
     that lack one. The study page's own rule (``year_study.month_year``,
     which works on hours): a day's total is spread evenly over its 24 hours."""
-    days = list(daily)
-    return Y.month_year(days, [daily[d] / 24.0 for d in days])
+    return Y.month_year(*_hours_of(daily))
 
 
 def month_range(daily: dict) -> tuple[float, float, list[int]]:
-    """``by_month`` as a range: a month with no measured day is not filled but
+    """``by_month`` as a range: a month with no measured hour is not filled but
     taken at the lowest and at the highest measured month
     (``year_study.month_range``). Returns (low, high, the months not measured)."""
-    days = list(daily)
-    return Y.month_range(days, [daily[d] / 24.0 for d in days])
+    return Y.month_range(*_hours_of(daily))
 
 
 def over_days(daily: dict) -> float:
@@ -265,7 +289,7 @@ def rule_battery(x: dict, units: pd.DataFrame, p: dict, common_bus: bool = False
     rated = [float(u[D.U_KW]) for u in rows]
     out = collections.defaultdict(float)
     for h in range(len(x["load"])):
-        day = x["time"][h][:10]
+        day = day_key(x, h)
         buy, exp = x["buy"][h], x["export"][h]
         if common_bus:
             net = buy - exp
@@ -297,7 +321,7 @@ def measured_daily(x: dict, units: pd.DataFrame, p: dict) -> dict:
         sl = slice(24 * d, 24 * d + 24)
         meas = {"gpu": [sum(v) for v in zip(*[s[sl] for s in x["gpu_units"]])],
                 "grid": x["buy"][sl], "gpu_units": [s[sl] for s in x["gpu_units"]]}
-        out[x["time"][24 * d][:10]] = D.measured_account(meas, [p["grid_price"]] * 24, units)["total"]
+        out[day_key(x, 24 * d)] = D.measured_account(meas, [p["grid_price"]] * 24, units)["total"]
     return out
 
 
@@ -355,13 +379,15 @@ def report(p: dict) -> str:
     for case in CASES:
         x = data_for(case)
         units = units_for(case, p)
-        days = sorted({t[:10] for t in x["time"]})
+        days = [day_key(x, h) for h in range(0, len(x["time"]), 24)]
         meas = measured_daily(x, units, p)
         m_year = month_range(meas)
         missing = m_year[2]
         gap = ", ".join(calendar.month_abbr[m] for m in missing)
+        late = sum(1 for d in days if not d.endswith("00:00"))
         L += [f"## {LABEL[case]}", "",
-              f"{len(days)} fully measured days, {days[0]} – {days[-1]}"
+              f"{len(days)} measured days of 24 hours ({late} of them not midnight to "
+              f"midnight), {days[0][:10]} – {days[-1][:10]}"
               + (f"; no measured day in {gap}, so every M ₸/yr below is a range" if missing else "")
               + f". Over those days: load {sum(x['load']) / 1e3:,.0f} MWh, bought "
               f"{sum(x['buy']) / 1e3:,.0f} MWh, sent to the city {sum(x['export']) / 1e3:,.0f} MWh.", "",
@@ -398,8 +424,10 @@ def report(p: dict) -> str:
                        (", no bus netting (credits the battery with a wire's work)" if case == "combined" else "")))
             L.append(f"| {name} | — | — | **{yr(ry)}** | {_m(over_days(rd))} | {npv} | {pay} | — |")
         L.append("")
-    L += [f"US$ at {KZT_PER_USD:,.0f} ₸/$. A day counts only when every meter read all 24 of its "
-          "hours. Where a logger missed the engine or the grid reading, the same hour's balance "
+    L += [f"US$ at {KZT_PER_USD:,.0f} ₸/$. A day is 24 consecutive hours in which every meter "
+          "read, midnight to midnight wherever the run of measured hours has room for it, and "
+          "is solved as one 24-hour cycle; a run shorter than a day is left out. Where a "
+          "logger missed the engine or the grid reading, the same hour's balance "
           "supplies it (engine = plant − grid), kept and flagged: the J320 loggers mostly stop "
           "writing an engine that stopped, so dropping those hours would drop the outages. "
           "Annual figures are weighted by calendar month. A month with no measured day is not "
@@ -427,14 +455,17 @@ def main() -> None:
     ap.add_argument("--replace-cost", type=float, default=D.SOURCES["bat_replace_cost"][0],
                     help="battery replacement cost, %% of CAPEX")
     ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--cases", default=",".join(CASES),
+                    help="solve only these, comma-separated; the saved rows of the others stay")
     a = ap.parse_args()
+    cases = tuple(c for c in CASES if c in a.cases.split(","))
     if not RD.available():
         sys.exit(f"No measured table at {RD.TABLE}; run real_data/zharkent/build.py and combine.py.")
     p = dict(grid_price=a.grid_price, gas_cost=a.gas_cost, start_cost=a.start_cost,
              capex=a.capex, bat_om=a.bat_om, replace_year=a.replace_year,
              replace_cost=a.replace_cost, workers=a.workers)
     if a.action in ("solve", "all"):
-        solve(p)
+        solve(p, cases)
     if a.action in ("report", "all"):
         print(report(p))
 

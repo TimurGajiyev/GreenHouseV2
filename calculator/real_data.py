@@ -30,9 +30,15 @@ This module hands the study the measured days of one site, and nothing else:
     a bias, not a precaution -- the J320 loggers mostly stop writing the
     engine's output when the engine stops, so the hours without it are the
     outages (REPORT.md Part 18);
-  * a day is kept only if all 24 of its hours are measured in full
-    (combine.py's *_complete columns). Nothing is interpolated or copied
-    from another day: a day with a hole in it is left out whole;
+  * a day is any 24 consecutive hours measured in full (combine.py's
+    *_complete columns), not only midnight to midnight. Each unbroken run of
+    complete hours gives as many such days as it holds, starting as near
+    midnight as the run allows, so a run that has room for calendar days
+    keeps them as calendar days. The optimiser solves a day as a 24-hour
+    cycle -- a battery ending where it started, a start priced, minimum up
+    and down times -- so a run shorter than 24 hours, and what a longer run
+    has over its last whole day, is left out. Nothing is interpolated or
+    copied from another hour;
   * the kept days are laid end to end, with their own timestamps. A figure
     "per year" is weighted by calendar month; a month with no kept day is
     not filled, and the year becomes a range (year_study.month_range).
@@ -184,38 +190,60 @@ def hours(site: str) -> pd.DataFrame:
     return _site(site)
 
 
-def year(site: str) -> dict:
-    """The fully measured days of a site over the whole period, end to end.
+def days(complete: pd.Series) -> pd.Series:
+    """The hours year() keeps: 24-hour days cut from the runs of complete hours.
 
-    Returns load (plant, kW), gpu, grid, buy and sell (kW, as measured), each
-    engine's own output (gpu_units, in the order of the units list), the
-    timestamps, the days kept, the period the meters cover (first and last
-    hour on which all of them report) with its length in calendar days, how
-    many calendar dates the kept days hold twice, and how many kept hours
-    carry a reading rebuilt from the balance (rebuilt_hours; per series in
-    rebuilt).
+    A run of L complete hours holds L // 24 days and L % 24 hours to spare.
+    The spare hours go where they put the first day's start nearest midnight,
+    so a run with room for calendar days keeps calendar days."""
+    ok = complete.eq(True).to_numpy()
+    keep = [False] * len(ok)
+    i = 0
+    while i < len(ok):
+        if not ok[i]:
+            i += 1
+            continue
+        j = i
+        while j < len(ok) and ok[j]:
+            j += 1
+        h0 = complete.index[i].hour
+        off = min(range((j - i) % 24 + 1),
+                  key=lambda o: min((h0 + o) % 24, 24 - (h0 + o) % 24))
+        for x in range(i + off, i + off + 24 * ((j - i) // 24)):
+            keep[x] = True
+        i = j
+    return pd.Series(keep, index=complete.index)
+
+
+def year(site: str) -> dict:
+    """The measured days of a site over the whole period, end to end.
+
+    A day is 24 consecutive hours measured in full (``days``). Returns load
+    (plant, kW), gpu, grid, buy and sell (kW, as measured), each engine's own
+    output (gpu_units, in the order of the units list), the timestamps, the
+    days kept and how many of them do not start at midnight (off_midnight),
+    the period the meters cover (first and last hour on which all of them
+    report) with its length in calendar days, how many calendar dates the
+    kept days start on twice, and how many kept hours carry a reading rebuilt
+    from the balance (rebuilt_hours; per series in rebuilt).
     """
     t = _site(site)
     names = [u[0] for u in units(site)]
-    ok = t["complete"]
-    day = t.index.floor("D")
-    # the table starts and ends part-way through a day: a day is whole only
-    # with all 24 hours in it, and measured only with all 24 complete
-    whole = ok.groupby(day).transform("size") == 24
-    full = whole & ok.groupby(day).transform("all")
-    k = t[full]
+    ok = t["complete"].eq(True)
+    k = t[days(ok)]
     span = t.index[ok]
-    kept = k.index.floor("D").unique()
+    starts = k.index[::24]
     gpu = sum(k[c] for c in names)
     return {"load": [float(x) for x in k["load"]],
             "gpu": [float(x) for x in gpu], "grid": [float(x) for x in k["grid"]],
             "buy": [float(x) for x in k["buy"]], "sell": [float(x) for x in k["sell"]],
             "gpu_units": [[float(x) for x in k[c]] for c in names],
             "time": list(k.index), "units": units(site), "source": source(site),
-            "days": len(kept),
+            "days": len(starts),
+            "off_midnight": int((starts.hour != 0).sum()),
             "period": (span[0], span[-1]),
             "days_period": (span[-1].floor("D") - span[0].floor("D")).days + 1,
-            "repeat": int(pd.Series(kept.strftime("%m-%d")).duplicated().sum()),
+            "repeat": int(pd.Series(starts.strftime("%m-%d")).duplicated().sum()),
             "hours": len(k),
             "rebuilt_hours": int(k["rebuilt"].eq(True).sum()),
             "rebuilt": {c: int(k[f"rebuilt {c}"].eq(True).sum()) for c in ("grid", *names)}}

@@ -44,9 +44,13 @@ def data() -> dict:
         check(f"{case}: no negative load", min(x["load"]) >= 0.0)
         check(f"{case}: purchase and export never both in one plant-hour",
               case == "combined" or all(b == 0 or e == 0 for b, e in zip(x["buy"], x["export"])))
-    zd = {t[:10] for t in out["zhkpz"]["time"]}
-    cd = {t[:10] for t in out["combined"]["time"]}
-    check("combined days are days ЖКПЗ is fully measured", cd <= zd, f"{len(cd)} of {len(zd)}")
+    h = B.RD.hours(B.RD.ZHKPZ)
+    zh = {str(t) for t in h.index[h["complete"].eq(True)]}
+    cd = out["combined"]["time"]
+    check("every combined hour is an hour ЖКПЗ is fully measured", set(cd) <= zh,
+          f"{len(cd) // 24} days")
+    check("a day is keyed by its first hour",
+          B.day_key(out["combined"], 30) == cd[24][:16] and len(cd[24][:16]) == 16)
     return out
 
 
@@ -68,6 +72,12 @@ def annualisation() -> None:
     y, miss = B.by_month(ramp)
     want = sum(m * B.DAYS_IN[m] for m in range(1, 13))
     check("a month counts at its measured days' mean", not miss and abs(y - want) < 1e-9)
+    # a day from 18:00 on 31 January: 6 hours in January, 18 in February, so
+    # February is measured; keyed by its date alone it would all be January
+    lo, hi, miss = B.month_range({"2026-01-31 18:00": 24.0})
+    check("a day that crosses into a new month counts in both, hour by hour",
+          miss == list(range(3, 13)) and abs(lo - 8760.0) < 1e-9 and abs(hi - 8760.0) < 1e-9,
+          f"not measured {miss}")
 
 
 def rule() -> None:
@@ -75,14 +85,14 @@ def rule() -> None:
     units = B.units_for("site3", P)
     x = dict(time=["2026-01-01 00:00", "2026-01-01 01:00"], load=[0.0, 1000.0],
              gpu_units=[[0.0, 0.0]], buy=[0.0, 1000.0], export=[1000.0, 0.0])
-    got = B.rule_battery(x, units, P)["2026-01-01"]
+    got = B.rule_battery(x, units, P)["2026-01-01 00:00"]
     eta = 0.88 ** 0.5
     want = 1000.0 * eta * eta * (60.0 - 0.5)       # free charge in, 88 % back out
     check("an exported MWh comes back as 880 kWh at the grid price less wear",
           abs(got - want) < 1e-6, f"{got:,.2f} vs {want:,.2f}")
     x = dict(time=["2026-01-01 00:00", "2026-01-01 01:00"], load=[500.0, 1000.0],
              gpu_units=[[567.0, 0.0]], buy=[0.0, 1000.0], export=[0.0, 0.0])
-    got = B.rule_battery(x, units, P)["2026-01-01"]
+    got = B.rule_battery(x, units, P)["2026-01-01 00:00"]
     mc = B.marginal_gas_cost(next(u for _, u in units.iterrows()))
     want = 500.0 * eta * eta * (60.0 - 0.5) - 500.0 * mc   # 1,067 kW rated, 567 running
     check("headroom of a running engine is charged at its marginal gas cost",
@@ -91,7 +101,7 @@ def rule() -> None:
                   buy=[400.0], export=[400.0])
     got = B.rule_battery(common, B.units_for("combined", P), P, common_bus=True)
     check("on a common bus an export that meets a purchase earns the battery nothing",
-          abs(got.get("2026-01-01", 0.0)) < 1e-9)
+          abs(got.get("2026-01-01 00:00", 0.0)) < 1e-9)
 
 
 def optimiser(x: dict) -> None:

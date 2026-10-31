@@ -102,6 +102,9 @@ class StorageInputs:
     name: str = ""
     # Beyond REopt: wear cost per kWh discharged. 0 adds nothing to the model.
     discharge_cost_per_kwh: float = 0.0
+    # Beyond REopt: the highest SOC, as a fraction of the energy. REopt fills to
+    # 100 %, which is this default: the bound below is then exactly its own.
+    soc_max_fraction: float = 1.0
     # ---- electric_storage.jl fields the web form exposes (Advanced inputs) ----
     replace_cost_constant: float = 0.0
     cost_constant_replacement_year: int = 10
@@ -867,7 +870,7 @@ def solve(inp: ScenarioInputs, *, time_limit: int = 300, msg: bool = False,
                 m += bdis[b][t] <= bpow[b], f"dis_pow_{b}_{t}"
                 m += bchg[b][t] + bgchg[b][t] <= bpow[b], f"chg_pow_{b}_{t}"
                 m += bsoc[b][t] >= st.soc_min_fraction * ben[b], f"soc_min_{b}_{t}"
-                m += bsoc[b][t] <= ben[b], f"soc_max_{b}_{t}"
+                m += bsoc[b][t] <= st.soc_max_fraction * ben[b], f"soc_max_{b}_{t}"
             if st.min_duration_hours > 0:
                 m += ben[b] >= st.min_duration_hours * bpow[b], f"dur_min_{b}"
             if st.max_duration_hours < 1e5:

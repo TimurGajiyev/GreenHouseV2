@@ -84,6 +84,12 @@ def _daylabel(ts, weekday: bool = False) -> str:
     return f"{ts.strftime('%A')}, {day}" if weekday else day
 
 
+def _startlabel(ts, weekday: bool = False) -> str:
+    """A day by its first hour: a measured day can be any 24 measured hours in
+    a row (real_data.days), and one that does not start at midnight says when."""
+    return _daylabel(ts, weekday) + (f" from {ts.hour:02d}:00" if ts.hour else "")
+
+
 def _daily_totals(series: list[float]) -> list[float]:
     n = len(series) // 24
     return [sum(series[d * 24:(d + 1) * 24]) for d in range(n)]
@@ -570,7 +576,7 @@ def _starts_section(sh: dict, series: dict, idx: pd.DatetimeIndex, res: dict) ->
 
     st.altair_chart(
         P.starts_chart(list(range(1, ndays + 1)),
-                       [_daylabel(idx[d * 24], weekday=True) for d in range(ndays)],
+                       [_startlabel(idx[d * 24], weekday=True) for d in range(ndays)],
                        list(zip(names, colors, mat))),
         use_container_width=True)
     P.legend(list(zip(names, colors)))
@@ -589,7 +595,7 @@ def _starts_section(sh: dict, series: dict, idx: pd.DatetimeIndex, res: dict) ->
         body = []
         for i in range(n_units):
             worst = max(mat[i]) if mat[i] else 0
-            when = (_daylabel(idx[mat[i].index(worst) * 24]) if worst else "—")
+            when = (_startlabel(idx[mat[i].index(worst) * 24]) if worst else "—")
             body.append([names[i]] + [f"{v:,}" if v else "—" for v in wk[i]]
                         + [(f"{totals[i]:,}", "ghp-key"),
                            f"{totals[i] / ndays:,.2f}",
@@ -666,8 +672,9 @@ def render_periods(state: dict) -> None:
     if period == "Day":
         start, n_h = day * 24, min(24, H)
         hours = list(range(1, n_h + 1))
-        labels = [f"{_daylabel(idx[start])} · {h:02d}:00" for h in range(n_h)]
-        when = _daylabel(idx[start], weekday=True)
+        labels = [f"{_daylabel(idx[start + h])} · {idx[start + h].hour:02d}:00"
+                  for h in range(n_h)]
+        when = _startlabel(idx[start], weekday=True)
     else:
         start = (day // 7) * 7 * 24
         n_h = min(168, H - start)
@@ -859,7 +866,9 @@ def render_periods(state: dict) -> None:
     if period == "Day":
         P.sub(f"Hour by hour · {when}")
         P.table(_hour_head(sh, "HOUR"),
-                [_hour_row(r, sh, f"{h}") for h, r in zip(hours, rows)],
+                # the clock's hour, 1 = 00:00-01:00, so a day that starts
+                # later in the morning is not numbered from midnight
+                [_hour_row(r, sh, f"{idx[start + h - 1].hour + 1}") for h, r in zip(hours, rows)],
                 _hour_foot(rows, sh))
     else:
         P.sub(f"Day by day · {when}")
@@ -880,7 +889,8 @@ def render_periods(state: dict) -> None:
                 "unserved": sum(r["unserved"] for r in blk),
                 "export": sum(r["export"] for r in blk),
             }
-            row = _hour_row(agg, sh, ts.strftime("%a %d %b"))
+            row = _hour_row(agg, sh, ts.strftime("%a %d %b")
+                            + (f" {ts.hour:02d}:00" if ts.hour else ""))
             row.append(_n(max(r["grid"] for r in blk)))
             if any(o is not None for o in sh["on"]):
                 row.append(str(sum(_starts_in([r["on"][j] for r in blk])
@@ -896,7 +906,7 @@ def render_periods(state: dict) -> None:
 
         with st.expander(f"All {n_h} hours", expanded=False):
             P.table(_hour_head(sh, "DAY", "HOUR"),
-                    [_hour_row(r, sh, idx[start + h].strftime("%a"), str(h % 24 + 1))
+                    [_hour_row(r, sh, idx[start + h].strftime("%a"), str(idx[start + h].hour + 1))
                      for h, r in enumerate(rows)],
                     _hour_foot(rows, sh, pad=1), tall=True)
 
@@ -906,7 +916,7 @@ def render_periods(state: dict) -> None:
     st.caption(
         f"The representative day is the one whose energy is closest to the median "
         f"across the {'year' if H == HOURS and not real_clock else 'horizon'} — "
-        f"{_daylabel(idx[rep * 24])}. "
+        f"{_startlabel(idx[rep * 24])}. "
         + ("The week is the seven measured days containing it, end to end as solved: "
            "a day left out for a gap in the data is skipped, not shown empty."
            if real_clock else "The week is the calendar week containing it.")

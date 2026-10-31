@@ -52,6 +52,9 @@ U_MSPACE = "Spread services"
 U_MINT, U_MCOST = "Service every (run h)", "Service cost"
 U_OWN, U_CAPEX, U_OM = "Ownership", "Purchase cost", "Variable O&M per kWh"
 OWN_PAID, OWN_BUY = "Paid (owned)", "Purchase"
+# A service contract billed per engine hour, whatever the load: the core's
+# om_cost_per_running_hour. 0 creates nothing, so a row at 0 prices as before.
+U_OMH = "O&M per running hour"
 # The per-kWh cost was one column doing two jobs. An OEM quotes them apart --
 # gas against стоимость моточаса -- and they move for different reasons, so the
 # UI splits them. The MODEL still takes one number: om_cost_per_kwh is their
@@ -335,8 +338,10 @@ def _num(v) -> float:
     return 0.0 if math.isnan(x) else x
 
 
-def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dict) -> None:
-    """Every input of the study, its value on the page and where it comes from."""
+def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dict,
+                   typed: str = TYPED) -> None:
+    """Every input of the study, its value on the page and where it comes from.
+    ``typed`` is what a value other than the workbook's is called."""
     T.panel_head("Where every number comes from")
     with st.expander("Data sources", expanded=True):
         live = units[pd.to_numeric(units[U_KW], errors="coerce").fillna(0) > 0]
@@ -345,14 +350,14 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
         def row(label, value, key, shown):
             want, status, text = SOURCES[key]
             same = value == want
-            return [label, shown, (status if same else TYPED,
+            return [label, shown, (status if same else typed,
                                    "ghp-neg" if same and status == UNCONFIRMED else ""),
                     text if same else "changed from the workbook's " + str(want)]
 
         num = lambda v: float(v or 0.0)
         p0, p1 = y["period"]
         rows = [["Load", f"{y['hours']:,} h, peak {max(y['load']):,.0f} kW", (MEASURED, "ghp-pos"),
-                 f"{y.get('source', 'logger')}; {y['days']} fully measured days of the "
+                 f"{y.get('source', 'logger')}; {y['days']} days of 24 measured hours in the "
                  f"{y['days_period']} from {p0:%d.%m.%Y} to {p1:%d.%m.%Y}"]]
         # one row per engine: its rating and part-load curve against the OEM sheet
         for _, u in live.iterrows():
@@ -361,7 +366,7 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
             rows.append([f"Engine · {u[U_NAME]}",
                          f"{key[0]:,.0f} kW · КПД {key[1]:.1f} / {key[2]:.1f} %"
                          if fuel_curve(u) else f"{key[0]:,.0f} kW · one price per kWh",
-                         (PASSPORT, "") if src else (TYPED, ""),
+                         (PASSPORT, "") if src else (typed, ""),
                          src or "not an OEM data sheet value"])
         if first is not None:
             rows += [row("Engine cost per kWh" + (" at full load" if fuel_curve(first) else ""),
@@ -385,6 +390,14 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                      f"year {int(bat.get('replace_year', 0))}" if bat.get("replace_year") else "none"),
                  row("Battery replacement cost", round(bat.get("replace_fraction", 0.0) * 100, 6),
                      "bat_replace_cost", f"{bat.get('replace_fraction', 0.0):.0%} of CAPEX")]
+        # inputs our own study leaves off, listed only when they are on
+        if first is not None and _num(first.get(U_OMH)):
+            rows.append(["O&M per running hour", f"{_num(first.get(U_OMH)):,.0f} {cur}/h",
+                         (typed, ""), ""])
+        if bat.get("soc_max", 1.0) < 1.0:
+            rows.append(["Maximum SoC", f"{bat['soc_max']:.0%}", (typed, ""), ""])
+        if bat.get("own_kw"):
+            rows.append(["Battery's own use", f"{bat['own_kw']:,.0f} kW", (typed, ""), ""])
         # the source texts stay in each row, but the page shows three columns
         P.table(["Input", "Value", "Status"], [r[:3] for r in rows])
         P.note(["<b>measured</b>: read off the logger · <b>nameplate</b> and <b>project</b>: "
@@ -427,32 +440,36 @@ def fuel_curve(u) -> tuple[float, float, float] | None:
 def unit_hour_cost(u, kw: float, on: float) -> float:
     """What one unit's hour of output costs: fuel by the curve, plus O&M."""
     om = float(u.get(U_OM) or 0.0)
+    run = _num(u.get(U_OMH)) * (1.0 if on > 0.5 else 0.0)
     c = fuel_curve(u)
     if c is None:
-        return (float(u[U_COST] or 0.0) + om) * kw
+        return (float(u[U_COST] or 0.0) + om) * kw + run
     price, slope, icept = c
     return (price * (slope * kw + icept * float(u[U_KW] or 0.0) * (1.0 if on > 0.5 else 0.0))
-            + om * kw)
+            + om * kw + run)
 
 
-def default_units(preset: str) -> pd.DataFrame:
+def default_units(preset: str, start: str | None = None) -> pd.DataFrame:
     """The units table for a preset, the passports' own columns first.
 
     Rated kW, the two efficiencies and the minimum load are what the OEM
     documents give (passports.py); a preset with an OEM curve carries it, the
     JSX ones do not. Every column after them is not in any passport.
+
+    ``start`` = VALUES_ZH takes the colleague's engine values instead.
     """
     fleets = unit_presets()
-    return pd.DataFrame([{U_NAME: n, U_KW: kw,
-                          U_EFF100: (eff[0] if eff else None), U_EFF50: (eff[1] if eff else None),
-                          U_MIN: 50.0,
-                          U_COST: 22.0,
-                          # O&M at 0 and the machines already bought: the fleet
-                          # prices exactly as it did before these columns
-                          U_OM: 0.0, U_START: 15_000.0, U_UP: 4, U_DOWN: 5, U_MAXST: None,
-                          U_SPILL: True, U_MEV: 0, U_MDUR: 8, U_MPU: 100.0, U_MSPACE: True,
-                          U_MINT: 0, U_MCOST: 0.0, U_OWN: OWN_PAID, U_CAPEX: 0.0}
-                         for n, kw, *eff in fleets[preset]])
+    rows = [{U_NAME: n, U_KW: kw,
+             U_EFF100: (eff[0] if eff else None), U_EFF50: (eff[1] if eff else None),
+             U_MIN: 50.0,
+             U_COST: 22.0,
+             # O&M at 0 and the machines already bought: the fleet
+             # prices exactly as it did before these columns
+             U_OM: 0.0, U_OMH: 0.0, U_START: 15_000.0, U_UP: 4, U_DOWN: 5, U_MAXST: None,
+             U_SPILL: True, U_MEV: 0, U_MDUR: 8, U_MPU: 100.0, U_MSPACE: True,
+             U_MINT: 0, U_MCOST: 0.0, U_OWN: OWN_PAID, U_CAPEX: 0.0}
+            for n, kw, *eff in fleets[preset]]
+    return pd.DataFrame([_colleague_unit(r) for r in rows] if start == VALUES_ZH else rows)
 
 
 def fit_to_anchors(shape: list[float], lo: float, avg: float,
@@ -680,6 +697,73 @@ SCENARIO_LIBRARY: dict[str, dict] = {r[S_NAME]: r for r in [
 ]}
 SCENARIO_DEFAULT = list(SCENARIO_LIBRARY)
 
+# ---- the values the page starts from ------------------------------------------
+# VALUES_OURS is the study as it stands. VALUES_ZH is a colleague's own calculator
+# (https://zharkent.tail042aa5.ts.net/, its run "Default inputs", read in
+# docs/zharkent-app/README.md), so the two can be set side by side: every figure
+# here is his, and none of them is confirmed by us.
+#
+# These are his VALUES, not his method. The dispatch is still this page's optimiser
+# on measured hours; his is a fixed rule on 5-minute steps. What the model cannot
+# take over is stated on the page under the switch.
+VALUES_OURS, VALUES_ZH = "Our study", "Colleague's app (Zharkent)"
+SOURCE_ZH = "colleague's app"
+ZH_GAS = 75.0 / 1.12 / 9.44      # ₸ per kWh of gas: 75 ₸/m³ incl. 12 % VAT, 9.44 kWh/m³
+ZH_GRID = 50.0 / 1.12            # ₸/kWh: 50 incl. 12 % VAT
+ZH_SERVICE = 6.0                 # ₸ per rated kWh of every engine hour
+ZH_START_H = 4.0                 # a start wears the engine as 4 hours of running
+# (kW, efficiency at 100 %, at 50 %). His fuel line also bends at 75 %; the core's is
+# straight through these two. His J320 is NOT the passport's 1,067 kW at 40.5 / 37.4 %.
+ZH_ENGINES = {"TEDOM": (1200.0, 43.6, 40.2), "Jenbacher": (1066.0, 43.2, 39.6)}
+ZH_BATTERY_KWH, ZH_BATTERY_KW = 3_000.0, 990.0       # his 3 MWh at 0.33 C
+ZH_PERIOD = ("2025-10-01", "2026-10-01")             # his twelve months, the end excluded
+
+
+def zh_window(times: list) -> tuple[int, int]:
+    """His twelve months within a measured plant's hours, as (start hour, length).
+
+    The hours are 24-hour days laid end to end, so the window keeps to them: a
+    day his period cuts in two is left out. Outside it the plants have months
+    he does not, and on Жаркент 3 one of them, September 2025, is an engine
+    hardly running: it lifts that plant's year by 1.5 %.
+    """
+    inside = [i for i, t in enumerate(times) if ZH_PERIOD[0] <= str(t)[:10] < ZH_PERIOD[1]]
+    if not inside:
+        return 0, len(times)
+    first = (inside[0] + 23) // 24 * 24
+    return first, (inside[-1] + 1 - first) // 24 * 24
+
+
+def _colleague_unit(row: dict) -> dict:
+    """A units row at his values. A row that is not one of his engines is left."""
+    kind = next((k for k in ZH_ENGINES if k in str(row[U_NAME])), None)
+    if kind is None:
+        return row
+    kw, e100, e50 = ZH_ENGINES[kind]
+    # his minimum run and stop are 30 and 15 minutes: one hour is the least here
+    return {**row, U_KW: kw, U_EFF100: e100, U_EFF50: e50, U_COST: ZH_GAS / (e100 / 100.0),
+            U_OMH: ZH_SERVICE * kw, U_START: ZH_START_H * ZH_SERVICE * kw, U_UP: 1, U_DOWN: 1}
+
+
+VALUES: dict[str, dict] = {
+    VALUES_OURS: dict(
+        grid=60.0, wear_h=15.0, avail=0, b_kw=2_500.0, b_kwh=5_500.0, soc_min=30.0, soc_max=100.0,
+        own_kw=0.0, wear=0.5, capex=391_000_000.0, bat_om=SOURCES["bat_om"][0],
+        rep_year=int(SOURCES["bat_replace_year"][0]), rep_cost=SOURCES["bat_replace_cost"][0],
+        years=25, esc=3.4, disc=6.24, library=SCENARIO_LIBRARY, rules=SCENARIO_DEFAULT),
+    # no O&M, no replacement, no escalation, no discount: his payback is the
+    # price divided by the first year's saving, and 15 years is his longest life.
+    # C is here to part the rule's saving from the battery's, which he does not.
+    VALUES_ZH: dict(
+        grid=ZH_GRID, wear_h=ZH_START_H, avail=1, b_kw=ZH_BATTERY_KW, b_kwh=ZH_BATTERY_KWH,
+        soc_min=10.0, soc_max=95.0, own_kw=15.0, wear=0.0,
+        capex=(ZH_BATTERY_KWH * 150.0 + ZH_BATTERY_KW * 120.0) * 480.0,
+        bat_om=0.0, rep_year=0, rep_cost=0.0, years=15, esc=0.0, disc=0.0,
+        library={**SCENARIO_LIBRARY,
+                 "C · ГПУ от 90%, без батареи": _rule("C · ГПУ от 90%, без батареи", minload=90.0)},
+        rules=[*SCENARIO_DEFAULT, "C · ГПУ от 90%, без батареи"]),
+}
+
 
 def default_scenarios() -> pd.DataFrame:
     """The rows the page starts with: scenarios A and B."""
@@ -718,7 +802,10 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
     It goes to the core as the unit's ``production_factor_series``, which caps
     output and the turndown floor alike."""
     scale = float(sc.get(S_SCALE) or 100.0) / 100.0
-    loads = [x * scale for x in load]
+    on = bool(sc.get(S_BAT)) and bat["kw"] > 0 and bat["kwh"] > 0
+    # the battery's own use is a load that exists only where there is a battery
+    own = float(bat.get("own_kw", 0.0)) if on else 0.0
+    loads = [x * scale + own for x in load]
     override = sc.get(S_MIN)
     override = None if override is None or (isinstance(override, float) and math.isnan(override)) \
         else float(override)
@@ -742,6 +829,7 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
         fleet.append(M.FuelTechInputs(
             enabled=True, kind="CHP", label="CHP", name=str(u[U_NAME] or f"Unit {len(fleet) + 1}"),
             installed_cost_per_kw=0.0, om_cost_per_kw=0.0, om_cost_per_kwh=_om,
+            om_cost_per_running_hour=_num(u.get(U_OMH)),
             fuel_cost_per_mmbtu=_fuel, electric_efficiency_full_load=_e100,
             electric_efficiency_half_load=_e50,
             thermal_efficiency_full_load=0.0,
@@ -761,7 +849,6 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
             production_factor_series=(list(avail[len(fleet)][:len(loads)])
                                       if avail is not None else None),
             macrs_option_years=0, macrs_bonus_fraction=0.0, federal_itc_fraction=0.0))
-    on = bool(sc.get(S_BAT)) and bat["kw"] > 0 and bat["kwh"] > 0
     eta = math.sqrt(bat["rte"])
     storage = M.StorageInputs(
         enabled=on, name="Battery",
@@ -771,6 +858,7 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
         min_kwh=bat["kwh"] if on else 0.0, max_kwh=bat["kwh"],
         charge_efficiency=eta, discharge_efficiency=eta, grid_charge_efficiency=eta,
         can_grid_charge=bat["grid_charge"], soc_min_fraction=bat["soc_min"],
+        soc_max_fraction=float(bat.get("soc_max", 1.0)),
         soc_init_fraction=bat["soc_init"], optimize_soc_init_fraction=bat["cyclic"],
         discharge_cost_per_kwh=bat["wear"],
         macrs_option_years=0, macrs_bonus_fraction=0.0, total_itc_fraction=0.0)
@@ -827,11 +915,12 @@ def account(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> 
     def _gen_cost(r):
         u = by_name.get(r["name"])
         c = fuel_curve(u) if u is not None else None
+        run = (r.get("running_hours") or 0) * _num(u.get(U_OMH)) if u is not None else 0.0
         if c is None:
-            return r["energy_kwh"] * cost_of.get(r["name"], (0.0, 0.0))[0]
+            return r["energy_kwh"] * cost_of.get(r["name"], (0.0, 0.0))[0] + run
         # the solver's own fuel burn (MMBtu) at the curve's price, plus O&M
         return ((r.get("fuel_units") or 0.0) * c[0] * KWH_PER_MMBTU
-                + r["energy_kwh"] * float(u.get(U_OM) or 0.0))
+                + r["energy_kwh"] * float(u.get(U_OM) or 0.0) + run)
     gen_cost = sum(_gen_cost(r) for r in rows)
     starts = sum(r.get("starts") or 0 for r in rows)
     start_cost = sum((r.get("starts") or 0) * cost_of.get(r["name"], (0.0, 0.0))[1] for r in rows)
@@ -877,7 +966,7 @@ def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0,
     # per year on the page's one basis: by calendar month when the hours carry
     # their dates, else by hours (see _annual)
     years = [_run_year(r, out, hours) for r in runs]
-    starts_year = ([Y.month_range(out["time"], r["hourly"]["starts"])[:2] for r in runs]
+    starts_year = ([_annual(out, hours, 0.0, r["hourly"]["starts"]) for r in runs]
                    if timed else [(a["starts_year"],) * 2 for a in acc])
     gap = _year_gap(out, hours)
     per_year = "" if hours == MAX_H and not timed else (
@@ -945,7 +1034,7 @@ def hourly(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> d
     on_of = ser.get("fueltech_unit_on") or {}
     for name, kw in (ser.get("fueltech_unit_kw") or {}).items():
         u = by_name.get(name)
-        if u is not None and fuel_curve(u) is not None:
+        if u is not None and (fuel_curve(u) is not None or _num(u.get(U_OMH)) > 0):
             on = on_of.get(name) or [1.0 if x > 1e-6 else 0.0 for x in kw]
             for t in range(H):
                 energy[t] += unit_hour_cost(u, kw[t], on[t])
@@ -1116,8 +1205,10 @@ def measured_account(meas: dict, price: list[float], units: pd.DataFrame,
                 for u in live]
         e_cost = sum(r[0] for r in rows) / len(rows) if rows else 0.0
         s_cost = sum(r[1] for r in rows) / len(rows) if rows else 0.0
+        h_cost = sum(_num(u.get(U_OMH)) for u in live) / len(live) if live else 0.0
         starts = sum(1 for a, b in zip(gpu, gpu[1:]) if a < on_kw <= b)
-        gen_cost, start_cost = gen * e_cost, starts * s_cost
+        gen_cost = gen * e_cost + h_cost * sum(1 for g in gpu if g > on_kw)
+        start_cost = starts * s_cost
     grid_cost = sum(p * b for p, b in zip(price, buy))
     return dict(load=sum(g + b - s for g, b, s in zip(gpu, buy, sell)), gen_kwh=gen,
                 grid_kwh=sum(buy), export=sum(sell), peak=max(buy, default=0.0),
@@ -1150,8 +1241,9 @@ def measured_hourly(meas: dict, price: list[float], units: pd.DataFrame,
             for u in live]
     e_cost = sum(r[0] for r in rows) / len(rows) if rows else 0.0
     s_cost = sum(r[1] for r in rows) / len(rows) if rows else 0.0
+    h_cost = sum(_num(u.get(U_OMH)) for u in live) / len(live) if live else 0.0
     for t in range(H):
-        cost[t] += gpu[t] * e_cost
+        cost[t] += gpu[t] * e_cost + (h_cost if gpu[t] > on_kw else 0.0)
         if t and gpu[t - 1] < on_kw <= gpu[t]:
             cost[t] += s_cost
     return cost
@@ -1171,9 +1263,14 @@ def _annual(out: dict, hours: int, total: float,
     calendar month (``year_study.month_range``). A calendar month with no
     measured hour is not filled: the year becomes a range, low and high equal
     when every month was measured. Without timestamps the horizon is scaled
-    by 8,760 / hours, which is all a timeless upload allows."""
+    by 8,760 / hours, which is all a timeless upload allows.
+
+    On the colleague's values the year is his: one figure, month_mean."""
     t = out.get("time")
     if t and hourly_values is not None and len(t) == len(hourly_values):
+        if out.get("values") == VALUES_ZH:
+            y = Y.month_mean(t, hourly_values)
+            return y, y
         low, high, _ = Y.month_range(t, hourly_values)
         return low, high
     y = Y.annualise(total, hours)
@@ -1239,7 +1336,7 @@ def _years_cell(paybacks: list) -> tuple[str, str]:
 def _year_gap(out: dict, hours: int) -> list[int]:
     """The calendar months a measured horizon has no hour in; any one makes a year a range."""
     t = out.get("time")
-    if not t or len(t) != hours:
+    if not t or len(t) != hours or out.get("values") == VALUES_ZH:
         return []
     return Y.month_range(t, [0.0] * hours)[2]
 
@@ -1250,20 +1347,24 @@ def _year_note(time: list) -> str:
     if not gap:
         return "Every calendar month has a measured day, so per-year figures are built by month."
     return ("**Per-year figures are ranges**: " + ", ".join(_MONTHS[m - 1] for m in gap)
-            + (" has" if len(gap) == 1 else " have") + " no fully measured day. Nothing is "
+            + (" has" if len(gap) == 1 else " have") + " no measured hour. Nothing is "
             "filled in: each is taken at the lowest and at the highest measured month.")
 
 
 def _year_basis(out: dict, hours: int) -> str:
     """How 'per year' was reached, in words for the notes under a table."""
     t = out.get("time")
+    if t and len(t) == hours and out.get("values") == VALUES_ZH:
+        return ("per year as the colleague's app has it: each month scaled up to its full "
+                "length, a month with under 25 % of its hours dropped, the mean of the rest "
+                "× 12")
     if t and len(t) == hours:
         basis = ("per year = each calendar month's measured hours averaged and multiplied "
                  "by the month's length, so a month measured twice counts once")
         gap = _year_gap(out, hours)
         if gap:
             basis += (". <b>" + ", ".join(_MONTHS[m - 1] for m in gap) + "</b> "
-                      + ("has" if len(gap) == 1 else "have") + " no fully measured day and "
+                      + ("has" if len(gap) == 1 else "have") + " no measured hour and "
                       "nothing is filled in: each is taken at the lowest and at the highest "
                       "measured month, so a per-year figure is a <b>range</b>, on the one "
                       "assumption that a month not measured lies within what was measured")
@@ -1335,6 +1436,14 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
                      [x - y for x, y in zip(m_hour, _run_hourly_cost(r))]) for r in runs]
     rows.append(["Saving against measured, per year", "—"]
                 + [_saving_cell(s, money) for s in saves])
+    # the colleague's own payback: the battery's price over the whole saving
+    # against today, which the note below says is not the battery's alone
+    if out.get("values") == VALUES_ZH:
+        capex = float(out["bat"].get("capex", 0.0))
+        rows.append(["Battery price ÷ saving against measured", "—"]
+                    + [("—" if not r["battery"] else
+                        f"{capex / s[0]:,.1f} years" if s[0] > 0 else "never")
+                       for r, s in zip(runs, saves)])
     P.table(head, rows, ["Operating cost per year"]
             + [_span(y, money) for y in [m_year, *years]])
     measured_av = out.get("availability") == AV_MEASURED
@@ -1455,6 +1564,26 @@ def render() -> None:
     ss = st.session_state
     T.step("Custom dispatch study")
 
+    # ---- 0. the values the inputs start from ----------------------------------
+    # A switch of values is a new set of widgets, not a write into the old ones,
+    # and "Our study" keeps the widgets' own keys. Streamlit forgets a widget it
+    # stops drawing, so a switch starts the inputs over from their values.
+    T.panel_head("Scenario values")
+    values_on = st.radio("Start every input from", list(VALUES), horizontal=True, key="gd_values")
+    V = VALUES[values_on]
+    zh = values_on == VALUES_ZH
+    vk = (lambda k: f"{k}_zh") if zh else (lambda k: k)
+    if zh:
+        st.caption(
+            "Every input below is his: his twelve months of a measured plant, prices ex VAT, "
+            "his J320 efficiencies (not the passport's), his service per engine hour, his "
+            "3 MWh battery, no O&M, no replacement, no discount, engines always available. "
+            "These are his values, not "
+            "his method: this page still optimises measured hours, where he runs a fixed rule "
+            "on 5-minute steps, so it finds a little more than his rule does. Not carried "
+            "over: his charging taper above 85 %, and his 30 / 15 minute run and stop "
+            "(one hour is the least here). See docs/zharkent-app/README.md.")
+
     # ---- 1. load ------------------------------------------------------------
     T.panel_head("Load", required=True)
     with st.expander("Hourly load", expanded=True):
@@ -1521,6 +1650,10 @@ def render() -> None:
             load, measured = list(y["load"]), {"gpu": y["gpu"], "grid": y["grid"],
                                                "buy": y["buy"], "sell": y["sell"],
                                                "gpu_units": y["gpu_units"]}
+            # his joined site is one bus today as well: its plants' meters are netted,
+            # so one plant's export pays for the other's purchase, which it does not
+            if zh:
+                del measured["buy"], measured["sell"]
             times = list(y["time"])
             p0, p1 = y["period"]
             twice = (f" The period is longer than a year: {y['repeat']} calendar dates are "
@@ -1529,10 +1662,12 @@ def render() -> None:
                 st.caption(
                     f"Measured only: the plant's own consumption ({y['source']}), hourly "
                     f"means of measured samples, over the whole period its meters cover, "
-                    f"{p0:%d.%m.%Y} – {p1:%d.%m.%Y}. **{y['days']} of those "
-                    f"{y['days_period']} days** were measured in full and are used, end to "
-                    f"end ({y['hours']:,} h); a day with any hour missing is left out whole, "
-                    f"and nothing is interpolated. In {y['rebuilt_hours']:,} of those hours "
+                    f"{p0:%d.%m.%Y} – {p1:%d.%m.%Y}, cut into **{y['days']} days** of 24 "
+                    f"consecutive hours measured in full and used end to end "
+                    f"({y['hours']:,} h; {y['off_midnight']} of them start where a gap "
+                    f"left off rather than at midnight). A run of measured hours shorter "
+                    f"than a day is left out, and nothing is interpolated. In "
+                    f"{y['rebuilt_hours']:,} of those hours "
                     f"the logger missed the engine or the grid reading and it is the other "
                     f"side of the same hour's balance (engine = plant − grid), kept and "
                     f"flagged: the logger mostly stops writing an engine that stopped, so "
@@ -1574,12 +1709,14 @@ def render() -> None:
             # keyed by source and length, so switching the source (a day, a week, a
             # new upload) starts from its whole series, not the previous window
             wk = f"{src}_{n}"
+            w0, wn = zh_window(times) if zh and times else (0, n)
             with c1:
-                start = int(st.number_input("Window start hour (0 = first)", 0, max(0, n - 1), 0,
-                                            key=f"gd_start_{wk}"))
+                start = int(st.number_input("Window start hour (0 = first)", 0, max(0, n - 1), w0,
+                                            key=vk(f"gd_start_{wk}")))
             with c2:
                 length = int(st.number_input("Window length (hours)", 1, min(MAX_H, n - start),
-                                             min(MAX_H, n - start), key=f"gd_len_{wk}_{start}"))
+                                             min(MAX_H, n - start, wn),
+                                             key=vk(f"gd_len_{wk}_{start}")))
             load = load[start:start + length]
             if measured is not None:
                 measured = {k: ([g[start:start + length] for g in v] if k == "gpu_units"
@@ -1711,8 +1848,8 @@ def render() -> None:
         with c1:
             cur = st.text_input("Currency", value="₸", key="gd_cur").strip() or "$"
         with c2:
-            flat = st.number_input(f"Grid price ({cur}/kWh)", 0.0, value=60.0, step=1.0,
-                                   key="gd_grid")
+            flat = st.number_input(f"Grid price ({cur}/kWh)", 0.0, value=V["grid"], step=1.0,
+                                   key=vk("gd_grid"))
         with c3:
             pup = st.file_uploader("Or hourly prices (same length as the load)",
                                    type=["csv", "txt"], key="gd_price_up")
@@ -1733,9 +1870,9 @@ def render() -> None:
         if ss.get("gd_preset") not in _presets:
             ss.pop("gd_preset", None)
         preset = st.selectbox("Start from", _presets, key="gd_preset")
-        if ss.get("gd_units_preset") != preset:
-            ss["gd_units_df"] = default_units(preset)
-            ss["gd_units_preset"] = preset
+        if ss.get("gd_units_preset") != (preset, values_on):
+            ss["gd_units_df"] = default_units(preset, values_on)
+            ss["gd_units_preset"] = (preset, values_on)
             ss.pop("gd_units", None)
         units = st.data_editor(
             ss["gd_units_df"], num_rows="dynamic", use_container_width=True, key="gd_units",
@@ -1769,6 +1906,11 @@ def render() -> None:
                          "overhaul reserve. Added to the fuel cost above and charged the "
                          "same way, on rated output. Leave at 0 and pricing is exactly "
                          "what it was before this column existed."),
+                U_OMH: st.column_config.NumberColumn(
+                    f"O&M per running hour ({cur}/h)", min_value=0.0, format="%.0f",
+                    help="A service contract billed per engine hour, whatever the load. "
+                         "Leave at 0 and pricing is exactly what it was before this "
+                         "column existed."),
                 U_OWN: st.column_config.SelectboxColumn(
                     options=[OWN_PAID, OWN_BUY], required=True,
                     help="Paid (owned): the machine is already bought, so it carries no "
@@ -1827,8 +1969,8 @@ def render() -> None:
                          "figure makes the count the minimum the interval requires."),
             })
         wear_h = st.number_input(
-            "Start wear, equivalent running hours per start (report only)", 0.0, 100.0, 15.0,
-            step=1.0, key="gd_wear_h",
+            "Start wear, equivalent running hours per start (report only)", 0.0, 100.0,
+            V["wear_h"], step=1.0, key=vk("gd_wear_h"),
             help="CHP_BESS_dispatch_sim.xlsx: OEM maintenance plans count a start as 10–20 "
                  "running hours. Used for the 'effective hours' row; it does not change "
                  "the dispatch — the start cost does.")
@@ -1857,8 +1999,8 @@ def render() -> None:
         avail_mode, avail = None, None
         if measured is not None and measured.get("gpu_units"):
             avail_mode = st.radio(
-                "Engine availability", [AV_MEASURED, AV_FREE], index=0, key="gd_avail",
-                horizontal=True,
+                "Engine availability", [AV_MEASURED, AV_FREE], index=V["avail"],
+                key=vk("gd_avail"), horizontal=True,
                 help="As measured: an engine may run only in the hours the logger shows it "
                      f"running (above {ON_KW:.0f} kW) — its outages, services and the "
                      "operator's stops are kept. Always available: the dispatch may run any "
@@ -1891,17 +2033,27 @@ def render() -> None:
     with st.expander("Battery", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            b_kw = st.number_input("Power (kW)", 0.0, value=2_500.0, step=100.0, key="gd_bkw")
-            b_kwh = st.number_input("Energy (kWh)", 0.0, value=5_500.0, step=100.0, key="gd_bkwh")
+            b_kw = st.number_input("Power (kW)", 0.0, value=V["b_kw"], step=100.0, key=vk("gd_bkw"))
+            b_kwh = st.number_input("Energy (kWh)", 0.0, value=V["b_kwh"], step=100.0,
+                                    key=vk("gd_bkwh"))
+            own_kw = st.number_input("Own use (kW)", 0.0, value=V["own_kw"], step=5.0,
+                                     key=vk("gd_bown"),
+                                     help="Cooling and controls, drawn every hour in a scenario "
+                                          "with the battery. 0 = none.")
         with c2:
             rte = st.number_input("Round-trip efficiency (%)", 1.0, 100.0, 88.0, step=1.0,
                                   key="gd_rte")
-            soc_min = st.number_input("Minimum SoC (%)", 0.0, 100.0, 30.0, step=5.0, key="gd_socmin")
+            soc_min = st.number_input("Minimum SoC (%)", 0.0, 100.0, V["soc_min"], step=5.0,
+                                      key=vk("gd_socmin"))
+            soc_max = st.number_input("Maximum SoC (%)", 0.0, 100.0, V["soc_max"], step=5.0,
+                                      key=vk("gd_socmax"),
+                                      help="The highest charge the battery is taken to. "
+                                           "100 = full.")
         with c3:
-            wear = st.number_input(f"Wear cost ({cur} per kWh discharged)", 0.0, value=0.5,
-                                   step=0.1, key="gd_wear")
-            capex = st.number_input(f"Battery CAPEX ({cur})", 0.0, value=391_000_000.0,
-                                    step=1_000_000.0, format="%.0f", key="gd_capex",
+            wear = st.number_input(f"Wear cost ({cur} per kWh discharged)", 0.0, value=V["wear"],
+                                   step=0.1, key=vk("gd_wear"))
+            capex = st.number_input(f"Battery CAPEX ({cur})", 0.0, value=V["capex"],
+                                    step=1_000_000.0, format="%.0f", key=vk("gd_capex"),
                                     help="Only for the economics: the payback and the net "
                                          "present value against a scenario without the "
                                          "battery. It never enters the dispatch.")
@@ -1917,22 +2069,22 @@ def render() -> None:
         c5, c6, c7 = st.columns(3)
         with c5:
             om_pct = st.number_input(
-                "Battery O&M (% of CAPEX per year)", 0.0, 20.0, SOURCES["bat_om"][0], step=0.1,
-                key="gd_bat_om",
+                "Battery O&M (% of CAPEX per year)", 0.0, 20.0, V["bat_om"], step=0.1,
+                key=vk("gd_bat_om"),
                 help="Fixed upkeep of the battery, escalated each year like the operating "
                      "costs. 2.5 % is REopt's own default for ElectricStorage "
                      "(om_cost_fraction_of_installed_cost, electric_storage.jl:188).")
         with c6:
             rep_year = int(st.number_input(
-                "Replacement in year (0 = none)", 0, 40, int(SOURCES["bat_replace_year"][0]),
-                step=1, key="gd_bat_rep_year",
+                "Replacement in year (0 = none)", 0, 40, V["rep_year"],
+                step=1, key=vk("gd_bat_rep_year"),
                 help="One replacement of the battery in this year of the analysis period, "
                      "discounted to today. 10 is REopt's own battery_replacement_year; a year "
                      "at or beyond the period means no replacement, as in REopt."))
         with c7:
             rep_pct = st.number_input(
-                "Replacement cost (% of CAPEX)", 0.0, 200.0, SOURCES["bat_replace_cost"][0],
-                step=5.0, key="gd_bat_rep_cost",
+                "Replacement cost (% of CAPEX)", 0.0, 200.0, V["rep_cost"],
+                step=5.0, key=vk("gd_bat_rep_cost"),
                 help="Paid in the replacement year, in that year's money. REopt's own default "
                      "replacement cost is 0; the study charges the battery's full price "
                      "because the project has no warranty or augmentation terms. Lower it "
@@ -1942,21 +2094,23 @@ def render() -> None:
                soc_init=soc_init / 100.0, cyclic=soc_mode.startswith("Cyclic"),
                wear=wear, grid_charge=grid_charge, capex=capex,
                om_fraction=om_pct / 100.0, replace_year=rep_year,
-               replace_fraction=rep_pct / 100.0)
+               replace_fraction=rep_pct / 100.0, soc_max=soc_max / 100.0, own_kw=own_kw)
 
     # ---- 4b. where every input comes from -----------------------------------
     if site is not None:
-        _sources_panel(units, flat, bat, cur, _real_year(site, RD.stamp()))
+        _sources_panel(units, flat, bat, cur, _real_year(site, RD.stamp()),
+                       typed=SOURCE_ZH if zh else TYPED)
 
     # ---- 5. scenarios ---------------------------------------------------------
     T.panel_head("Scenarios", required=True)
     with st.expander("Operating rules to compare", expanded=True):
+        _library = V["library"]
         picked = st.pills(
-            "Rules to compare", list(SCENARIO_LIBRARY), selection_mode="multi",
-            default=SCENARIO_DEFAULT, key="gd_scen_pick",
+            "Rules to compare", list(_library), selection_mode="multi",
+            default=V["rules"], key=vk("gd_scen_pick"),
             help="Each picked rule is solved separately and compared side by side. "
                  "A battery rule is measured against the same rule without it.")
-        picked = [n for n in SCENARIO_LIBRARY if n in (picked or [])]
+        picked = [n for n in _library if n in (picked or [])]
         # The table is built from the picks and keyed by them: a data editor
         # keeps its edits as a delta against the frame it was handed, so a new
         # set of picks needs a new editor, not the old edits on a new frame.
@@ -1964,7 +2118,7 @@ def render() -> None:
         if ss.get("gd_scen_sig") != _sig:
             ss["gd_scen_sig"] = _sig
             ss["gd_scen_df"] = pd.DataFrame(
-                [SCENARIO_LIBRARY[n] for n in picked],
+                [_library[n] for n in picked],
                 columns=[S_NAME, S_MIN, S_BAT, S_SCALE, S_MAXST])
         st.caption(f"{len(picked)} rule{'s' if len(picked) != 1 else ''} picked. Fine-tune "
                    f"them below or add a row of your own; picking again resets the table.")
@@ -2062,16 +2216,16 @@ def render() -> None:
                                          "difference such as a battery's saving was off by "
                                          "up to 17 % at 12 and still 4 % at 60.")
         with c2:
-            yrs = st.number_input("Analysis period (years)", 1, 40, 25, step=1, key="gd_years",
-                                  help="REopt's own default is 25 years.")
+            yrs = st.number_input("Analysis period (years)", 1, 40, V["years"], step=1,
+                                  key=vk("gd_years"), help="REopt's own default is 25 years.")
         with c3:
-            esc = st.number_input("Operating cost escalation (%/yr)", 0.0, 20.0, 3.4, step=0.1,
-                                  key="gd_esc",
+            esc = st.number_input("Operating cost escalation (%/yr)", 0.0, 20.0, V["esc"], step=0.1,
+                                  key=vk("gd_esc"),
                                   help="REopt's default fuel escalation is 3.4 %/yr and its "
                                        "electricity escalation 1.66 %/yr. One rate is used "
                                        "here because the study prices one operating cost.")
-        disc = st.number_input("Discount rate (%/yr)", 0.0, 30.0, 6.24, step=0.01,
-                               key="gd_disc",
+        disc = st.number_input("Discount rate (%/yr)", 0.0, 30.0, V["disc"], step=0.01,
+                               key=vk("gd_disc"),
                                help="REopt's own offtaker default is 6.24 %/yr, nominal.")
         if year_mode:
             _kk = max(1, min(int(kdays), len(load) // 24))
@@ -2196,6 +2350,7 @@ def render() -> None:
                                 # the measured hours' own clock, for the period view
                                 "time": times,
                                 "source": src,
+                                "values": values_on,
                                 "fleet_capex": fleet_capex(units),
                                 "grid_cap": grid_cap,
                                 "typical": (None if typ is None else
@@ -2221,6 +2376,10 @@ def render() -> None:
     if out.get("source") and out["source"] != src:
         st.warning(f"These results were solved for **{out['source']}**. The load source "
                    f"above is now **{src}**: press **Solve scenarios** to solve it.",
+                   icon=":material/history:")
+    if out.get("values", VALUES_OURS) != values_on:
+        st.warning(f"These results were solved on **{out.get('values', VALUES_OURS)}**. The "
+                   f"values above are now **{values_on}**: press **Solve scenarios** to solve them.",
                    icon=":material/history:")
     # Named, not tabulated: a rule with no solution has no cost to compare.
     if out.get("unsolved"):

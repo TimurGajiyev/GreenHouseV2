@@ -153,7 +153,8 @@ def d_page_path(site: str, ctx: dict, case: str, n_days: int = 6) -> None:
             for r in csv.DictReader(fh):
                 if r["case"] == case:
                     ref[(r["mode"], r["scen"], r["day"])] = float(r["total"])
-    days = [str(t)[:10] for t in y["time"][:H:24]]
+    # the reference keys a day by its first hour (battery_real_data.day_key)
+    days = [str(t)[:16] for t in y["time"][:H:24]]
     typ = Y.every_day(load, price)
     for mode in ("free", "measured"):
         a = av if mode == "measured" else None

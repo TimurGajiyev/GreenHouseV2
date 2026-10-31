@@ -10,8 +10,8 @@ report is blank -- no bar, a break in the load line, "not measured" in the
 hover panel -- and nothing is filled in. A reading the logger missed and
 the same hour's balance supplies (engine = plant - grid) is drawn, and the
 hover panel says "from balance". In the year view a series is drawn
-for a day only when all 24 of its hours were measured, the rule
-real_data.year applies to the study's own days.
+for a calendar day only when all 24 of its hours were measured; the study
+itself also takes 24 measured hours that straddle midnight (real_data.days).
 """
 
 from __future__ import annotations
