@@ -117,6 +117,7 @@ _CSS = f"""
     text-transform: uppercase;
     letter-spacing: 0.07em;
 }}
+.ghp-pick {{ padding-top: 16px; }}
 .ghp-cell-v {{
     font-family: {MONO};
     font-size: 15px;
@@ -376,6 +377,12 @@ def sub(text: str) -> None:
     st.html(f'<div class="ghp-h3">{text}</div>')
 
 
+def label(text: str) -> None:
+    """A small caption beside a switch, in the stat strip's key style; padded
+    so it sits level with the switch, which has the scope marker above it."""
+    st.html(f'<div class="ghp-cell-k ghp-pick">{text}</div>')
+
+
 # swatch class per colour, so nothing depends on an inline style surviving
 SWATCH = {PV_COLOR: "ghp-sw-pv", GRID_COLOR: "ghp-sw-grid", CHARGE: "ghp-sw-charge",
           DISCHARGE: "ghp-sw-discharge", INK: "ghp-sw-load"}
@@ -390,7 +397,8 @@ def legend(items: list[tuple[str, str]]) -> None:
     st.html(f'<div class="ghp-legend">{chips}</div>')
 
 
-def switch(label: str, options: list[str], *, key: str, default: str | None = None) -> str:
+def switch(label: str, options: list[str], *, key: str, default: str | None = None,
+           fmt=None) -> str:
     """A segmented control wearing the reference's switch styling.
 
     `required=True` matters: without it a segmented control lets the reader
@@ -403,6 +411,7 @@ def switch(label: str, options: list[str], *, key: str, default: str | None = No
     picked = st.segmented_control(
         label, options, default=default or options[0], key=key,
         required=True, label_visibility="collapsed",
+        **({"format_func": fmt} if fmt is not None else {}),
     )
     return picked or (default or options[0])
 
@@ -707,6 +716,98 @@ def dispatch_chart(hours: list[int], labels: list[str], stack: list[tuple[str, s
             # colours are merged into one scale and the battery bar takes a
             # generator's colour
             .resolve_scale(color="independent")
+            .configure_view(stroke=None)
+            .configure_axis(labelFont=MONO, titleFont=MONO))
+
+
+def _m_label(v: float, cur: str, signed: bool = False) -> str:
+    """Money in millions to one decimal, for a label at a bar's tip."""
+    sign = ("+" if v > 0.05e6 else "−" if v < -0.05e6 else "") if signed else (
+        "−" if v < -0.05e6 else "")
+    body = f"{abs(v) / 1e6:,.1f}"
+    return f"{sign}${body}M" if cur == "$" else f"{sign}{body} M {cur}"
+
+
+# the role a bar plays in the scenario chart, and its colour: the picked
+# scenario in ink, what it is set against in the charge teal, the rest as context
+ROLE_COLORS = {"scenario": INK, "against": CHARGE, "other": CEILING, "measured": GRID_COLOR}
+
+
+def scenario_cost_chart(rows: list[dict], cur: str, *, scope: str | None = None):
+    """One bar per scenario: its operating cost over the horizon, from zero.
+
+    ``rows`` are dicts with ``label`` (the y-axis text, the role already
+    written into it), ``role`` (a key of ROLE_COLORS), ``total`` and ``parts``
+    (component -> money), in the order they are drawn. Each bar carries its
+    total at the tip; the parts are in the hover panel. One axis, one unit."""
+    parts = list(dict.fromkeys(k for r in rows for k in r["parts"]))
+    df = pd.DataFrame([{"label": r["label"], "role": r["role"], "v": r["total"],
+                        "txt": _m_label(r["total"], cur),
+                        **{k: (f"{r['parts'][k]:,.0f} {cur}" if k in r["parts"] else "—")
+                           for k in parts}} for r in rows])
+    top = max([r["total"] for r in rows] + [1.0]) * 1.22
+    order = [r["label"] for r in rows]
+    roles = list(ROLE_COLORS)
+    y = alt.Y("label:N", sort=order, title=None,
+              axis=alt.Axis(labelFont=MONO, labelFontSize=11, labelColor=INK, labelLimit=330,
+                            ticks=False, domain=False, labelPadding=8))
+    x = alt.X("v:Q", title=f"operating cost over the horizon, {cur}",
+              scale=alt.Scale(domain=[0, top], nice=False),
+              axis=_axis(fmt="~s", domain=False))
+    tip = [alt.Tooltip("label:N", title="scenario"), alt.Tooltip("txt:N", title="total")] + [
+        alt.Tooltip(f"{k}:N", title=k) for k in parts]
+    bars = alt.Chart(df).mark_bar(size=18, cornerRadiusEnd=4).encode(
+        y=y, x=x, tooltip=tip,
+        color=alt.Color("role:N", legend=None,
+                        scale=alt.Scale(domain=roles, range=[ROLE_COLORS[k] for k in roles])))
+    text = alt.Chart(df).mark_text(align="left", dx=6, font=MONO, fontSize=11,
+                                   color=INK).encode(y=y, x=x, text="txt:N")
+    _tooltip_palette([INK] * (2 + len(parts)), scope)
+    return (alt.layer(bars, text)
+            .properties(height=34 * len(rows) + 46, background=PANEL,
+                        padding={"left": 4, "right": 10, "top": 8, "bottom": 2})
+            .configure_view(stroke=None)
+            .configure_axis(labelFont=MONO, titleFont=MONO))
+
+
+def pair_delta_chart(rows: list[dict], cur: str, *, scope: str | None = None):
+    """Where one scenario's cost differs from another's, part by part.
+
+    ``rows`` are dicts with ``label`` and ``saving`` (money: + the scenario is
+    cheaper on that part, − it costs more), the total last. Diverging from a
+    zero rule: a saving to the right in green, an extra cost to the left in
+    orange, the signed figure at each tip, so the direction never rests on
+    colour alone."""
+    df = pd.DataFrame([{"label": r["label"], "v": r["saving"],
+                        "sign": "saving" if r["saving"] >= 0 else "extra cost",
+                        "total": i == len(rows) - 1,
+                        "txt": _m_label(r["saving"], cur, signed=True),
+                        "full": f"{r['saving']:+,.0f} {cur}"} for i, r in enumerate(rows)])
+    m = max([abs(r["saving"]) for r in rows] + [1.0]) * 1.45
+    order = [r["label"] for r in rows]
+    y = alt.Y("label:N", sort=order, title=None,
+              axis=alt.Axis(labelFont=MONO, labelFontSize=11, labelColor=INK, labelLimit=220,
+                            ticks=False, domain=False, labelPadding=8))
+    x = alt.X("v:Q", title=f"saving over the horizon, {cur}  (− = costs more)",
+              scale=alt.Scale(domain=[-m, m], nice=False), axis=_axis(fmt="~s", domain=False))
+    color = alt.Color("sign:N", legend=None,
+                      scale=alt.Scale(domain=["saving", "extra cost"], range=[SAVE, DISCHARGE]))
+    tip = [alt.Tooltip("label:N", title="part"), alt.Tooltip("full:N", title="saving")]
+    bars = alt.Chart(df).mark_bar(size=18, cornerRadiusEnd=4).encode(
+        y=y, x=x, color=color, tooltip=tip,
+        opacity=alt.condition("datum.total", alt.value(1.0), alt.value(0.78)))
+    right = alt.Chart(df).transform_filter("datum.v >= 0").mark_text(
+        align="left", dx=6, font=MONO, fontSize=11, color=INK).encode(
+        y=y, x=x, text="txt:N")
+    left = alt.Chart(df).transform_filter("datum.v < 0").mark_text(
+        align="right", dx=-6, font=MONO, fontSize=11, color=INK).encode(
+        y=y, x=x, text="txt:N")
+    zero = alt.Chart(pd.DataFrame({"v": [0.0]})).mark_rule(color=INK, strokeWidth=1).encode(
+        x="v:Q")
+    _tooltip_palette([INK, INK], scope)
+    return (alt.layer(bars, zero, right, left)
+            .properties(height=34 * len(rows) + 46, background=PANEL,
+                        padding={"left": 4, "right": 10, "top": 8, "bottom": 2})
             .configure_view(stroke=None)
             .configure_axis(labelFont=MONO, titleFont=MONO))
 

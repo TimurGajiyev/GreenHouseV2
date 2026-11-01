@@ -339,7 +339,7 @@ def e_page() -> None:
     from streamlit.testing.v1 import AppTest
     at = AppTest.from_function(_page, default_timeout=120).run()
     check("the page opens", not at.exception, str([e.value for e in at.exception][:1]))
-    check("on our study", at.radio(key="gd_values").value == D.VALUES_OURS)
+    check("on our study", at.segmented_control(key="gd_values").value == D.VALUES_OURS)
     val = lambda k: at.number_input(key=k).value
     check("with our grid price, battery and finance",
           (val("gd_grid"), val("gd_bkwh"), val("gd_capex"), val("gd_disc"), val("gd_years"))
@@ -351,7 +351,7 @@ def e_page() -> None:
 
     # something typed on our study, to see what a switch does to it
     at.number_input(key="gd_grid").set_value(61.0).run()
-    at.radio(key="gd_values").set_value(D.VALUES_ZH).run()
+    at.segmented_control(key="gd_values").set_value(D.VALUES_ZH).run()
     check("the switch raises no error", not at.exception, str([e.value for e in at.exception][:1]))
     want = dict(gd_grid_zh=Z["grid"], gd_bkw_zh=990.0, gd_bkwh_zh=2850.0,
                 gd_socmin_zh=Z["soc_min"], gd_bown_zh=15.0, gd_wear_zh=0.0, gd_capex_zh=273_024_000.0,
@@ -398,7 +398,33 @@ def e_page() -> None:
           "Tailscale app's own value" in html and "KILLER" not in html)
     check("no NaN or None reached a table", ">nan<" not in html and ">None<" not in html)
 
-    at.radio(key="gd_values").set_value(D.VALUES_OURS).run()
+    # the pair the results compare: picked in one place, the chart following it
+    names = [r["name"] for r in out["runs"]]
+    a_, b_, c_ = names
+    vs_b = f"gd_vs_{b_}"
+    check("it opens on the battery scenario against the cheapest run without one",
+          at.session_state["gd_pick"] == b_ and at.session_state[vs_b] == a_,
+          f"{at.session_state['gd_pick']} against {at.session_state[vs_b]}")
+    check("the verdict says the saving is the battery's own",
+          "Compare two scenarios" in html and "so this saving is the battery's own" in html)
+    check("and the chart is the picked scenario's", f'ghp-title">{b_}<' in html)
+    at.segmented_control(key=vs_b).set_value(c_).run()
+    html = " ".join(h.proto.body for h in at.get("html"))
+    check("against the same rule without the battery, raises no error", not at.exception,
+          str([e.value for e in at.exception][:1]))
+    check("and says the rest of that saving is the rule's, naming the fair one",
+          "is not the cheapest run without a battery" in html and a_ in html)
+    at.button(key="gd_swap").click().run()
+    html = " ".join(h.proto.body for h in at.get("html"))
+    check("the swap makes the other side the scenario, and back",
+          not at.exception and at.session_state["gd_pick"] == c_
+          and at.session_state[f"gd_vs_{c_}"] == b_ and f'ghp-title">{c_}<' in html,
+          f"{at.session_state['gd_pick']} against {at.session_state[f'gd_vs_{c_}']}")
+    check("the verdict is said from the side that buys the battery, whichever is picked",
+          f"the battery is in <b>{b_}</b>: against <b>{c_}</b>" in html
+          and ("it pays back in" in html or "it does not pay back" in html))
+
+    at.segmented_control(key="gd_values").set_value(D.VALUES_OURS).run()
     check("back on our study, the inputs start over from our values", val("gd_grid") == 60.0)
     check("our battery is back", val("gd_bkwh") == 5500.0 and val("gd_capex") == 391e6)
     check("our units are back", float(at.session_state["gd_units_df"][D.U_COST].iloc[0]) == 22.0)
@@ -406,6 +432,28 @@ def e_page() -> None:
     check("the old results say whose they are",
           any(D.VALUES_ZH in w.value for w in at.warning))
     check("no error on the way back", not at.exception, str([e.value for e in at.exception][:1]))
+
+    # and the comparison on our study too: two rules, one battery
+    ln = next(w for w in at.number_input if (w.key or "").startswith("gd_len_"))
+    ln.set_value(96).run()
+    at.button(key="gd_run").click().run(timeout=300)
+    check("a solve on our study raises no error", not at.exception and not at.error,
+          str([e.value for e in [*at.exception, *at.error]][:1]))
+    out = at.session_state["gd_results"]
+    html = " ".join(h.proto.body for h in at.get("html"))
+    a_, b_ = [r["name"] for r in out["runs"]]
+    check("our study opens on B against A, the only run without a battery",
+          at.session_state["gd_pick"] == b_ and at.session_state[f"gd_vs_{b_}"] == a_)
+    check("with the verdict, both pictures and the chart's head",
+          "so this saving is the battery's own" in html and "Operating cost over the" in html
+          and f"{b_.split(' · ')[0]} against {a_.split(' · ')[0]}, part by part" in html
+          and f'ghp-title">{b_}<' in html)
+    at.button(key="gd_swap").click().run()
+    html = " ".join(h.proto.body for h in at.get("html"))
+    check("the swap on our study: A against B, the verdict still the battery's",
+          not at.exception and at.session_state["gd_pick"] == a_
+          and f"the battery is in <b>{b_}</b>: against <b>{a_}</b>" in html
+          and f'ghp-title">{a_}<' in html)
 
 
 # ------------------------------------------------------------------- comparison

@@ -2333,6 +2333,50 @@ before the change. Every other suite gives the same output before and after, tim
 `test_periods`, `test_profile_render` and `test_chp_bess_fields` need an NLR key. They were run
 on both sides with PVWatts stubbed and the saved URDB sample (`reopt_test_data/api/`).
 
+## Revised 01.11.2026 (2): one pair, picked once, after a solve
+
+After a solve, the page used to compare through two controls far apart. A switch over the
+economics picked a scenario; it also picked the chart, which nothing said. A select box under the
+25-year table picked what the chart's veil measured against. Meanwhile the tables set the
+scenario against every other one at once, and the veil's default (the same rule without a
+battery) was not the fair baseline the tables named. Now one block, **Compare two scenarios**,
+does it:
+
+* **Scenario** and **Against**, one above the other. Each option on *Against* says what it is to
+  the scenario picked: *cheapest without a battery*, *same rule, no battery*, *with the
+  battery*. It opens on the battery scenario against the cheapest run without one.
+  **⇄ Swap** turns the pair round.
+* Under the pickers, the pair's verdict, said from the side that buys the battery: what the
+  battery saves a year; what it costs over the period (CAPEX, O&M, replacement); NPV; payback.
+  When the other side is not the cheapest run without a battery, the verdict names the one that
+  is, and gives the battery's own saving against it. On his values, B against C pays back in
+  10.9 years, but 17.9 of its 25.1 M ₸/yr is C's own 90 % rule; against A the battery saves 7.2.
+* The tables still set the scenario against every other one. The picked pair's row is bold,
+  marked ▶.
+* The dispatch chart shows the picked scenario, named in its head, with its veil against the
+  other side.
+* Two pictures sit between the verdict and the tables:
+  * **Operating cost over the horizon**: every scenario from zero, plus the logger's own
+    operation, the pair in colour. It shows how far apart the scenarios are and how far all
+    of them are from today.
+  * **The pair, part by part**, from the side that buys the battery: generation, grid, starts,
+    wear and the total, with a saving in green to the right and an extra cost in orange to the
+    left, each signed at its tip.
+
+  On his values, B against A saves 4.0 M ₸ on generation and 4.3 M ₸ on the grid over the
+  182 days, and its extra starts cost 5.0 M ₸, a net 3.3 M ₸. On ours, B against A saves
+  13.0 M ₸ on the grid but costs 3.0 M ₸ more in generation, 1.9 M ₸ in starts and 0.3 M ₸ in
+  wear, a net 7.8 M ₸. The two colours pass the palette check only with a second cue, and they
+  have two: the side of the zero line and the signed figure.
+* **Start from**, the switch between *Our study* and the *Tailscale app* at the top of the page,
+  is the same kind of switch.
+
+No figure changed: every number in the tables is the same before and after
+(`_pair_numbers` is the old row arithmetic, moved). Checked headless in
+`tools/test_tailscale_values.py` on both values, his and ours (the default pair, against C,
+the swap, both pictures, the chart's head) and in
+`tools/test_year_measured.py` part G (what *Against* says each scenario is).
+
 ## Reproduce
 
 ```bash

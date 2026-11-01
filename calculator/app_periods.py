@@ -729,6 +729,9 @@ def render_periods(state: dict) -> None:
 
     # ---- panel: header, chart, stat strip ------------------------------
     title, strap = _headline(sh, res)
+    if state.get("label"):
+        # a study of several scenarios names the one this dispatch is
+        title, strap = state["label"], " · ".join(x for x in (title, strap) if x)
     P.panel_head(title, strap)
 
     stack = [(nm, P.unit_color(j), [r["units"][j] for r in rows])

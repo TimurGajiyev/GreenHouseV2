@@ -1173,7 +1173,222 @@ def _price_over(capex: float, s: tuple[float, float]) -> str:
     return words[0] if words[0] == words[1] else f"{words[0]} … {words[1]}"
 
 
-def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
+def _short(name: str) -> str:
+    """A scenario's letter, the part of its name before " · " ("B")."""
+    return str(name).split(" · ")[0]
+
+
+def _same_rule(a: dict, b: dict) -> bool:
+    return (a.get("rule") == b.get("rule") and a.get("scale") == b.get("scale")
+            and a.get("starts") == b.get("starts"))
+
+
+def _role(r: dict, run: dict, runs: list[dict]) -> str:
+    """What ``r`` is to ``run``, said on the "against" switch, so the reader
+    sees which comparison prices the battery and which also prices a rule."""
+    if run["battery"] and not r["battery"]:
+        tags = []
+        if r is _fair_base(runs):
+            tags.append("cheapest without a battery")
+        if _same_rule(r, run):
+            tags.append("same rule, no battery")
+        return " · ".join(tags) or "no battery"
+    if r["battery"] and not run["battery"]:
+        return "with the battery"
+    return "both with a battery" if r["battery"] else "neither with a battery"
+
+
+def _mark(o: dict, vs: dict | None, fair: dict | None):
+    """A scenario's name in a "compared with" column: the fair baseline named,
+    the pair picked above set in bold with a pointer."""
+    text = o["name"] + (FAIR if o is fair else "")
+    return ("▶ " + text, "ghp-key") if o is vs else text
+
+
+def _pair_numbers(run: dict, o: dict, out: dict, hours: int) -> dict:
+    """``run`` against ``o`` over the analysis period, every figure the tables
+    and the verdict show: the yearly saving, its present value, the battery's
+    whole cost (CAPEX, O&M, replacement) in present value, the net present
+    value and the payback, all as (low, high) where a month was not measured.
+
+    Signs are ``run``'s: a saving or a net present value is what choosing
+    ``run`` over ``o`` gains, and the battery's cost is + when ``run`` buys it
+    and − when ``o`` does (then it is what ``run`` saves by not buying it)."""
+    life = out.get("life") or {}
+    years = int(life.get("years", 25))
+    esc, disc = float(life.get("escalation", 0.0)), float(life.get("discount", 0.0))
+    pwf = Y.lifecycle(0.0, years=years, escalation=esc, discount=disc).pwf
+    year, extra, lcs, reverse = _pair_life(run, o, out, hours)
+    pv = (pwf * year[0], pwf * year[1])
+    # Net present value of choosing run over o: the present value of what it
+    # saves, less what the battery costs over the period -- its CAPEX, its O&M
+    # and its replacement -- when run is the one that buys it, plus all of
+    # that when o does.
+    if lcs is None:
+        cost_pv, net, pay = 0.0, pv, ("—", "")
+    else:
+        lc = lcs[0]
+        whole = lc.capex + lc.om_present_value + lc.replace_present_value
+        cost_pv = -whole if reverse else whole
+        nets = sorted(-x.net_present_value if reverse else x.net_present_value for x in lcs)
+        net = (nets[0], nets[1])
+        pay = _pay_span(lcs, " reversed" if reverse else "")
+    return dict(years=years, pwf=pwf, year=year, pv=pv, extra=extra, lcs=lcs,
+                reverse=reverse, cost_pv=cost_pv, net=net, pay=pay)
+
+
+def _swap_pair(a: str, b: str) -> None:
+    """The swap button: the scenario becomes the one it was compared against."""
+    st.session_state["gd_pick"] = b
+    st.session_state[f"gd_vs_{b}"] = a
+
+
+def _pick_pair(runs: list[dict]) -> tuple[dict, dict]:
+    """The two scenarios every figure below compares, picked in one place.
+
+    It used to be two controls far apart: a switch over the economics that
+    also chose the chart, and a select box under the 25-year table that chose
+    only the chart's veil, while the tables compared against every scenario at
+    once. Now the scenario and what it is set against are picked together, the
+    second labelled with what it is to the first, and the verdict, the rows the
+    tables mark and the chart all follow the pair."""
+    names = [r["name"] for r in runs]
+    by = {r["name"]: r for r in runs}
+    ss = st.session_state
+    # a name from an earlier solve is not an option of this one
+    if ss.get("gd_pick") not in names:
+        ss.pop("gd_pick", None)
+    # each picker on its own row, its caption to the left
+    lab, ctl = st.columns([1, 9], vertical_alignment="center")
+    with lab:
+        P.label("Scenario")
+    with ctl:
+        # open on the battery scenario: its payback is the question
+        pick = P.switch("Scenario", names, key="gd_pick",
+                        default=next((r["name"] for r in runs if r["battery"]), names[0]))
+    run = by.get(pick, runs[0])
+    others = [r for r in runs if r is not run]
+    fair = _fair_base(runs)
+    want = (fair if run["battery"] and fair is not None else
+            next((r for r in others if r["battery"] != run["battery"]), others[0]))
+    key = f"gd_vs_{run['name']}"
+    if ss.get(key) not in [r["name"] for r in others]:
+        ss.pop(key, None)
+    lab, ctl = st.columns([1, 9], vertical_alignment="center")
+    with lab:
+        P.label("Against")
+    with ctl:
+        vs_name = P.switch("Against", [r["name"] for r in others], key=key,
+                           default=want["name"],
+                           fmt=lambda n: f"{n}  ·  {_role(by[n], run, runs)}")
+    base = by.get(vs_name, want)
+    _, ctl = st.columns([1, 9])
+    with ctl:
+        st.button(f"⇄ Swap: {_short(base['name'])} against {_short(run['name'])}",
+                  key="gd_swap", type="tertiary", on_click=_swap_pair,
+                  args=(run["name"], base["name"]),
+                  help="Make the scenario the one it is compared against, and back.")
+    return run, base
+
+
+def _pair_verdict(run: dict, base: dict, runs: list[dict], out: dict, hours: int) -> None:
+    """The picked pair's answer, before any table: what the battery saves, what
+    it costs over the period, its net present value and payback -- said from
+    the side that buys it -- and whether the comparison is the battery's own."""
+    cur = out["currency"]
+    A._CUR = cur
+    n = _pair_numbers(run, base, out, hours)
+    money = lambda v: _money(v, cur)
+    cell = lambda c: f'<span class="{c[1]}">{c[0]}</span>' if isinstance(c, tuple) else c
+    rs, bs = _short(run["name"]), _short(base["name"])
+    if not n["extra"]:
+        what = "both carry the battery" if run["battery"] else "neither carries a battery"
+        lo, hi = n["year"]
+        P.stat_strip([(f"{rs} saves per year", cell(_signed_span(n["year"]))),
+                      ("Battery between them", "none"),
+                      (f"Present value, {n['years']} yr", cell(_signed_span(n["pv"])))])
+        P.note([f"<b>{run['name']}</b> against <b>{base['name']}</b>: {what}, so there is no "
+                f"battery price between them to repay; {rs} costs "
+                f"<b>{_span((abs(lo), abs(hi)) if lo >= 0 or hi <= 0 else (lo, hi), money, cur)}</b> "
+                f"a year {'less' if lo >= 0 else 'more' if hi <= 0 else 'less or more'} to run than {bs}"])
+        return
+    # said from the side that buys the battery
+    buyer, other = (run, base) if n["extra"] > 0 else (base, run)
+    flip = (lambda r: r) if n["extra"] > 0 else (lambda r: (-r[1], -r[0]))
+    save, pv, net = flip(n["year"]), flip(n["pv"]), flip(n["net"])
+    cost = abs(n["cost_pv"])
+    pays = n["pay"][0].replace(" reversed", "")
+    P.stat_strip([("Battery saves per year", cell(_signed_span(save))),
+                  (f"Battery over {n['years']} yr: CAPEX + O&M + replacement", money(cost)),
+                  (f"Net present value, {n['years']} yr", cell(_signed_span(net))),
+                  ("Payback, simple / discounted",
+                   cell((pays, "ghp-neg" if pays == "never" else "ghp-pos")))],
+                 highlight={f"Net present value, {n['years']} yr"})
+    fair = _fair_base(runs)
+    words = [f"the battery is in <b>{buyer['name']}</b>: against <b>{other['name']}</b> it saves "
+             f"<b>{_span(save, money, cur)}</b> a year",
+             f"over {n['years']} years that is <b>{_span(pv, money, cur)}</b> in present value, "
+             f"against <b>{money(cost)}</b> for the battery — "
+             + ("<b>it does not pay back</b>" if pays == "never" else f"it pays back in <b>{pays}</b>")]
+    if not other["battery"] and fair is not None:
+        if other is fair:
+            words.append(f"{_short(other['name'])} is the cheapest run without a battery, so this "
+                         "saving is the battery's own")
+        else:
+            own = _gain_year(buyer, fair, out, hours)
+            words.append(f"{_short(other['name'])} is not the cheapest run without a battery: "
+                         f"<b>{fair['name']}</b> is, and against it the battery saves "
+                         f"<b>{_span(own, money, cur)}</b> a year — the rest of this saving is "
+                         f"what {_short(other['name'])}'s own rule costs, which needs no battery")
+    P.note(words)
+
+
+_PARTS = (("Generation", "gen_cost"), ("Grid purchase", "grid_cost"),
+          ("Starts", "start_cost"), ("Battery wear", "wear_cost"))
+
+
+def _pair_charts(run: dict, base: dict, runs: list[dict], out: dict, hours: int) -> None:
+    """Two pictures beside the verdict. Left, every scenario's operating cost
+    over the horizon, from zero, the picked pair in colour and the logger's own
+    operation beside them where there is one: how far apart the scenarios are,
+    and how far from today. Right, the pair's difference part by part, from the
+    side that buys the battery: what it saves on generation and on the grid,
+    what its extra starts cost."""
+    cur = out["currency"]
+    parts = [(lab, k) for lab, k in _PARTS if any(r["acc"].get(k) for r in runs)]
+    days = hours / 24.0
+    span = f"{days:,.0f} days" if abs(days - round(days)) < 1e-9 else f"{hours:,} hours"
+    rows = []
+    meas = out.get("measured")
+    if meas and len(meas.get("gpu") or []) == hours:
+        m = measured_account(meas, out.get("price_raw") or out["price"], out["units"])
+        rows.append({"label": "Measured (logger)", "role": "measured", "total": m["total"],
+                     "parts": {lab: m[k] for lab, k in parts if k in m}})
+    for r in runs:
+        role = "scenario" if r is run else "against" if r is base else "other"
+        tag = {"scenario": "  · scenario", "against": "  · against", "other": ""}[role]
+        rows.append({"label": r["name"] + tag, "role": role, "total": r["acc"]["total"],
+                     "parts": {lab: r["acc"].get(k, 0.0) for lab, k in parts}})
+    # the difference, said from the side that buys the battery where one does
+    a, b = (base, run) if (base["battery"] and not run["battery"]) else (run, base)
+    delta = [{"label": lab, "saving": b["acc"].get(k, 0.0) - a["acc"].get(k, 0.0)}
+             for lab, k in parts]
+    delta.append({"label": "Total", "saving": b["acc"]["total"] - a["acc"]["total"]})
+    left, right = st.columns([1.15, 1], gap="medium")
+    with left:
+        P.sub(f"Operating cost over the {span}")
+        with st.container(key="gd_cost_chart"):
+            st.altair_chart(P.scenario_cost_chart(rows, cur, scope="gd_cost_chart"),
+                            use_container_width=True)
+    with right:
+        P.sub(f"{_short(a['name'])} against {_short(b['name'])}, part by part")
+        with st.container(key="gd_delta_chart"):
+            st.altair_chart(P.pair_delta_chart(delta, cur, scope="gd_delta_chart"),
+                            use_container_width=True)
+
+
+def _economics(run: dict, others: list[dict], out: dict, hours: int,
+               vs: dict | None = None) -> None:
     """The reference's savings and payback strip, as one table: this scenario
     against every other, per window and per year, with the battery CAPEX it
     adds and the years that CAPEX takes to pay back."""
@@ -1199,7 +1414,7 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
         else:
             pay = ("—", "")
         cls = "ghp-pos" if save >= 0 else "ghp-neg"
-        rows.append([o["name"] + (FAIR if o is base else ""), (A._signed(save), cls),
+        rows.append([_mark(o, vs, base), (A._signed(save), cls),
                      _signed_span(year), _money(extra, cur) if extra else "—", pay])
     P.table(["Compared with", "Saving over the window", "Saving per year",
              "Extra battery CAPEX", "Payback"], rows)
@@ -1642,7 +1857,8 @@ def _pay(simple: float | None, disc: float | None, tail: str = "") -> tuple[str,
     return (f"{simple:,.1f} / {d} yr{tail}", "ghp-pos")
 
 
-def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
+def _lifecycle(run: dict, others: list[dict], out: dict, hours: int,
+               vs: dict | None = None) -> None:
     """The same comparison carried out to the end of the analysis period.
 
     Nothing here re-solves anything: it takes the annual operating cost each
@@ -1662,28 +1878,14 @@ def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
 
     rows = []
     for o in others:
-        year, extra, lcs, reverse = _pair_life(run, o, out, hours)
-        pv = (own.pwf * year[0], own.pwf * year[1])
-        # Net present value of choosing this scenario over that one: the present
-        # value of what it saves, less what the battery costs over the period --
-        # its CAPEX, its O&M and its replacement -- when this scenario is the one
-        # that buys it, plus all of that when the OTHER one does.
-        if lcs is None:
-            cost_pv, net, pay = 0.0, pv, ("—", "")
-        else:
-            lc = lcs[0]
-            whole = lc.capex + lc.om_present_value + lc.replace_present_value
-            cost_pv = -whole if reverse else whole
-            nets = sorted(-x.net_present_value if reverse else x.net_present_value for x in lcs)
-            net = (nets[0], nets[1])
-            pay = _pay_span(lcs, " reversed" if reverse else "")
+        n = _pair_numbers(run, o, out, hours)
         rows.append([
-            o["name"] + (FAIR if o is base else ""),
-            _signed_span(year),
-            _signed_span(pv),
-            _money(cost_pv, cur) if cost_pv else "—",
-            _signed_span(net),
-            pay,
+            _mark(o, vs, base),
+            _signed_span(n["year"]),
+            _signed_span(n["pv"]),
+            _money(n["cost_pv"], cur) if n["cost_pv"] else "—",
+            _signed_span(n["net"]),
+            n["pay"],
         ])
     money = lambda v: _money(v, cur)
     P.table(["Compared with", "Saving per year", f"Present value, {years} yr",
@@ -1728,7 +1930,12 @@ def render() -> None:
     # a name this version no longer offers is dropped, as the source and the preset are
     if ss.get("gd_values") not in VALUES:
         ss.pop("gd_values", None)
-    values_on = st.radio("Start every input from", list(VALUES), horizontal=True, key="gd_values")
+    # the same switch, caption to its left, as the pair picker after a solve
+    lab, ctl = st.columns([1, 9], vertical_alignment="center")
+    with lab:
+        P.label("Start from")
+    with ctl:
+        values_on = P.switch("Start every input from", list(VALUES), key="gd_values")
     V = VALUES[values_on]
     zh = values_on == VALUES_ZH
     vk = (lambda k: f"{k}_zh") if zh else (lambda k: k)
@@ -2627,26 +2834,24 @@ def render() -> None:
     _compare(runs, cur, H, out.get("wear_h", 15.0), out)
     _measured_vs(out, runs, cur)
 
-    T.panel_head("Economics of one scenario against the others")
-    names = [r["name"] for r in runs]
-    # open on the battery scenario: its payback against the others is the question
-    pick = P.switch("Scenario", names, key="gd_pick",
-                    default=next((r["name"] for r in runs if r["battery"]), None))
-    run = next((r for r in runs if r["name"] == pick), runs[0])
-    others = [r for r in runs if r is not run]
-    if others:
-        _economics(run, others, out, H)
+    if len(runs) > 1:
+        # one pair, picked once: the verdict, the rows the tables mark, the
+        # chart and its veil all follow it
+        T.panel_head("Compare two scenarios")
+        run, base = _pick_pair(runs)
+        others = [r for r in runs if r is not run]
+        _pair_verdict(run, base, runs, out, H)
+        _pair_charts(run, base, runs, out, H)
+        P.sub(f"{run['name']} against every other scenario")
+        _economics(run, others, out, H, vs=base)
         T.panel_head(f"Over {int((out.get('life') or {}).get('years', 25))} years")
-        _lifecycle(run, others, out, H)
-        base_name = st.selectbox(
-            "Veil and savings in the chart below are measured against", [r["name"] for r in others],
-            index=[r["name"] for r in others].index(_default_base(run, others)["name"]),
-            key=f"gd_base_{pick}")
-        base = next(r for r in others if r["name"] == base_name)
+        _lifecycle(run, others, out, H, vs=base)
         sav = savings(run, base, out)
     else:
-        sav = None
+        run, sav = runs[0], None
     A.render_periods({"res": run["res"], "tariff": run["tariff"], "currency": cur,
                       "savings": sav, "time": out.get("time"),
+                      # the dispatch shown is the picked scenario's, named in its head
+                      "label": run["name"],
                       # the plant these results were solved for, when it is measured
                       "measured_site": real_sources().get(out.get("source"))})

@@ -247,6 +247,17 @@ def g_cells() -> None:
     a, b, c = run("A", 100.0, False), run("B", 90.0, True), run("C", 110.0, False)
     check("the fair baseline is the cheapest run without a battery",
           D._fair_base([b, c, a]) is a and D._fair_base([b]) is None)
+    # what the "against" switch says each scenario is to the one picked
+    for r, rule in ((a, 50.0), (b, 90.0), (c, 90.0)):
+        r.update(rule=rule, scale=100.0, starts=None)
+    runs = [a, b, c]
+    check("against a battery scenario: the cheapest without one, the same rule without one",
+          D._role(a, b, runs) == "cheapest without a battery"
+          and D._role(c, b, runs) == "same rule, no battery", f"{D._role(a, b, runs)} / {D._role(c, b, runs)}")
+    check("against a scenario without one: the battery scenario says so",
+          D._role(b, c, runs) == "with the battery" and D._role(a, c, runs) == "neither with a battery")
+    check("a scenario's letter is the part of its name before ' · '",
+          D._short("B · ГПУ от 90% + батарея") == "B" and D._short("Plain") == "Plain")
 
     # the logger's balance against the plant meter, priced hour by hour
     meas = {"gpu": [900.0, 0.0, 500.0], "grid": [100.0, 400.0, -100.0],
