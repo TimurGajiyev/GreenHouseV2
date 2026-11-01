@@ -1,14 +1,14 @@
-"""The colleague's values on the dispatch page, and our own values left as they were.
+"""The Tailscale app's values on the dispatch page, and our own values left as they were.
 
-    python calculator/tools/test_colleague_values.py                  every check, about a minute
-    python calculator/tools/test_colleague_values.py --compare=K      and one plant solved in full
+    python calculator/tools/test_tailscale_values.py                  every check, about a minute
+    python calculator/tools/test_tailscale_values.py --compare=K      and one plant solved in full
                                                                       against his run (K, M or KM)
 
   A. our study     the page's own values and tables did not move, and the three new
                    inputs at their defaults change nothing in the model
   B. his values    each one, by its own arithmetic and against his files
-  C. new inputs    the charge ceiling, the battery's own use and the running-hour service
-                   do what they say, and the accounts still add up to the solver's objective
+  C. new inputs    his charge limits typed in, the battery's own use and the running-hour
+                   service do what they say, and the accounts still add up to the objective
   D. his year      year_study.month_mean, by hand and against the rebuild of his method
   E. the page      the real page run headless: switch, values, a solve, switch back
 
@@ -22,6 +22,7 @@ import datetime as dt
 import importlib.util
 import logging
 import os
+import subprocess
 import sys
 import time
 import warnings
@@ -72,8 +73,7 @@ def bat_of(v: dict) -> dict:
     return dict(kw=v["b_kw"], kwh=v["b_kwh"], rte=0.88, soc_min=v["soc_min"] / 100.0,
                 soc_init=0.5, cyclic=True, wear=v["wear"], grid_charge=False, capex=v["capex"],
                 om_fraction=v["bat_om"] / 100.0, replace_year=v["rep_year"],
-                replace_fraction=v["rep_cost"] / 100.0, soc_max=v["soc_max"] / 100.0,
-                own_kw=v["own_kw"])
+                replace_fraction=v["rep_cost"] / 100.0, own_kw=v["own_kw"])
 
 
 def day_load() -> list[float]:
@@ -100,7 +100,7 @@ def a_ours() -> None:
                esc=3.4, disc=6.24)
     check("every value the page used to hard-code", all(v[k] == x for k, x in was.items()),
           ", ".join(k for k, x in was.items() if v[k] != x))
-    check("the new inputs default to off", v["soc_max"] == 100.0 and v["own_kw"] == 0.0)
+    check("the new inputs default to off", v["own_kw"] == 0.0)
     check("still the two rules, and only these two",
           list(v["library"]) == D.SCENARIO_DEFAULT == v["rules"] and len(v["rules"]) == 2)
     check("the page's first option is our study", list(D.VALUES)[0] == D.VALUES_OURS)
@@ -110,15 +110,26 @@ def a_ours() -> None:
           and (u[D.U_START] == 15_000.0).all() and (u[D.U_UP] == 4).all()
           and (u[D.U_DOWN] == 5).all())
 
+    # the core is the one from before this scenario existed: a03fbd3, the commit before it
+    rc = subprocess.run(["git", "diff", "--quiet", "a03fbd3", "--", "calculator/reopt_core"],
+                        cwd=ROOT, capture_output=True).returncode
+    if rc in (0, 1):
+        check("reopt_core is exactly the core before this scenario", rc == 0)
+    else:
+        print("  --  no git history here: the core is not compared")
+    check("and has no field for a charge ceiling",
+          "soc_max_fraction" not in M.StorageInputs.__dataclass_fields__)
+
     # the same day, with and without the new keys: the same model to the last digit
-    old = {k: x for k, x in bat_of(v).items() if k not in ("soc_max", "own_kw")}
+    old = {k: x for k, x in bat_of(v).items() if k != "own_kw"}
     load, price = day_load(), [60.0] * 48
     sc = D._rule("B", minload=90.0, bat=True)
     a = D.build(load, price, u, old, sc)
     b = D.build(load, price, u, bat_of(v), sc)
     fa, fb = a.fuel_techs, b.fuel_techs
     check("the model's inputs are the same", a.loads_kw == b.loads_kw
-          and a.storage.soc_max_fraction == 1.0 == b.storage.soc_max_fraction
+          and a.storage.max_kwh == b.storage.max_kwh
+          and a.storage.soc_min_fraction == b.storage.soc_min_fraction
           and all(f.om_cost_per_running_hour == 0.0 for f in [*fa, *fb]))
     ra, rb = M.solve(a, time_limit=60, mip_gap=1e-4), M.solve(b, time_limit=60, mip_gap=1e-4)
     check("and so is the answer", ra["status"] == rb["status"] and close(
@@ -131,10 +142,11 @@ def b_his() -> None:
     head("B. his values")
     check("grid 50 incl. VAT is 44.64 ex VAT", round(Z["grid"], 2) == 44.64)
     check("gas 75 ₸/m³ incl. VAT is 7.094 ₸ per kWh of gas", round(D.ZH_GAS, 3) == 7.094)
-    check("battery 3 MWh at 0.33 C", Z["b_kwh"] == 3000.0 and Z["b_kw"] == 990.0)
+    check("battery 3 MWh at 0.33 C", D.ZH_BATTERY_KWH == 3000.0 and Z["b_kw"] == 990.0)
     check("price (kWh × 150 + kW × 120) USD × 480 = 273,024,000 ₸", Z["capex"] == 273_024_000.0)
-    check("SoC 10–95 %, 15 kW own use, no wear per kWh",
-          (Z["soc_min"], Z["soc_max"], Z["own_kw"], Z["wear"]) == (10.0, 95.0, 15.0, 0.0))
+    check("SoC 10–95 % of it goes in as 300 to 2,850 kWh",
+          close(Z["b_kwh"], 2850.0) and close(Z["b_kwh"] * Z["soc_min"] / 100.0, 300.0))
+    check("15 kW own use, no wear per kWh", (Z["own_kw"], Z["wear"]) == (15.0, 0.0))
     check("no O&M, no replacement, no escalation, no discount",
           (Z["bat_om"], Z["rep_year"], Z["rep_cost"], Z["esc"], Z["disc"]) == (0.0, 0, 0.0, 0.0, 0.0))
     check("engines always available", [D.AV_MEASURED, D.AV_FREE][Z["avail"]] == D.AV_FREE)
@@ -170,7 +182,8 @@ def b_his() -> None:
           close(D.ZH_GAS, r.GAS) and close(D.ZH_GRID, r.GRID)
           and close(t[D.U_OMH], r.OM_H["mwm"]) and close(j[D.U_OMH], r.OM_H["zh2"])
           and D.ZH_START_H == r.START_H
-          and Z["soc_min"] / 100.0 == r.LO and Z["soc_max"] / 100.0 == r.HI
+          and close(Z["b_kwh"] * Z["soc_min"] / 100.0, r.LO * D.ZH_BATTERY_KWH)
+          and close(Z["b_kwh"], r.HI * D.ZH_BATTERY_KWH)
           and Z["own_kw"] == r.AUX)
     if os.path.exists(HIS):
         h = pd.read_csv(HIS)
@@ -198,10 +211,11 @@ def c_inputs() -> None:
           [f.om_cost_per_running_hour for f in inp.fuel_techs] == [7200.0, 1066.0 * 6.0])
     res = M.solve(inp, time_limit=60, mip_gap=1e-4)
     soc = res["series"]["soc_kwh"]
-    check("the battery is never filled above 95 %",
-          max(soc) <= 0.95 * bat["kwh"] + 1e-6, f"highest {max(soc):,.1f} kWh")
-    check("and it does reach the ceiling", max(soc) > 0.9 * bat["kwh"], f"{max(soc):,.1f} kWh")
-    check("nor drained under 10 %", min(soc) >= 0.10 * bat["kwh"] - 1e-6)
+    top, floor = 0.95 * D.ZH_BATTERY_KWH, 0.10 * D.ZH_BATTERY_KWH
+    check("the battery is never filled above 95 % of 3,000 kWh",
+          max(soc) <= top + 1e-6, f"highest {max(soc):,.1f} kWh")
+    check("and it does reach that ceiling", max(soc) > 0.95 * top, f"{max(soc):,.1f} kWh")
+    check("nor drained under 10 % of it", min(soc) >= floor - 1e-6, f"lowest {min(soc):,.1f} kWh")
     a = D.account(res, price, u, bat["wear"])
     check("the accounts add up to the solver's objective",
           close(a["total"], res["objective_lifecycle_cost"], 1e-6),
@@ -315,7 +329,7 @@ def e_page() -> None:
     check("with our grid price, battery and finance",
           (val("gd_grid"), val("gd_bkwh"), val("gd_capex"), val("gd_disc"), val("gd_years"))
           == (60.0, 5500.0, 391e6, 6.24, 25))
-    check("the new inputs at off", val("gd_socmax") == 100.0 and val("gd_bown") == 0.0)
+    check("the new input at off", val("gd_bown") == 0.0)
     check("engines as measured", at.radio(key="gd_avail").value == D.AV_MEASURED)
     check("the units table is the plant's own",
           float(at.session_state["gd_units_df"][D.U_COST].iloc[0]) == 22.0)
@@ -324,8 +338,8 @@ def e_page() -> None:
     at.number_input(key="gd_grid").set_value(61.0).run()
     at.radio(key="gd_values").set_value(D.VALUES_ZH).run()
     check("the switch raises no error", not at.exception, str([e.value for e in at.exception][:1]))
-    want = dict(gd_grid_zh=Z["grid"], gd_bkw_zh=990.0, gd_bkwh_zh=3000.0, gd_socmin_zh=10.0,
-                gd_socmax_zh=95.0, gd_bown_zh=15.0, gd_wear_zh=0.0, gd_capex_zh=273_024_000.0,
+    want = dict(gd_grid_zh=Z["grid"], gd_bkw_zh=990.0, gd_bkwh_zh=2850.0,
+                gd_socmin_zh=Z["soc_min"], gd_bown_zh=15.0, gd_wear_zh=0.0, gd_capex_zh=273_024_000.0,
                 gd_bat_om_zh=0.0, gd_bat_rep_year_zh=0, gd_bat_rep_cost_zh=0.0, gd_years_zh=15,
                 gd_esc_zh=0.0, gd_disc_zh=0.0, gd_wear_h_zh=4.0)
     bad = {k: val(k) for k, x in want.items() if not close(val(k), x, 1e-9)}
@@ -439,7 +453,7 @@ def compare(group: str) -> None:
         print(f"  solved {name}: {time.time() - t0:,.0f} s", flush=True)
     a, c, b = (runs[n] for n in RULES)
     saving = today - b["cost"]
-    cycles = b["dis"] / (0.85 * bat["kwh"])
+    cycles = b["dis"] / (bat["kwh"] * (1.0 - bat["soc_min"]))      # 85 % of 3,000 kWh
     life = min(6000.0 / cycles, 15.0) if cycles else 15.0
     h = _his(group)
     mln = lambda v: f"{v / 1e6:,.1f}"

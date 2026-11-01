@@ -2200,26 +2200,28 @@ as notes, not changed):
 * A window inside one month gives a single per-year figure, though eleven months are not
   measured: with one month measured, its lowest and highest are the same month.
 
-## Revised 31.10.2026: a colleague's values on the page
+## Revised 31.10.2026: the Tailscale app's values on the page
 
-A colleague's calculator (`docs/zharkent-app/README.md`) reports a payback on the same plants
-where this study reports none. The study page now has a switch at its top, **Scenario values**:
-*Our study* or *Colleague's app (Zharkent)*. The second sets every input to his, so the two
+A colleague's calculator, the Tailscale app (`docs/zharkent-app/README.md`), reports a payback
+on the same plants where this study reports none. The study page now has a switch at its top,
+**Scenario values**: *Our study* or *Tailscale app*. The second sets every input to his, so the two
 answers can be laid side by side on one engine. *Our study* stays the first option, and its
-results did not change by a digit (`tools/test_colleague_values.py`, and every suite against a
+results did not change by a digit (`tools/test_tailscale_values.py`, and every suite against a
 baseline taken before the change).
 
 What the switch sets, all of it his and none of it confirmed by us: his twelve months
 (01.10.2025 – 30.09.2026), grid 44.64 ₸/kWh and gas 7.094 ₸ per kWh of gas ex VAT, his engine
 ratings and efficiencies, service of 6 ₸ per rated kWh of every engine hour, a start as 4 such
-hours, 3 MWh / 990 kW at 273,024,000 ₸, SoC 10–95 %, 15 kW own use, no battery wear, O&M,
+hours, 3 MWh / 990 kW at 273,024,000 ₸ filled between 10 and 95 % (entered as the 2,850 kWh it
+can hold, with the same 300 kWh floor), 15 kW own use, no battery wear, O&M,
 replacement, escalation or discount, engines always available, his way of making a year, and
 the plants' meters netted on the joined site. A third rule, **C · ГПУ от 90%, без батареи**,
 appears with it, because C against B parts the battery's saving from the rule's.
 
-Three inputs were added for this, each off by default: Maximum SoC (`soc_max_fraction`, a
-one-word change to the core's upper bound, 1.0 being REopt's own), Own use (kW), and O&M per
-running hour (the core's existing `om_cost_per_running_hour`).
+Two inputs were added for this, each off by default: Own use (kW), and O&M per running hour
+(the core's existing `om_cost_per_running_hour`). `reopt_core` is not changed: it is the core
+from before this scenario, byte for byte. A first version gave the core a maximum SoC field. It
+was taken out again, because a smaller battery with the same floor is the same problem.
 
 Per year, million ₸, against his run "Default inputs":
 
@@ -2232,8 +2234,9 @@ Per year, million ₸, against his run "Default inputs":
 | Same hours as his: today | −0.8 % | −0.6 % | −0.6 % |
 | Same hours as his: with the battery | −3.0 % | +0.5 % | −2.3 % |
 
-So his answer is reproduced by his values. The conclusion of this Part does not change: on the
-same run, of that saving, this much is the rule and this much the battery:
+So his answer is reproduced on his values, with the additions listed below. The conclusion of
+this Part does not change: on the same run, of that saving, this much is the rule and this much
+the battery:
 
 | | ЖКПЗ | Жаркент 3 | All three |
 |---|---:|---:|---:|
@@ -2253,6 +2256,22 @@ What was found on the way:
 * **His J320 is not the passport's.** He has 1,066 kW at 43.2 / 39.6 %; the passport (Part 13)
   gives 1,067 kW at 40.5 / 37.4 %, which is about 6 % more gas. The switch copies his figure.
 
+Not everything the switch does is an input. Typed into the page as it stood (service as 6 ₸ per
+kWh, no own use, each plant's own meters, the page's own year), the same run saves 70.6 … 95.0 on
+ЖКПЗ, 16.1 on Жаркент 3 and 97.4 … 129.8 on all three, a price ÷ saving of 2.9 … 3.9, 17.0 and
+2.1 … 2.8 years. His figures already lie inside two of those three. Жаркент 3 needs the service
+per engine hour, the one addition that matters: without it the battery against engines free from
+50 % loses money on every plant (−7.2 … −4.2, −11.9, −7.0 … −4.7). His year and his netted meters
+are method, not values, and were added after the gap to his figures was seen.
+
+Checked against the REopt.jl source on real measured days, with the start cost at 0 because
+REopt has none: all six cases, ЖКПЗ and Жаркент 3 under rules A, C and B, agree on cost to the
+tenge (ЖКПЗ 5,478,634 / 5,538,280 / 3,215,484, Жаркент 3 2,189,844 / 2,674,335 / 833,604). The
+windows are two to five days, and the battery cases ran to a 0.1 % gap. Over the full year, all
+1,908 daily solves closed within the 0.01 % target; the slowest took 9.2 s of the 120 s limit.
+The status word proves less than that: pulp can report "Optimal" on a run the time limit
+stopped, so the gap is the figure to read, which is what the page's "Not proved" warning does.
+
 What the switch does not carry over: his 5-minute steps, his fixed rule, charging taper above
 85 %, 30 / 15 minute run and stop (one hour is the least here), and charge carried from day to
 day (a day closes on itself). Hours and closed days also make the operation look quieter: 512
@@ -2268,8 +2287,8 @@ python calculator/tools/battery_real_data.py all    # every measured day (~10 mi
 python calculator/tools/battery_real_data.py solve --cases site3 --workers 8
                                                     # one case; the saved rows of the others stay
 python calculator/tools/test_year_window.py         # a window of measured days to a year and 25 years
-python calculator/tools/test_colleague_values.py    # his values on the page; ours unmoved (1 min)
-python calculator/tools/test_colleague_values.py --compare=K   # a year on his values against his run
+python calculator/tools/test_tailscale_values.py    # his values on the page; ours unmoved (1 min)
+python calculator/tools/test_tailscale_values.py --compare=K   # a year on his values against his run
                                                     # K, M or KM, one at a time, ~6 min each
 python calculator/tools/battery_real_data.py report --grid-price 46.25   # after a solve at that price
 python calculator/tools/battery_real_data.py report --bat-om 1.5 --replace-year 15 --replace-cost 50

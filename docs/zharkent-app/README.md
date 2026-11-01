@@ -257,7 +257,7 @@ Step 2 alone removes his payback: 77.1 of his 90.5 M is the rule running the eng
 
 ### 4.5 His values on the GreenHouse page
 
-The Custom dispatch study now has a switch at its top, **Scenario values → Colleague's app (Zharkent)**. It sets every input to his and adds a rule C (the 90 % rule without the battery). Press **Solve scenarios**: about 6 minutes on one plant. Full account: `REPORT.md`, Part 18, "Revised 31.10.2026".
+The Custom dispatch study now has a switch at its top, **Scenario values → Tailscale app**. It sets every input to his and adds a rule C (the 90 % rule without the battery). Press **Solve scenarios**: about 6 minutes on one plant. Full account: `REPORT.md`, Part 18, "Revised 31.10.2026".
 
 | Per year, M KZT, ours / his | Krakhmal | Meshki | Joined |
 |---|---:|---:|---:|
@@ -273,7 +273,7 @@ The Custom dispatch study now has a switch at its top, **Scenario values → Col
 - The same run shows the split he does not: on Krakhmal, 81.2 of the 106.3 is the rule and 25.1 the battery.
 - New question for him: his J320 is 1,066 kW at 43.2 / 39.6 %, the passport 1,067 kW at 40.5 / 37.4 %, about 6 % more gas. Where does his figure come from?
 
-Reproduce: `python calculator/tools/test_colleague_values.py --compare=K` (or `M`, `KM`).
+Reproduce: `python calculator/tools/test_tailscale_values.py --compare=K` (or `M`, `KM`).
 
 ---
 

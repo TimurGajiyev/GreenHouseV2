@@ -380,7 +380,8 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                  row("Grid price", float(grid), "grid", f"{float(grid):,.2f} {cur}/kWh"),
                  row("Battery", (bat["kw"], bat["kwh"]), "bess",
                      f"{bat['kw']:,.0f} kW / {bat['kwh']:,.0f} kWh"),
-                 row("Minimum SoC", round(bat["soc_min"] * 100, 6), "soc", f"{bat['soc_min']:.0%}"),
+                 row("Minimum SoC", round(bat["soc_min"] * 100, 6), "soc",
+                     f"{bat['soc_min']:.2%}".replace(".00", "")),
                  row("Round-trip efficiency", round(bat["rte"] * 100, 6), "rte", f"{bat['rte']:.0%}"),
                  row("Battery wear", float(bat["wear"]), "wear", f"{bat['wear']:,.2f} {cur}/kWh"),
                  row("Battery CAPEX", float(bat["capex"]), "capex", _money(bat["capex"], cur)),
@@ -394,8 +395,6 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
         if first is not None and _num(first.get(U_OMH)):
             rows.append(["O&M per running hour", f"{_num(first.get(U_OMH)):,.0f} {cur}/h",
                          (typed, ""), ""])
-        if bat.get("soc_max", 1.0) < 1.0:
-            rows.append(["Maximum SoC", f"{bat['soc_max']:.0%}", (typed, ""), ""])
         if bat.get("own_kw"):
             rows.append(["Battery's own use", f"{bat['own_kw']:,.0f} kW", (typed, ""), ""])
         # the source texts stay in each row, but the page shows three columns
@@ -456,7 +455,7 @@ def default_units(preset: str, start: str | None = None) -> pd.DataFrame:
     documents give (passports.py); a preset with an OEM curve carries it, the
     JSX ones do not. Every column after them is not in any passport.
 
-    ``start`` = VALUES_ZH takes the colleague's engine values instead.
+    ``start`` = VALUES_ZH takes the Tailscale app's engine values instead.
     """
     fleets = unit_presets()
     rows = [{U_NAME: n, U_KW: kw,
@@ -469,7 +468,7 @@ def default_units(preset: str, start: str | None = None) -> pd.DataFrame:
              U_SPILL: True, U_MEV: 0, U_MDUR: 8, U_MPU: 100.0, U_MSPACE: True,
              U_MINT: 0, U_MCOST: 0.0, U_OWN: OWN_PAID, U_CAPEX: 0.0}
             for n, kw, *eff in fleets[preset]]
-    return pd.DataFrame([_colleague_unit(r) for r in rows] if start == VALUES_ZH else rows)
+    return pd.DataFrame([_tailscale_unit(r) for r in rows] if start == VALUES_ZH else rows)
 
 
 def fit_to_anchors(shape: list[float], lo: float, avg: float,
@@ -698,16 +697,16 @@ SCENARIO_LIBRARY: dict[str, dict] = {r[S_NAME]: r for r in [
 SCENARIO_DEFAULT = list(SCENARIO_LIBRARY)
 
 # ---- the values the page starts from ------------------------------------------
-# VALUES_OURS is the study as it stands. VALUES_ZH is a colleague's own calculator
-# (https://zharkent.tail042aa5.ts.net/, its run "Default inputs", read in
+# VALUES_OURS is the study as it stands. VALUES_ZH is the Tailscale app, a colleague's
+# own calculator (https://zharkent.tail042aa5.ts.net/, its run "Default inputs", read in
 # docs/zharkent-app/README.md), so the two can be set side by side: every figure
 # here is his, and none of them is confirmed by us.
 #
 # These are his VALUES, not his method. The dispatch is still this page's optimiser
 # on measured hours; his is a fixed rule on 5-minute steps. What the model cannot
 # take over is stated on the page under the switch.
-VALUES_OURS, VALUES_ZH = "Our study", "Colleague's app (Zharkent)"
-SOURCE_ZH = "colleague's app"
+VALUES_OURS, VALUES_ZH = "Our study", "Tailscale app"
+SOURCE_ZH = "tailscale app"
 ZH_GAS = 75.0 / 1.12 / 9.44      # ₸ per kWh of gas: 75 ₸/m³ incl. 12 % VAT, 9.44 kWh/m³
 ZH_GRID = 50.0 / 1.12            # ₸/kWh: 50 incl. 12 % VAT
 ZH_SERVICE = 6.0                 # ₸ per rated kWh of every engine hour
@@ -716,6 +715,11 @@ ZH_START_H = 4.0                 # a start wears the engine as 4 hours of runnin
 # straight through these two. His J320 is NOT the passport's 1,067 kW at 40.5 / 37.4 %.
 ZH_ENGINES = {"TEDOM": (1200.0, 43.6, 40.2), "Jenbacher": (1066.0, 43.2, 39.6)}
 ZH_BATTERY_KWH, ZH_BATTERY_KW = 3_000.0, 990.0       # his 3 MWh at 0.33 C
+# He fills it between 10 and 95 %, and a battery here fills to 100 %. So it goes in as
+# what it can hold, with the same 300 kWh floor: the same limits, typed. The price
+# below stays that of the 3 MWh.
+ZH_ENERGY_KWH = 0.95 * ZH_BATTERY_KWH
+ZH_SOC_MIN = 100.0 * 0.10 * ZH_BATTERY_KWH / ZH_ENERGY_KWH
 ZH_PERIOD = ("2025-10-01", "2026-10-01")             # his twelve months, the end excluded
 
 
@@ -734,7 +738,7 @@ def zh_window(times: list) -> tuple[int, int]:
     return first, (inside[-1] + 1 - first) // 24 * 24
 
 
-def _colleague_unit(row: dict) -> dict:
+def _tailscale_unit(row: dict) -> dict:
     """A units row at his values. A row that is not one of his engines is left."""
     kind = next((k for k in ZH_ENGINES if k in str(row[U_NAME])), None)
     if kind is None:
@@ -747,7 +751,7 @@ def _colleague_unit(row: dict) -> dict:
 
 VALUES: dict[str, dict] = {
     VALUES_OURS: dict(
-        grid=60.0, wear_h=15.0, avail=0, b_kw=2_500.0, b_kwh=5_500.0, soc_min=30.0, soc_max=100.0,
+        grid=60.0, wear_h=15.0, avail=0, b_kw=2_500.0, b_kwh=5_500.0, soc_min=30.0,
         own_kw=0.0, wear=0.5, capex=391_000_000.0, bat_om=SOURCES["bat_om"][0],
         rep_year=int(SOURCES["bat_replace_year"][0]), rep_cost=SOURCES["bat_replace_cost"][0],
         years=25, esc=3.4, disc=6.24, library=SCENARIO_LIBRARY, rules=SCENARIO_DEFAULT),
@@ -755,8 +759,8 @@ VALUES: dict[str, dict] = {
     # price divided by the first year's saving, and 15 years is his longest life.
     # C is here to part the rule's saving from the battery's, which he does not.
     VALUES_ZH: dict(
-        grid=ZH_GRID, wear_h=ZH_START_H, avail=1, b_kw=ZH_BATTERY_KW, b_kwh=ZH_BATTERY_KWH,
-        soc_min=10.0, soc_max=95.0, own_kw=15.0, wear=0.0,
+        grid=ZH_GRID, wear_h=ZH_START_H, avail=1, b_kw=ZH_BATTERY_KW, b_kwh=ZH_ENERGY_KWH,
+        soc_min=ZH_SOC_MIN, own_kw=15.0, wear=0.0,
         capex=(ZH_BATTERY_KWH * 150.0 + ZH_BATTERY_KW * 120.0) * 480.0,
         bat_om=0.0, rep_year=0, rep_cost=0.0, years=15, esc=0.0, disc=0.0,
         library={**SCENARIO_LIBRARY,
@@ -858,7 +862,6 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
         min_kwh=bat["kwh"] if on else 0.0, max_kwh=bat["kwh"],
         charge_efficiency=eta, discharge_efficiency=eta, grid_charge_efficiency=eta,
         can_grid_charge=bat["grid_charge"], soc_min_fraction=bat["soc_min"],
-        soc_max_fraction=float(bat.get("soc_max", 1.0)),
         soc_init_fraction=bat["soc_init"], optimize_soc_init_fraction=bat["cyclic"],
         discharge_cost_per_kwh=bat["wear"],
         macrs_option_years=0, macrs_bonus_fraction=0.0, total_itc_fraction=0.0)
@@ -1265,7 +1268,7 @@ def _annual(out: dict, hours: int, total: float,
     when every month was measured. Without timestamps the horizon is scaled
     by 8,760 / hours, which is all a timeless upload allows.
 
-    On the colleague's values the year is his: one figure, month_mean."""
+    On the Tailscale app's values the year is its own: one figure, month_mean."""
     t = out.get("time")
     if t and hourly_values is not None and len(t) == len(hourly_values):
         if out.get("values") == VALUES_ZH:
@@ -1355,7 +1358,7 @@ def _year_basis(out: dict, hours: int) -> str:
     """How 'per year' was reached, in words for the notes under a table."""
     t = out.get("time")
     if t and len(t) == hours and out.get("values") == VALUES_ZH:
-        return ("per year as the colleague's app has it: each month scaled up to its full "
+        return ("per year as the Tailscale app has it: each month scaled up to its full "
                 "length, a month with under 25 % of its hours dropped, the mean of the rest "
                 "× 12")
     if t and len(t) == hours:
@@ -1436,7 +1439,7 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
                      [x - y for x, y in zip(m_hour, _run_hourly_cost(r))]) for r in runs]
     rows.append(["Saving against measured, per year", "—"]
                 + [_saving_cell(s, money) for s in saves])
-    # the colleague's own payback: the battery's price over the whole saving
+    # the Tailscale app's own payback: the battery's price over the whole saving
     # against today, which the note below says is not the battery's alone
     if out.get("values") == VALUES_ZH:
         capex = float(out["bat"].get("capex", 0.0))
@@ -1569,20 +1572,24 @@ def render() -> None:
     # and "Our study" keeps the widgets' own keys. Streamlit forgets a widget it
     # stops drawing, so a switch starts the inputs over from their values.
     T.panel_head("Scenario values")
+    # a name this version no longer offers is dropped, as the source and the preset are
+    if ss.get("gd_values") not in VALUES:
+        ss.pop("gd_values", None)
     values_on = st.radio("Start every input from", list(VALUES), horizontal=True, key="gd_values")
     V = VALUES[values_on]
     zh = values_on == VALUES_ZH
     vk = (lambda k: f"{k}_zh") if zh else (lambda k: k)
     if zh:
         st.caption(
-            "Every input below is his: his twelve months of a measured plant, prices ex VAT, "
-            "his J320 efficiencies (not the passport's), his service per engine hour, his "
-            "3 MWh battery, no O&M, no replacement, no discount, engines always available. "
-            "These are his values, not "
-            "his method: this page still optimises measured hours, where he runs a fixed rule "
-            "on 5-minute steps, so it finds a little more than his rule does. Not carried "
-            "over: his charging taper above 85 %, and his 30 / 15 minute run and stop "
-            "(one hour is the least here). See docs/zharkent-app/README.md.")
+            "Every input below is the Tailscale app's: its twelve months of a measured plant, "
+            "prices ex VAT, its J320 efficiencies (not the passport's), its service per engine "
+            "hour, no O&M, no replacement, no discount, engines always available. Its 3 MWh "
+            "battery fills between 10 and 95 %, so it is entered as the 2,850 kWh it can hold, "
+            "with the same 300 kWh floor; the CAPEX stays that of the 3 MWh. These are its "
+            "values, not its method: this page still optimises measured hours, where it runs "
+            "a fixed rule on 5-minute steps. Not carried over: its charging taper above 85 %, "
+            "and its 30 / 15 minute run and stop (one hour is the least here). See "
+            "docs/zharkent-app/README.md.")
 
     # ---- 1. load ------------------------------------------------------------
     T.panel_head("Load", required=True)
@@ -2045,10 +2052,6 @@ def render() -> None:
                                   key="gd_rte")
             soc_min = st.number_input("Minimum SoC (%)", 0.0, 100.0, V["soc_min"], step=5.0,
                                       key=vk("gd_socmin"))
-            soc_max = st.number_input("Maximum SoC (%)", 0.0, 100.0, V["soc_max"], step=5.0,
-                                      key=vk("gd_socmax"),
-                                      help="The highest charge the battery is taken to. "
-                                           "100 = full.")
         with c3:
             wear = st.number_input(f"Wear cost ({cur} per kWh discharged)", 0.0, value=V["wear"],
                                    step=0.1, key=vk("gd_wear"))
@@ -2094,7 +2097,7 @@ def render() -> None:
                soc_init=soc_init / 100.0, cyclic=soc_mode.startswith("Cyclic"),
                wear=wear, grid_charge=grid_charge, capex=capex,
                om_fraction=om_pct / 100.0, replace_year=rep_year,
-               replace_fraction=rep_pct / 100.0, soc_max=soc_max / 100.0, own_kw=own_kw)
+               replace_fraction=rep_pct / 100.0, own_kw=own_kw)
 
     # ---- 4b. where every input comes from -----------------------------------
     if site is not None:
