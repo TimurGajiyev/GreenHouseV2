@@ -231,6 +231,21 @@ def c_inputs() -> None:
     check("the service in them is its rate × the hours each engine ran",
           close(a["total"] - p["total"], want, 1e-9), f"{want:,.0f} ₸")
 
+    # an engine down for an hour: the model may hold it on at zero output (REopt's
+    # semantics, cheaper than a restart) and charges its service for that hour.
+    # The accounts used to count hours with output and fell short by the rate.
+    av = [[0.0 if t == 10 else 1.0 for t in range(48)], [1.0] * 48]
+    res = M.solve(D.build(load, price, u, bat, sc, avail=av), time_limit=60, mip_gap=1e-6)
+    ser = res["series"]
+    ghost = sum(1 for nm, x in ser["fueltech_unit_on"].items() for t, o in enumerate(x)
+                if o > 0.5 and ser["fueltech_unit_kw"][nm][t] <= 1e-6)
+    a = D.account(res, price, u, bat["wear"])
+    h = D.hourly(res, price, u, bat["wear"])
+    check("an engine held on through its outage is charged its service there too",
+          ghost >= 1 and close(a["total"], res["objective_lifecycle_cost"], 1e-6)
+          and close(sum(h["energy"]) + sum(h["ops"]), a["total"], 1e-6),
+          f"{ghost} h on at zero; {a['total']:,.0f} against {res['objective_lifecycle_cost']:,.0f}")
+
     # a unit with one flat price per kWh, no efficiency curve, the same service
     flat = u.copy()
     flat[D.U_EFF100] = None
@@ -373,6 +388,14 @@ def e_page() -> None:
     html = " ".join(h.proto.body for h in at.get("html"))
     check("the payback against measured is on the page",
           "Battery price ÷ saving against measured" in html)
+    check("and beside it the battery's own, against the fair baseline",
+          "the battery's own" in html and "fair baseline" in html)
+    check("the meters' balance error is priced and taken out",
+          "Logger balance less the plant meter" in html and "at the plant meter" in html)
+    check("each engine's own service per running hour",
+          "7,200 ₸/h" in html and "6,396 ₸/h" in html)
+    check("the legend names his source, not the workbook's KILLER items",
+          "Tailscale app's own value" in html and "KILLER" not in html)
     check("no NaN or None reached a table", ">nan<" not in html and ">None<" not in html)
 
     at.radio(key="gd_values").set_value(D.VALUES_OURS).run()

@@ -39,8 +39,10 @@ logging.disable(logging.WARNING)
 warnings.filterwarnings("ignore")
 
 import app_dispatch as D        # noqa: E402
+import app_periods as A         # noqa: E402
 import real_data as RD          # noqa: E402
 import year_study as Y          # noqa: E402
+from reopt_core import model as M  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(HERE))
 REF = os.path.join(ROOT, "real_data", "zharkent", "battery", "days_grid60_gas22.csv")
@@ -220,10 +222,87 @@ def f_resolution() -> None:
     check("a pair of LPs with no gap at all is never flagged", D._unresolved([lp_a, lp_d]) == [])
 
 
+def g_cells() -> None:
+    head("G. the result tables' cells: ranges, the fair baseline, the meters' gap")
+    money = lambda v: D._money(v, "₸")
+    check("a range of millions is written in millions",
+          D._span((371_545_441.0, 422_271_338.0), money, "₸") == "371.5 M ₸ … 422.3 M ₸",
+          D._span((371_545_441.0, 422_271_338.0), money, "₸"))
+    check("with a second decimal where one would print both ends alike",
+          D._span((13_050_000.0, 13_090_000.0), money, "₸") == "13.05 M ₸ … 13.09 M ₸")
+    check("one figure stays in full", D._span((5_000_000.0, 5_000_000.2), money, "₸")
+          == money(5_000_000.0))
+    check("a range under a million stays in full",
+          D._span((850_000.0, 900_000.0), money, "₸") == f"{money(850_000.0)} … {money(900_000.0)}")
+    check("and a count is never written in millions",
+          D._span((117.0, 140.0), lambda x: f"{x:,.0f}") == "117 … 140")
+    check("the battery price over a saving: one figure",
+          D._price_over(273_024_000.0, (7_239_951.0, 7_239_951.0)) == "37.7 years")
+    check("no saving is never", D._price_over(273e6, (-1e6, -1e6)) == "never")
+    check("a range, the shorter end first",
+          D._price_over(273e6, (1e6, 2e6)) == "136.5 years … 273.0 years")
+
+    def run(name, total, battery):
+        return {"name": name, "battery": battery, "acc": {"total": total}}
+    a, b, c = run("A", 100.0, False), run("B", 90.0, True), run("C", 110.0, False)
+    check("the fair baseline is the cheapest run without a battery",
+          D._fair_base([b, c, a]) is a and D._fair_base([b]) is None)
+
+    # the logger's balance against the plant meter, priced hour by hour
+    meas = {"gpu": [900.0, 0.0, 500.0], "grid": [100.0, 400.0, -100.0],
+            "load": [990.0, 400.0, 400.0]}
+    gap, cost = D.meter_gap(meas, [1000.0, 400.0, 500.0])
+    check("the gap is the balance less the plant meter",
+          gap == [10.0, 0.0, 0.0], str(gap))
+    check("priced at each hour's own cost per kWh of balance",
+          close(cost[0], 1000.0 * 10.0 / 1000.0) and cost[1] == 0.0 and cost[2] == 0.0,
+          str(cost))
+    check("no plant meter, no gap", D.meter_gap({k: v for k, v in meas.items() if k != "load"},
+                                                [0.0] * 3) is None)
+
+    # spill: a 90 % minimum load over a night load the engine cannot follow down
+    units = D.default_units("2 units (Jenbacher + TEDOM)")
+    load = [600.0 if h < 7 else 1800.0 for h in range(24)]
+    res = M.solve(D.build(load, [60.0] * 24, units, BAT, D._rule("C", minload=90.0)),
+                  time_limit=60, mip_gap=1e-4)
+    sh = A._shape(res)
+    rows = A._window_rows(res["series"], sh, 0, 24)
+    spill = sum(sum(r["spill"]) for r in rows)
+    head_ = A._hour_head(sh, "HOUR")
+    i_sp = head_.index("SPILL") if "SPILL" in head_ else None
+    check("a run that spills shows a SPILL column", spill > A.SPILL_KWH and i_sp is not None,
+          f"{spill:,.0f} kWh")
+    bal = max(abs(sum(r["units"]) - sum(r["spill"]) + r["dis"] - r["ch"] + r["grid"] - r["load"])
+              for r in rows)
+    check("and every hour row then adds up to the load", bal < 1e-3, f"worst {bal:.2e} kW")
+    frame = A.period_frame(res["series"], None, 0, res["sizes"])
+    check("the summary carries the spill too", "Spill (kWh)" in set(frame["Metric"]))
+    acc = D.account(res, [60.0] * 24, units, 0.0)
+    check("and the comparison's account has it", abs(acc["spill"] - spill) < 1e-3)
+    quiet = M.solve(D.build([1800.0] * 24, [60.0] * 24, units, BAT, D._rule("A", minload=50.0)),
+                    time_limit=60, mip_gap=1e-4)
+    qs = A._shape(quiet)
+    check("a run with none shows no SPILL column", "SPILL" not in A._hour_head(qs, "HOUR")
+          and not qs["any_spill"])
+    if RD.available():
+        y = RD.year(RD.ZHKPZ)
+        m = {"gpu": y["gpu"], "grid": y["grid"], "buy": y["buy"], "sell": y["sell"],
+             "gpu_units": y["gpu_units"], "load": y["load"]}
+        units = D.default_units(D.REAL_PRESET + RD.ZHKPZ)
+        h = D.measured_hourly(m, [PRICE] * len(y["load"]), units)
+        gap, cost = D.meter_gap(m, h)
+        share = sum(gap) / sum(y["load"])
+        check("ЖКПЗ: the logger runs above the plant meter, by about a per cent",
+              0.005 < share < 0.02, f"{sum(gap):+,.0f} kWh, {100 * share:+.2f} %")
+        check("and that energy costs money the saving would count",
+              sum(cost) > 0, f"{sum(cost):,.0f} ₸ over {len(h):,} h")
+
+
 def main() -> int:
     a_every_day()
     b_months()
     f_resolution()
+    g_cells()
     if not RD.available():
         print(f"\nno measured table at {RD.TABLE}: the measured checks are skipped")
     else:

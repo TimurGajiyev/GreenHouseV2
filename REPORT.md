@@ -2278,6 +2278,61 @@ day (a day closes on itself). Hours and closed days also make the operation look
 starts a year on ЖКПЗ to his 899, and 1,135 MWh discharged to his 1,783, so the battery life by
 cycles reads 13.5 years to his 8.6.
 
+## Revised 01.11.2026: six fixes from a review of the study page
+
+No operating cost of *Our study* moved. What changed is what the page counts, shows and sets
+beside each figure. `reopt_core` is untouched: still a03fbd3, byte for byte.
+
+1. **Running-hour O&M is charged on the hours the objective charges it.** The model may hold an
+   engine ON at zero output through an outage hour, because that is cheaper than a restart. This
+   is REopt's own semantics (`chp_constraints.jl:28,35`), and the objective charges
+   `om_cost_per_running_hour` for that hour. The accounts counted the core's `running_hours`,
+   which are hours with output, so they fell short of the objective by the rate for each such
+   hour. On 30 days of the Tailscale run with availability as measured: 3 hours, 20,796 ₸
+   (0.03 %). `app_dispatch.account` now counts hours ON, and so do the page's unit-hours and
+   RUNNING HOURS. Only a row with O&M per running hour moves in cost (*Our study* has none).
+2. **Spill is shown wherever there is some.** It was hidden everywhere, so a unit's column,
+   which is what it generated, did not add up to the load. On the Tailscale ЖКПЗ year A spills
+   2,649 kWh, B 264 and C 465,870 (6.3 % of what C generates). An hour table carries a SPILL
+   column only in a window that has spill. The summary, the comparison, the per-unit table and
+   the window note show spill when it is not zero. "Fuel share of load" no longer counts it.
+3. **The fair baseline is named.** The economics and the analysis-period tables mark the
+   cheapest scenario without a battery as the fair baseline. Against it, the saving is the
+   battery's own. On his values, the measured table puts "Battery price ÷ the battery's own
+   saving, against A" under his "Battery price ÷ saving against measured": **37.7 years**
+   under his 2.6 on ЖКПЗ.
+4. **The meters' balance error is priced.** The measured column is the logger's balance
+   (engines + purchase − export); the scenarios are solved on the plant meter. On ЖКПЗ the
+   logger runs 1.15 % above the plant meter: +84,289 kWh over the 186 days, +83,330 kWh in
+   his twelve months. On all three it runs 0.79 % above, on Жаркент 3 0.37 %. That energy is in
+   the measured cost and in no scenario. Priced at each hour's own measured cost per kWh, it is
+   6.1 … 9.6 M ₸/yr on our study and 7.1 M ₸/yr on his values. Two new rows show it and take
+   it out ("Saving at the plant meter, per year"):
+
+   | Values | Scenario | Saving against measured, M ₸/yr | At the plant meter, M ₸/yr |
+   |---|---|---:|---:|
+   | ours | A | 55.5 … 69.9 | 49.3 … 63.1 |
+   | ours | B | 70.5 … 86.2 | 64.3 … 79.3 |
+   | his | A | 99.1 | 92.0 |
+   | his | B | 106.3 | 99.2 |
+   | his | C | 81.2 | 74.1 |
+
+   His 2.6 years stays as he computes it, on the uncorrected saving.
+5. **Ranges of money are written in millions** ("371.5 M ₸ … 422.3 M ₸"). A range in full tenge
+   was 36 characters, and the 25-year table ran off the panel, NPV and payback cut.
+6. **Data sources.** Each engine's own figure is shown where the engines differ: cost per kWh,
+   start, minimum up and down, O&M per running hour. That last one was TEDOM 7,200 and
+   Jenbacher 6,396 ₸/h, and the table showed 7,200 for both. The legend lists only the statuses
+   the table shows, so on his values the workbook's "NOT CONFIRMED / KILLER" text is gone. The
+   note about a clustered year appears only when the year is clustered.
+
+Checked by `tools/test_tailscale_values.py` (an engine held on through its outage is charged;
+the new rows on the headless page) and `tools/test_year_measured.py` part G (range cells, fair
+baseline, meter gap, the SPILL column and the hour balance). The new checks fail on the code
+before the change. Every other suite gives the same output before and after, timings aside.
+`test_periods`, `test_profile_render` and `test_chp_bess_fields` need an NLR key. They were run
+on both sides with PVWatts stubbed and the saved URDB sample (`reopt_test_data/api/`).
+
 ## Reproduce
 
 ```bash

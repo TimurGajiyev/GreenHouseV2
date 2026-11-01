@@ -34,11 +34,13 @@ import ui_theme as T
 HOURS = 8760            # a full REopt year; any horizon is accepted
 DAYS = 365
 MINUS = "−"        # true minus, as the reference uses for discharge
-# Spill is hidden on every page: the hour tables, the summary, the hover panel,
-# the window note, the per-unit table and the scenario comparison. Every unit
-# may still spill and the model still solves and sums it; only the display is
-# off. True shows it again.
-SHOW_SPILL = False
+# Spill shows only where there is some: a run, a window or a table with none
+# carries no spill column or row, so most pages look as they did with it
+# hidden. Where an engine did spill -- a minimum load above the load and
+# nothing to take the surplus -- it is shown: a unit's column is what it
+# generated, spill included, and without the spill the hour rows do not add
+# up to the load. Below half a kWh is solver dust and counts as none.
+SPILL_KWH = 0.5
 
 
 def horizon(series: dict) -> int:
@@ -124,6 +126,17 @@ def _slice(series: dict, start_h: int, n_h: int) -> dict:
     return out
 
 
+def _running(kw: list[float], on: list[float] | None, eps: float = 1e-6) -> int:
+    """A unit's running hours as the objective counts them: hours ON where the
+    unit has an on/off series -- the hours a running-hour O&M is charged on, a
+    unit held on at zero output through an outage included -- and hours with
+    output where it has none. (The core's own running_hours counts output only;
+    app_dispatch.account counts as here.)"""
+    if on is not None:
+        return sum(1 for x in on if x > 0.5)
+    return sum(1 for x in kw if x > eps)
+
+
 def _starts_in(on: list[float]) -> int:
     """Off->on transitions, counted cyclically like the unit-commitment block."""
     if not on:
@@ -194,7 +207,7 @@ def _period_block(series: dict, tariff, start_h: int, n_h: int, label: str,
         "Grid purchase (kWh)": sum(grid),
     }
     spill = sum(sum(v) for v in (s.get("fueltech_unit_spill_kw") or {}).values())
-    if spill > 1e-6 and SHOW_SPILL:
+    if spill > SPILL_KWH:
         out["Spill (kWh)"] = spill
     if sum(s.get("unserved_kw", [0])) > 1e-6:
         out["Unserved load (kWh)"] = sum(s["unserved_kw"])
@@ -203,10 +216,10 @@ def _period_block(series: dict, tariff, start_h: int, n_h: int, label: str,
     out["Grid share of load (%)"] = (100.0 * sum(grid) / sum(load)) if sum(load) > 0 else 0.0
 
     units = s.get("fueltech_unit_kw") or {}
-    if units:
-        out["Fleet running hours"] = float(sum(
-            1 for v in units.values() for x in v if x > 1e-6))
     on = s.get("fueltech_unit_on") or {}
+    if units:
+        out["Fleet running hours"] = float(sum(_running(kw, on.get(nm))
+                                               for nm, kw in units.items()))
     if on:
         out["Starts"] = float(sum(_starts_in(v) for v in on.values()))
     # a full cycle is one pass through the installed energy capacity
@@ -371,7 +384,7 @@ def _shape(res: dict) -> dict:
         "cap_kwh": sum(b["energy_kwh"] for b in banks),
         "nameplate_kw": sum(u["size_kw"] for u in units),
         "pv": sizes.get("pv_kw", 0.0) > 1e-6,
-        "any_spill": any(u.get("spill_kwh", 0.0) > 1e-6 for u in units),
+        "any_spill": any(u.get("spill_kwh", 0.0) > SPILL_KWH for u in units),
         "any_maint": any(u.get("maintenance_hours") is not None for u in units),
         "any_maint_interval": any(u.get("maintenance_trigger") == "running_hours"
                                   for u in units),
@@ -444,7 +457,7 @@ def _hour_head(sh: dict, *lead: str) -> list[str]:
         head.append("SOC %" if sh["cap_kwh"] > 0 else "SOC kWh")
     if sh["any_on"]:
         head.append("ON")          # units running -- the reference's `uon`
-    if sh["any_spill"] and SHOW_SPILL:
+    if sh["any_spill"]:
         head.append("SPILL")
     if sh["any_export"]:
         head.append("EXPORT")
@@ -467,8 +480,8 @@ def _hour_row(r: dict, sh: dict, *lead: str) -> list:
                    else _n(r["soc"]))
     if sh["any_on"]:
         row.append(str(int(sum(1 for v in r["on"] if v > 0.5))))
-    if sh["any_spill"] and SHOW_SPILL:
-        row.append(_n(sum(r["spill"])) if sum(r["spill"]) > 0.5 else "—")
+    if sh["any_spill"]:
+        row.append(_n(sum(r["spill"])) if sum(r["spill"]) > SPILL_KWH else "—")
     if sh["any_export"]:
         row.append(_n(r["export"]) if r["export"] > 0.5 else "—")
     if sh["any_unserved"]:
@@ -493,7 +506,7 @@ def _hour_foot(rows: list[dict], sh: dict, label: str = "Total",
     if sh["any_on"]:
         # unit-hours over the window, the total the "ON" column sums to
         foot.append(str(int(sum(1 for r in rows for v in r["on"] if v > 0.5))))
-    if sh["any_spill"] and SHOW_SPILL:
+    if sh["any_spill"]:
         foot.append(_n(sum(sum(r["spill"]) for r in rows)))
     if sh["any_export"]:
         foot.append(_n(tot("export")))
@@ -684,6 +697,10 @@ def render_periods(state: dict) -> None:
         when = (f"{_daylabel(idx[start])} to {_daylabel(idx[start + n_h - 1])}")
 
     rows = _window_rows(series, sh, start, n_h)
+    # the hour tables and the hover panel carry a spill column only where this
+    # window has some; the per-unit table below goes by the whole run
+    w_spill = sum(sum(r["spill"]) for r in rows)
+    shw = {**sh, "any_spill": w_spill > SPILL_KWH}
 
     # ---- savings against a base scenario (custom dispatch study) --------
     # state["savings"]: per-hour money of the base minus this run, split as
@@ -752,7 +769,7 @@ def render_periods(state: dict) -> None:
             d.append(("Battery discharge",
                       f"\u2212{r['dis']:,.0f} kW" if r["dis"] > 0.5 else dash, P.DISCHARGE))
         d.append(("Grid purchase", _tip_kw(r["grid"]), P.GRID_COLOR))
-        if sh["any_spill"] and SHOW_SPILL:
+        if shw["any_spill"]:
             d.append(("Spill", _tip_kw(sum(r["spill"])), P.DISCHARGE))
         if sh["any_unserved"]:
             d.append(("Unserved", _tip_kw(r["unserved"]), P.DISCHARGE))
@@ -800,13 +817,16 @@ def render_periods(state: dict) -> None:
     # the reference's six: charge, discharge, grid, peak, idle, money.
     # With no battery those three cells have nothing to say, so the fuel-fired
     # figures take their place rather than leaving the strip half empty.
+    # unit-hours of the window, counted as the model counts them
+    run = sum(_running([r["units"][j] for r in rows],
+                       [r["on"][j] for r in rows] if sh["on"][j] is not None else None, 0.5)
+              for j in range(len(sh["names"])))
     cells = []
     if sh["banks"]:
         cells += [("Battery charged", f"{charged:,.0f} kWh"),
                   ("Battery discharged", f"{discharged:,.0f} kWh")]
     elif sh["units"]:
         fuel = sum(sum(r["units"]) for r in rows)
-        run = sum(1 for r in rows for v in r["units"] if v > 0.5)
         cells += [("Fuel-fired", f"{fuel:,.0f} kWh"),
                   ("Unit-hours", f"{run:,} of {n_h * len(sh['names']):,}")]
     cells += [("Grid purchase", f"{grid_kwh:,.0f} kWh"),
@@ -815,7 +835,7 @@ def render_periods(state: dict) -> None:
         cells.append(("Battery idle", f"{idle} of {n_h} h"))
     elif sh["units"]:
         cells.append(("Fuel share of load",
-                      f"{100.0 * sum(sum(r['units']) for r in rows) / max(1e-9, sum(r['load'] for r in rows)):,.1f}%"))
+                      f"{100.0 * (sum(sum(r['units']) for r in rows) - w_spill) / max(1e-9, sum(r['load'] for r in rows)):,.1f}%"))
     if sav:
         # the reference's last cell: the whole saving of the window
         key = f"Saving vs {sav['base']}"
@@ -828,17 +848,15 @@ def render_periods(state: dict) -> None:
 
     bits = [f"{when}"]
     if sh["units"]:
-        run = sum(1 for r in rows for v in r["units"] if v > 0.5)
         starts = sum(_starts_in([r["on"][j] for r in rows])
                      for j in range(len(sh["names"])))
         bits.append(f"unit-hours <b>{run:,}</b> of {n_h * len(sh['names']):,}")
         if any(o is not None for o in sh["on"]):
             bits.append(f"starts in window <b>{starts}</b>")
-    # only report these when the shown window actually has them; the column
-    # stays because the run as a whole does
-    sp = sum(sum(r["spill"]) for r in rows)
-    if sp > 0.5 and SHOW_SPILL:
-        bits.append(f'spill <b class="ghp-neg">{sp:,.0f} kWh</b>')
+    # only report these when the shown window actually has them, as the
+    # hour tables' spill column does
+    if w_spill > SPILL_KWH:
+        bits.append(f'spill <b class="ghp-neg">{w_spill:,.0f} kWh</b>')
     un = sum(r["unserved"] for r in rows)
     if un > 0.5:
         bits.append(f'unserved <b class="ghp-neg">{un:,.0f} kWh</b>')
@@ -865,11 +883,11 @@ def render_periods(state: dict) -> None:
     # ---- hour by hour ---------------------------------------------------
     if period == "Day":
         P.sub(f"Hour by hour · {when}")
-        P.table(_hour_head(sh, "HOUR"),
+        P.table(_hour_head(shw, "HOUR"),
                 # the clock's hour, 1 = 00:00-01:00, so a day that starts
                 # later in the morning is not numbered from midnight
-                [_hour_row(r, sh, f"{idx[start + h - 1].hour + 1}") for h, r in zip(hours, rows)],
-                _hour_foot(rows, sh))
+                [_hour_row(r, shw, f"{idx[start + h - 1].hour + 1}") for h, r in zip(hours, rows)],
+                _hour_foot(rows, shw))
     else:
         P.sub(f"Day by day · {when}")
         drows, dfoot = [], []
@@ -889,15 +907,15 @@ def render_periods(state: dict) -> None:
                 "unserved": sum(r["unserved"] for r in blk),
                 "export": sum(r["export"] for r in blk),
             }
-            row = _hour_row(agg, sh, ts.strftime("%a %d %b")
+            row = _hour_row(agg, shw, ts.strftime("%a %d %b")
                             + (f" {ts.hour:02d}:00" if ts.hour else ""))
             row.append(_n(max(r["grid"] for r in blk)))
             if any(o is not None for o in sh["on"]):
                 row.append(str(sum(_starts_in([r["on"][j] for r in blk])
                                    for j in range(len(sh["names"])))))
             drows.append(row)
-        head = _hour_head(sh, "DAY") + ["PEAK GRID"]
-        foot = _hour_foot(rows, sh) + [_n(max(r["grid"] for r in rows))]
+        head = _hour_head(shw, "DAY") + ["PEAK GRID"]
+        foot = _hour_foot(rows, shw) + [_n(max(r["grid"] for r in rows))]
         if any(o is not None for o in sh["on"]):
             head.append("STARTS")
             foot.append(str(sum(_starts_in([r["on"][j] for r in rows])
@@ -905,10 +923,10 @@ def render_periods(state: dict) -> None:
         P.table(head, drows, foot)
 
         with st.expander(f"All {n_h} hours", expanded=False):
-            P.table(_hour_head(sh, "DAY", "HOUR"),
-                    [_hour_row(r, sh, idx[start + h].strftime("%a"), str(idx[start + h].hour + 1))
+            P.table(_hour_head(shw, "DAY", "HOUR"),
+                    [_hour_row(r, shw, idx[start + h].strftime("%a"), str(idx[start + h].hour + 1))
                      for h, r in enumerate(rows)],
-                    _hour_foot(rows, sh, pad=1), tall=True)
+                    _hour_foot(rows, shw, pad=1), tall=True)
 
     # ---- summary across the three time scales ---------------------------
     P.sub("Summary")
@@ -929,7 +947,7 @@ def render_periods(state: dict) -> None:
         head = ["UNIT", "TYPE", "SIZE kW", "PRODUCTION kWh", "CAPACITY FACTOR",
                 "RUNNING HOURS", f"FUEL {u0['fuel_unit_name'].upper()}"]
         show_starts = any(u.get("starts") is not None for u in sh["units"])
-        show_spill = sh["any_spill"] and SHOW_SPILL
+        show_spill = sh["any_spill"]
         show_maint = sh["any_maint"]
         if show_spill:
             head.append("SPILL kWh")
@@ -945,13 +963,15 @@ def render_periods(state: dict) -> None:
                 # numbers that explain it
                 head += ["EVERY RUN H", "BANKED H"]
         body = []
-        for u in sh["units"]:
+        # running hours as the objective and the comparison count them
+        runh = [_running(sh["series"][j], sh["on"][j]) for j in range(len(sh["units"]))]
+        for j, u in enumerate(sh["units"]):
             r = [u["name"], u["kind"], _n(u["size_kw"]), _n(u["energy_kwh"]),
-                 f"{u['capacity_factor']:.1%}", f"{u['running_hours']:,}",
+                 f"{u['capacity_factor']:.1%}", f"{runh[j]:,}",
                  _n(u["fuel_units"])]
             if show_spill:
                 r.append((_n(u.get("spill_kwh", 0.0)), "ghp-neg")
-                         if u.get("spill_kwh", 0.0) > 0.5 else "—")
+                         if u.get("spill_kwh", 0.0) > SPILL_KWH else "—")
             if show_starts:
                 r.append(f"{u['starts']:,}" if u.get("starts") is not None else "—")
             if show_maint:
@@ -969,7 +989,7 @@ def render_periods(state: dict) -> None:
             body.append(r)
         foot = ["Fleet", "", _n(sh["nameplate_kw"]),
                 _n(sum(u["energy_kwh"] for u in sh["units"])), "",
-                f"{sum(u['running_hours'] for u in sh['units']):,}",
+                f"{sum(runh):,}",
                 _n(sum(u["fuel_units"] for u in sh["units"]))]
         if show_spill:
             foot.append(_n(sum(u.get("spill_kwh", 0.0) for u in sh["units"])))

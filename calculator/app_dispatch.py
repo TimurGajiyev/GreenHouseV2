@@ -338,6 +338,35 @@ def _num(v) -> float:
     return 0.0 if math.isnan(x) else x
 
 
+def _by_unit(live: pd.DataFrame, value, fmt) -> tuple:
+    """One input across the engines: (value, text). One figure when every engine
+    has it; else each engine's own, by name (a tuple of values, and the names
+    with theirs), so a row never shows the first engine's figure for all."""
+    names = [str(u[U_NAME]).split(" (")[0] for _, u in live.iterrows()]
+    vals = [value(u) for _, u in live.iterrows()]
+    if all(v == vals[0] for v in vals):
+        return vals[0], fmt(vals[0])
+    return tuple(vals), " · ".join(f"{n} {fmt(v)}" for n, v in zip(names, vals))
+
+
+def _legend() -> dict[str, str]:
+    """What each status in the sources table means, in the order the legend
+    lists them (a function: SOURCE_ZH is defined further down)."""
+    return {
+        MEASURED: "read off the logger",
+        PASSPORT: "the OEM passport",
+        "project": "the workbook's project configuration",
+        RULE: "a choice of this study, not an OEM limit",
+        REOPT_DEFAULT: "REopt.jl's own default",
+        UNCONFIRMED: "the workbook itself marks these as assumptions or KILLER items; the payback "
+                     "moves with each of them — replace them with the contract figures in the "
+                     "panels above",
+        TYPED: "typed on this page, not the workbook's figure",
+        SOURCE_ZH: "the Tailscale app's own value (docs/zharkent-app/README.md), not confirmed "
+                   "by us",
+    }
+
+
 def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dict,
                    typed: str = TYPED) -> None:
     """Every input of the study, its value on the page and where it comes from.
@@ -369,12 +398,16 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                          (PASSPORT, "") if src else (typed, ""),
                          src or "not an OEM data sheet value"])
         if first is not None:
+            # each engine's own figure where they differ (his engines do)
+            cost = _by_unit(live, lambda u: round(num(u[U_COST]) + num(u.get(U_OM)), 9),
+                            lambda v: f"{v:,.2f} {cur}")
+            start = _by_unit(live, lambda u: num(u[U_START]), lambda v: f"{v:,.0f} {cur}")
+            updown = _by_unit(live, lambda u: (int(num(u[U_UP])), int(num(u[U_DOWN]))),
+                              lambda v: f"{v[0]} / {v[1]} h")
             rows += [row("Engine cost per kWh" + (" at full load" if fuel_curve(first) else ""),
-                         num(first[U_COST]) + num(first.get(U_OM)), "gen_cost",
-                         f"{num(first[U_COST]) + num(first.get(U_OM)):,.2f} {cur}"),
-                     row("Start cost", num(first[U_START]), "start", f"{num(first[U_START]):,.0f} {cur}"),
-                     row("Min up / down", (int(num(first[U_UP])), int(num(first[U_DOWN]))), "updown",
-                         f"{int(num(first[U_UP]))} / {int(num(first[U_DOWN]))} h")]
+                         *cost[:1], "gen_cost", cost[1]),
+                     row("Start cost", *start[:1], "start", start[1]),
+                     row("Min up / down", *updown[:1], "updown", updown[1])]
         rows += [row("Minimum load, scenario A", 50.0, "min_load", "50 %"),
                  row("Minimum load, scenario B", 90.0, "min_b", "90 %"),
                  row("Grid price", float(grid), "grid", f"{float(grid):,.2f} {cur}/kWh"),
@@ -392,21 +425,19 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
                  row("Battery replacement cost", round(bat.get("replace_fraction", 0.0) * 100, 6),
                      "bat_replace_cost", f"{bat.get('replace_fraction', 0.0):.0%} of CAPEX")]
         # inputs our own study leaves off, listed only when they are on
-        if first is not None and _num(first.get(U_OMH)):
-            rows.append(["O&M per running hour", f"{_num(first.get(U_OMH)):,.0f} {cur}/h",
-                         (typed, ""), ""])
+        if first is not None and any(_num(u.get(U_OMH)) for _, u in live.iterrows()):
+            omh = _by_unit(live, lambda u: _num(u.get(U_OMH)), lambda v: f"{v:,.0f} {cur}/h")
+            rows.append(["O&M per running hour", omh[1], (typed, ""), ""])
         if bat.get("own_kw"):
             rows.append(["Battery's own use", f"{bat['own_kw']:,.0f} kW", (typed, ""), ""])
         # the source texts stay in each row, but the page shows three columns
         P.table(["Input", "Value", "Status"], [r[:3] for r in rows])
-        P.note(["<b>measured</b>: read off the logger · <b>nameplate</b> and <b>project</b>: "
-                "the workbook's passport and project configuration",
-                "<b>NOT CONFIRMED</b>: the workbook itself marks these as assumptions or "
-                "KILLER items; the payback moves with each of them — replace them with the "
-                "contract figures in the panels above",
-                "formulas: the REopt.jl dispatch model (reopt_core), finance off; the payback "
-                "repays the battery CAPEX from the cost of A minus the cost of B, less the "
-                "battery's own O&M and replacement"])
+        # the legend names only the statuses the table shows
+        shown = {r[2][0] if isinstance(r[2], tuple) else r[2] for r in rows}
+        P.note([f"<b>{k}</b>: {v}" for k, v in _legend().items() if k in shown]
+               + ["formulas: the REopt.jl dispatch model (reopt_core), finance off; the payback "
+                  "repays the battery CAPEX from the operating cost it saves against the "
+                  "scenario it is compared with, less the battery's own O&M and replacement"])
 
 
 def unit_presets() -> dict[str, list[tuple[str, float]]]:
@@ -914,11 +945,22 @@ def account(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> 
                for _, u in units.iterrows()}
     gen_kwh = sum(r["energy_kwh"] for r in rows)
     by_name = {str(u[U_NAME]): u for _, u in units.iterrows()}
+    on_of = ser.get("fueltech_unit_on") or {}
+
+    def _hours(r):
+        # Hours ON where the unit has an on/off series: the hours the objective
+        # charges om_cost_per_running_hour on (model.py:1296), a unit held on at
+        # zero output through an outage included -- REopt's own semantics,
+        # chp_constraints.jl:28,35. The core's running_hours counts hours with
+        # output, which missed those, so this total fell short of the objective.
+        on = on_of.get(r["name"])
+        return (sum(1 for x in on if x > 0.5) if on is not None
+                else (r.get("running_hours") or 0))
 
     def _gen_cost(r):
         u = by_name.get(r["name"])
         c = fuel_curve(u) if u is not None else None
-        run = (r.get("running_hours") or 0) * _num(u.get(U_OMH)) if u is not None else 0.0
+        run = _hours(r) * _num(u.get(U_OMH)) if u is not None else 0.0
         if c is None:
             return r["energy_kwh"] * cost_of.get(r["name"], (0.0, 0.0))[0] + run
         # the solver's own fuel burn (MMBtu) at the curve's price, plus O&M
@@ -945,7 +987,7 @@ def account(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> 
         grid_cost=grid_cost, peak=max(grid, default=0.0), starts=starts, start_cost=start_cost,
         charge=ch, discharge=dis, wear_cost=dis * wear,
         spill=sum(r.get("spill_kwh") or 0.0 for r in rows),
-        unit_hours=sum(r.get("running_hours") or 0 for r in rows),
+        unit_hours=sum(_hours(r) for r in rows),
         total=gen_cost + grid_cost + start_cost + dis * wear,
         objective=res["objective_lifecycle_cost"],
         gap=(res.get("solver") or {}).get("mip_gap"), status=res["status"])
@@ -988,7 +1030,10 @@ def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0,
         line("Peak grid purchase (kW)", "peak", kwh),
         line("Battery charged (kWh)", "charge", kwh),
         line("Battery discharged (kWh)", "discharge", kwh),
-        *([line("Spill (kWh)", "spill", kwh)] if A.SHOW_SPILL else []),
+        # only where a scenario spilled: its generation is then more than the
+        # load, the charge and the grid account for
+        *([line("Spill (kWh)", "spill", kwh)]
+          if any(a["spill"] > A.SPILL_KWH for a in acc) else []),
         line("Starts", "starts", lambda v: f"{v:,.0f}"),
         line("Starts per day, average (fleet)", "starts_day_avg", lambda v: f"{v:,.2f}"),
         line("Starts on the busiest day (fleet)", "starts_day_max", lambda v: f"{v:,.0f}"),
@@ -1007,9 +1052,9 @@ def _compare(runs: list[dict], cur: str, hours: int, wear_h: float = 15.0,
                              "ghp-neg" if a["total"] > base + 0.5 else "ghp-pos"))
         for i, a in enumerate(acc)]
     rows.append(delta)
-    rows.append(["Operating cost per year" + per_year] + [_span(y, money) for y in years])
+    rows.append(["Operating cost per year" + per_year] + [_span(y, money, cur) for y in years])
     rows.append(["vs first scenario, per year"] + [
-        "—" if i == 0 else _cost_cell(_gain_year(runs[0], r, out, hours), money)
+        "—" if i == 0 else _cost_cell(_gain_year(runs[0], r, out, hours), money, cur)
         for i, r in enumerate(runs)])
     # HiGHS reports an infinite MIP gap for a model with no integers in it at
     # all -- a scenario with no fuel-fired units is a plain LP -- and "gap inf%"
@@ -1102,12 +1147,39 @@ def _default_base(run: dict, others: list[dict]) -> dict:
     return others[0]
 
 
+def _fair_base(runs: list[dict]) -> dict | None:
+    """The cheapest scenario without a battery: the best the plant does without
+    buying one. A battery scenario's saving against it is the battery's own;
+    against a dearer scenario without one it also holds whatever that
+    scenario's own rule costs (a 90 % minimum load the battery merely relieves).
+    """
+    plain = [r for r in runs if not r["battery"]]
+    return min(plain, key=lambda r: r["acc"]["total"]) if plain else None
+
+
+FAIR = " · fair baseline"
+
+
+def _fair_note(base: dict) -> str:
+    return (f"<b>fair baseline</b>: {base['name']}, the cheapest scenario without a battery. "
+            "Against it the saving is the battery's own; against a dearer scenario without "
+            "one it also holds what that scenario's own rule costs")
+
+
+def _price_over(capex: float, s: tuple[float, float]) -> str:
+    """The Tailscale app's payback, the battery price over a yearly saving, as
+    one cell: the shorter end first when the saving is a range."""
+    words = [f"{capex / v:,.1f} years" if v > 0.5 else "never" for v in (s[1], s[0])]
+    return words[0] if words[0] == words[1] else f"{words[0]} … {words[1]}"
+
+
 def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
     """The reference's savings and payback strip, as one table: this scenario
     against every other, per window and per year, with the battery CAPEX it
     adds and the years that CAPEX takes to pay back."""
     cur, capex = out["currency"], out["bat"].get("capex", 0.0)
     A._CUR = cur
+    base = _fair_base([run, *others]) if run["battery"] else None
     rows = []
     for o in others:
         save = o["acc"]["total"] - run["acc"]["total"]
@@ -1127,14 +1199,15 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int) -> None:
         else:
             pay = ("—", "")
         cls = "ghp-pos" if save >= 0 else "ghp-neg"
-        rows.append([o["name"], (A._signed(save), cls), _signed_span(year),
-                     _money(extra, cur) if extra else "—", pay])
+        rows.append([o["name"] + (FAIR if o is base else ""), (A._signed(save), cls),
+                     _signed_span(year), _money(extra, cur) if extra else "—", pay])
     P.table(["Compared with", "Saving over the window", "Saving per year",
              "Extra battery CAPEX", "Payback"], rows)
     note = [f"<b>{run['name']}</b> against each other scenario; positive = cheaper to run",
             f"battery CAPEX <b>{_money(capex, cur)}</b>",
             "payback is simple — undiscounted — and counts the battery's own O&M and "
             "replacement (Battery panel); the table below discounts it",
+            *([_fair_note(base)] if base is not None else []),
             _year_basis(out, hours)]
     if hours != MAX_H and not out.get("time") and not out.get("typical"):
         # How good that scaling is, measured rather than assumed: tools/
@@ -1252,6 +1325,28 @@ def measured_hourly(meas: dict, price: list[float], units: pd.DataFrame,
     return cost
 
 
+def meter_gap(meas: dict, hourly_cost: list[float]) -> tuple[list[float], list[float]] | None:
+    """The logger's balance less the plant meter, hour by hour, and its cost.
+
+    The measured column is priced on the logger: each engine's own output plus
+    the purchase, less what went to the city. The scenarios are solved on the
+    plant meter. The two differ by the meters' balance error (on ЖКПЗ the
+    logger runs about 1 % above the plant meter), and that energy is in the
+    measured cost but in no scenario, so it would count as a saving. Each
+    hour's share of it is priced at that hour's own cost per kWh of balance.
+    Returns (kWh per hour, money per hour), or None without a plant meter."""
+    plant = meas.get("load")
+    gpu, grid = meas["gpu"], meas["grid"]
+    if plant is None or len(plant) != len(gpu) or len(hourly_cost) != len(gpu):
+        return None
+    buy = meas.get("buy") or [max(0.0, g) for g in grid]
+    sell = meas.get("sell") or [max(0.0, -g) for g in grid]
+    bal = [g + b - x for g, b, x in zip(gpu, buy, sell)]
+    gap = [b - p for b, p in zip(bal, plant)]
+    cost = [c * d / b if b > 1.0 else 0.0 for c, d, b in zip(hourly_cost, gap, bal)]
+    return gap, cost
+
+
 def _run_hourly_cost(run: dict) -> list[float]:
     """A scenario's operating cost hour by hour (energy + starts + wear)."""
     h = run["hourly"]
@@ -1296,33 +1391,53 @@ def _gain_year(a: dict, b: dict, out: dict, hours: int) -> tuple[float, float]:
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
 
-def _span(r: tuple[float, float], fmt) -> str:
-    """One figure, or 'low … high' when a month was not measured."""
+def _mill(x: float, cur: str, places: int, signed: bool = False) -> str:
+    """Money in millions, in ``cur``: 371.5 M ₸, $1.25M."""
+    sign = "+" if signed and x > 0.5 else ("−" if x < -0.5 else "")
+    v = f"{abs(x) / 1e6:,.{places}f}"
+    return f"{sign}${v}M" if cur == "$" else f"{sign}{v} M {cur}"
+
+
+def _span(r: tuple[float, float], fmt, cur: str | None = None, signed: bool = False) -> str:
+    """One figure, or 'low … high' when a month was not measured.
+
+    With ``cur`` the figures are money, and a range of millions is written in
+    millions -- one decimal, more only where one would print both ends alike --
+    so a cell stays one short line: a range in full tenge is 36 characters,
+    and a table of five of them ran off the panel."""
     lo, hi = r
-    return fmt(lo) if abs(hi - lo) < 0.5 else f"{fmt(lo)} … {fmt(hi)}"
+    if abs(hi - lo) < 0.5:
+        return fmt(lo)
+    if cur is not None and max(abs(lo), abs(hi)) >= 1e6:
+        for places in (1, 2, 3):
+            a, b = _mill(lo, cur, places, signed), _mill(hi, cur, places, signed)
+            if a != b:
+                break
+        return f"{a} … {b}"
+    return f"{fmt(lo)} … {fmt(hi)}"
 
 
 def _signed_span(r: tuple[float, float]):
     """A saving, or its range, coloured only when the whole range has one sign."""
-    text = _span(r, A._signed)
+    text = _span(r, A._signed, A._CUR, signed=True)
     if r[0] >= 0:
         return (text, "ghp-pos")
     return (text, "ghp-neg") if r[1] < 0 else text
 
 
-def _cost_cell(r: tuple[float, float], money):
+def _cost_cell(r: tuple[float, float], money, cur: str | None = None):
     """An extra cost, or its range: red when it is a cost throughout, green when
     it is none anywhere, plain when the range holds both."""
-    text = _span(r, money)
+    text = _span(r, money, cur)
     if r[0] > 0.5:
         return (text, "ghp-neg")
     return (text, "ghp-pos") if r[1] <= 0.5 else text
 
 
-def _saving_cell(r: tuple[float, float], money):
+def _saving_cell(r: tuple[float, float], money, cur: str | None = None):
     """A saving, or its range: green when it is one throughout, red when it is
     none anywhere, plain when the range holds both."""
-    text = _span(r, money)
+    text = _span(r, money, cur)
     if r[0] > 0.5:
         return (text, "ghp-pos")
     return (text, "ghp-neg") if r[1] <= 0.5 else text
@@ -1438,29 +1553,65 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
     saves = [_annual(out, H, m["total"] - r["acc"]["total"],
                      [x - y for x, y in zip(m_hour, _run_hourly_cost(r))]) for r in runs]
     rows.append(["Saving against measured, per year", "—"]
-                + [_saving_cell(s, money) for s in saves])
+                + [_saving_cell(s, money, cur) for s in saves])
+    # the meters' balance error, which the saving above counts as a saving
+    mg = meter_gap(meas, m_hour)
+    if mg is not None:
+        gap_h, gap_c = mg
+        gap_year = _annual(out, H, sum(gap_c), gap_c)
+        # short, in millions: the column is a figure wide, and so is the panel
+        gy = (_mill(gap_year[0], cur, 1) if abs(gap_year[1] - gap_year[0]) < 0.5
+              and abs(gap_year[0]) >= 1e6 else _span(gap_year, money, cur))
+        rows.append(["Logger balance less the plant meter",
+                     f"{sum(gap_h):+,.0f} kWh · {gy} / yr"]
+                    + ["—" for _ in runs])
+        fair = [_annual(out, H, m["total"] - sum(gap_c) - r["acc"]["total"],
+                        [x - c - y for x, c, y in zip(m_hour, gap_c, _run_hourly_cost(r))])
+                for r in runs]
+        rows.append(["Saving at the plant meter, per year", "—"]
+                    + [_saving_cell(s, money, cur) for s in fair])
     # the Tailscale app's own payback: the battery's price over the whole saving
     # against today, which the note below says is not the battery's alone
+    # the fair baseline, where there is a battery to price against it
+    base = _fair_base(runs) if any(r["battery"] for r in runs) else None
     if out.get("values") == VALUES_ZH:
         capex = float(out["bat"].get("capex", 0.0))
         rows.append(["Battery price ÷ saving against measured", "—"]
-                    + [("—" if not r["battery"] else
-                        f"{capex / s[0]:,.1f} years" if s[0] > 0 else "never")
+                    + [("—" if not r["battery"] else _price_over(capex, s))
                        for r, s in zip(runs, saves)])
+        # and the same price over what the battery itself saves: against the
+        # cheapest run without one, on the same hours and the same prices
+        if base is not None:
+            rows.append([f"Battery price ÷ the battery's own saving, against "
+                         f"{str(base['name']).split(' · ')[0]}", "—"]
+                        + [("—" if not r["battery"] else
+                            (_price_over(capex, _gain_year(r, base, out, H)), "ghp-key"))
+                           for r in runs])
     P.table(head, rows, ["Operating cost per year"]
-            + [_span(y, money) for y in [m_year, *years]])
+            + [_span(y, money, cur) for y in [m_year, *years]])
     measured_av = out.get("availability") == AV_MEASURED
     P.note(["<b>Measured</b> is the logger's own hours priced with this page's inputs: each "
             "engine at its own hourly output, on its part-load curve where it has one; a "
             "start whenever output rises past 50 kW; the grid at the grid price",
-            "load here is engines + grid as logged; it differs from the plant meter by the "
-            "balance error (within 20 kW on most hours)",
+            "load here is engines + grid as logged; it differs from the plant meter the "
+            "scenarios are solved on by the meters' balance error"
+            + (f" — {sum(mg[0]):+,.0f} kWh over the window ({100 * sum(mg[0]) / max(1.0, sum(meas['load'])):+.2f} %), "
+               "in the measured cost and in no scenario. Priced at each hour's own cost per kWh, "
+               "it is taken out of the saving <b>at the plant meter</b>"
+               if mg is not None else ""),
             "what the site sent to the city is priced at zero, as in every scenario",
             _year_basis(out, H),
-            "a typical-days year is the clustered year, so its load is not hour for hour "
-            "the logged one — compare totals, not hours",
+            *(["a typical-days year is the clustered year, so its load is not hour for hour "
+               "the logged one — compare totals, not hours"]
+              if out.get("typical") and not out["typical"].get("every") else []),
             "<b>this saving is not the battery's</b>: a scenario without a battery saves "
-            "nearly as much. It is the distance between how the engines ran and how they "
+            "nearly as much"
+            + (f" — the battery's own is its saving against <b>{base['name']}</b>, the cheapest "
+               "run without one" + (" (the row “Battery price ÷ the battery's own saving” "
+                                    "prices the battery on it)" if out.get("values") == VALUES_ZH
+                                    else "")
+               if base is not None else "")
+            + ". It is the distance between how the engines ran and how they "
             "could have run"
             + (" with the availability they really had — each engine runs only in the hours "
                "the logger shows it running. The model still knows no limit the site's own "
@@ -1507,6 +1658,7 @@ def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
     owns = [Y.lifecycle(c, years=years, escalation=esc, discount=disc)
             for c in _run_year(run, out, hours)]
     own = owns[0]
+    base = _fair_base([run, *others]) if run["battery"] else None
 
     rows = []
     for o in others:
@@ -1526,7 +1678,7 @@ def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
             net = (nets[0], nets[1])
             pay = _pay_span(lcs, " reversed" if reverse else "")
         rows.append([
-            o["name"],
+            o["name"] + (FAIR if o is base else ""),
             _signed_span(year),
             _signed_span(pv),
             _money(cost_pv, cur) if cost_pv else "—",
@@ -1537,8 +1689,8 @@ def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
     P.table(["Compared with", "Saving per year", f"Present value, {years} yr",
              "Battery: CAPEX + O&M + replacement", "Net present value", "Payback"], rows,
             [f"{run['name']} — operating cost",
-             _span((owns[0].annual_cost, owns[1].annual_cost), money) + " / yr",
-             _span((owns[0].present_value, owns[1].present_value), money), "", "", ""])
+             _span((owns[0].annual_cost, owns[1].annual_cost), money, cur) + " / yr",
+             _span((owns[0].present_value, owns[1].present_value), money, cur), "", "", ""])
     b = Y.lifecycle(0.0, years=years, escalation=esc, discount=disc, capex=capex,
                     om_fraction=float(bat.get("om_fraction", 0.0)),
                     replace_year=int(bat.get("replace_year", 0) or 0),
@@ -1557,6 +1709,7 @@ def _lifecycle(run: dict, others: list[dict], out: dict, hours: int) -> None:
         "escalated saving less the battery's O&M and, in its year, its replacement: the year "
         "from which the cumulative stays above the CAPEX, undiscounted and then discounted",
         "<b>reversed</b> marks a row where it is the other scenario's battery being repaid",
+        *([_fair_note(base)] if base is not None else []),
         "one year repeated with escalation — REopt's own lifetime convention",
         _year_basis(out, hours),
     ])
@@ -1654,9 +1807,12 @@ def render() -> None:
         times = None                # the hours' own timestamps, real data only
         if site is not None:
             y = _real_year(site, RD.stamp())
+            # "load" is the plant meter the scenarios are solved on, kept so the
+            # measured table can price the logger's balance against it
             load, measured = list(y["load"]), {"gpu": y["gpu"], "grid": y["grid"],
                                                "buy": y["buy"], "sell": y["sell"],
-                                               "gpu_units": y["gpu_units"]}
+                                               "gpu_units": y["gpu_units"],
+                                               "load": list(y["load"])}
             # his joined site is one bus today as well: its plants' meters are netted,
             # so one plant's export pays for the other's purchase, which it does not
             if zh:
