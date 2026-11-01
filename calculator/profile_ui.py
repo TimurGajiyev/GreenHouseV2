@@ -246,6 +246,135 @@ _CSS = f"""
 .ghp-sw-charge {{ background: {CHARGE}; }}
 .ghp-sw-discharge {{ background: {DISCHARGE}; }}
 .ghp-sw-load {{ background: {INK}; }}
+.ghp-sw-save {{ background: {SAVE}; }}
+.ghp-sw-ceil {{ background: {CEILING}; }}
+
+/* ---- a quiet caption under a chart: what it is drawn on ---- */
+.ghp-cap {{
+    font-family: {MONO};
+    font-size: 11px;
+    color: {MUTED};
+    line-height: 1.55;
+    padding: 4px 2px 0;
+}}
+.ghp-cap b {{ font-weight: 500; color: {INK}; }}
+
+/* ---- the pair, face to face: scenario left, against right, the
+   difference between them in the middle. Mirrored, so each side reads
+   outwards from the verdict. ---- */
+.ghp-vs {{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    background: {PANEL};
+    border: 1px solid {RULE};
+    margin: 6px 0 14px;
+}}
+.ghp-vs-side {{
+    padding: 16px 20px 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    min-width: 0;
+}}
+.ghp-vs-r {{ align-items: flex-end; text-align: right; }}
+.ghp-vs-top {{ display: flex; align-items: center; gap: 12px; }}
+.ghp-vs-r .ghp-vs-top {{ flex-direction: row-reverse; }}
+.ghp-badge {{
+    flex: none;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: {SANS};
+    font-size: 16px;
+    font-weight: 650;
+    color: {PANEL};
+}}
+.ghp-badge-scenario {{ background: {INK}; }}
+.ghp-badge-against {{ background: {CHARGE}; }}
+.ghp-vs-role {{
+    font-family: {MONO};
+    font-size: 10.5px;
+    color: {MUTED};
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+}}
+.ghp-vs-name {{
+    font-family: {SANS};
+    font-size: 15.5px;
+    font-weight: 620;
+    letter-spacing: -0.01em;
+    color: {INK};
+    line-height: 1.25;
+}}
+.ghp-chips {{ display: flex; flex-wrap: wrap; gap: 6px; }}
+.ghp-vs-r .ghp-chips {{ justify-content: flex-end; }}
+.ghp-chip {{
+    font-family: {MONO};
+    font-size: 11px;
+    color: {INK};
+    border: 1px solid {RULE};
+    border-radius: 999px;
+    padding: 2px 9px;
+    white-space: nowrap;
+}}
+.ghp-chip-dim {{ color: {MUTED}; }}
+.ghp-vs-k {{
+    font-family: {MONO};
+    font-size: 10.5px;
+    color: {MUTED};
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    margin-top: 2px;
+}}
+.ghp-vs-fig {{
+    font-family: {MONO};
+    font-size: 19px;
+    color: {INK};
+    margin-top: -5px;
+}}
+.ghp-vs-mini {{
+    font-family: {MONO};
+    font-size: 11.5px;
+    color: {MUTED};
+    line-height: 1.6;
+}}
+.ghp-vs-mid {{
+    border-left: 1px solid {RULE};
+    border-right: 1px solid {RULE};
+    background: rgba(23, 36, 47, 0.022);
+    padding: 16px 26px;
+    min-width: 220px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    gap: 3px;
+}}
+.ghp-vs-delta {{
+    font-family: {SANS};
+    font-size: 30px;
+    font-weight: 650;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+}}
+.ghp-vs-says {{
+    font-family: {SANS};
+    font-size: 13px;
+    font-weight: 560;
+    color: {INK};
+    margin-top: 6px;
+}}
+@media (max-width: 820px) {{
+    .ghp-vs {{ grid-template-columns: minmax(0, 1fr); }}
+    .ghp-vs-mid {{ border: none; border-top: 1px solid {RULE}; border-bottom: 1px solid {RULE}; }}
+    .ghp-vs-r {{ align-items: flex-start; text-align: left; }}
+    .ghp-vs-r .ghp-vs-top {{ flex-direction: row; }}
+    .ghp-vs-r .ghp-chips {{ justify-content: flex-start; }}
+}}
 
 /* ---- Vega's tooltip is built outside the chart, in one element hung off
    the page body, so CSS is the only thing that can reach it. Streamlit ships
@@ -383,9 +512,47 @@ def label(text: str) -> None:
     st.html(f'<div class="ghp-cell-k ghp-pick">{text}</div>')
 
 
+def caption(text: str) -> None:
+    """One quiet line under a chart: what it is drawn on."""
+    st.html(f'<div class="ghp-cap">{text}</div>')
+
+
+def matchup_html(left: dict, mid: dict, right: dict) -> str:
+    """The pair face to face, as markup (``matchup`` draws it).
+
+    ``left`` and ``right`` are the two sides: ``letter``, ``role`` (scenario
+    or against -- the badge takes that role's colour, the same as the charts'),
+    ``name``, ``chips`` (list of text, or (text, "dim")), ``key`` and ``fig``
+    (the headline figure and its caption) and ``mini`` (one muted line).
+    ``mid`` is the difference: ``head``, ``delta`` (text, css class),
+    ``under`` and ``says``. Everything is text already formatted."""
+    def side(s: dict, cls: str) -> str:
+        chips = "".join(
+            f'<span class="ghp-chip{" ghp-chip-dim" if isinstance(c, tuple) else ""}">'
+            f'{c[0] if isinstance(c, tuple) else c}</span>' for c in s.get("chips", []))
+        return (f'<div class="ghp-vs-side {cls}">'
+                f'<div class="ghp-vs-top"><span class="ghp-badge ghp-badge-{s["role"]}">'
+                f'{s["letter"]}</span><div><div class="ghp-vs-role">{s["role"]}</div>'
+                f'<div class="ghp-vs-name">{s["name"]}</div></div></div>'
+                f'<div class="ghp-chips">{chips}</div>'
+                f'<div class="ghp-vs-k">{s["key"]}</div><div class="ghp-vs-fig">{s["fig"]}</div>'
+                f'<div class="ghp-vs-mini">{s.get("mini", "")}</div></div>')
+    text, cls = mid["delta"]
+    centre = (f'<div class="ghp-vs-mid"><div class="ghp-vs-k">{mid["head"]}</div>'
+              f'<div class="ghp-vs-delta {cls}">{text}</div>'
+              f'<div class="ghp-vs-mini">{mid["under"]}</div>'
+              f'<div class="ghp-vs-says">{mid["says"]}</div></div>')
+    return f'<div class="ghp-vs">{side(left, "ghp-vs-l")}{centre}{side(right, "ghp-vs-r")}</div>'
+
+
+def matchup(left: dict, mid: dict, right: dict) -> None:
+    st.html(matchup_html(left, mid, right))
+
+
 # swatch class per colour, so nothing depends on an inline style surviving
 SWATCH = {PV_COLOR: "ghp-sw-pv", GRID_COLOR: "ghp-sw-grid", CHARGE: "ghp-sw-charge",
-          DISCHARGE: "ghp-sw-discharge", INK: "ghp-sw-load"}
+          DISCHARGE: "ghp-sw-discharge", INK: "ghp-sw-load", SAVE: "ghp-sw-save",
+          CEILING: "ghp-sw-ceil"}
 SWATCH.update({c: f"ghp-sw-{i}" for i, c in enumerate(GEN)})
 
 
@@ -733,81 +900,383 @@ def _m_label(v: float, cur: str, signed: bool = False) -> str:
 ROLE_COLORS = {"scenario": INK, "against": CHARGE, "other": CEILING, "measured": GRID_COLOR}
 
 
-def scenario_cost_chart(rows: list[dict], cur: str, *, scope: str | None = None):
-    """One bar per scenario: its operating cost over the horizon, from zero.
+def _ink_on(fill: str) -> str:
+    """White or the ink for a label set inside a fill: whichever contrasts more."""
+    def lum(hex_color: str) -> float:
+        h = hex_color.lstrip("#")
+        ch = [int(h[i:i + 2], 16) / 255 for i in (0, 2, 4)]
+        lin = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in ch]
+        return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+    f = lum(fill)
+    return PANEL if 1.05 / (f + 0.05) >= (f + 0.05) / (lum(INK) + 0.05) else INK
 
-    ``rows`` are dicts with ``label`` (the y-axis text, the role already
-    written into it), ``role`` (a key of ROLE_COLORS), ``total`` and ``parts``
-    (component -> money), in the order they are drawn. Each bar carries its
-    total at the tip; the parts are in the hover panel. One axis, one unit."""
-    parts = list(dict.fromkeys(k for r in rows for k in r["parts"]))
-    df = pd.DataFrame([{"label": r["label"], "role": r["role"], "v": r["total"],
-                        "txt": _m_label(r["total"], cur),
-                        **{k: (f"{r['parts'][k]:,.0f} {cur}" if k in r["parts"] else "—")
-                           for k in parts}} for r in rows])
-    top = max([r["total"] for r in rows] + [1.0]) * 1.22
-    order = [r["label"] for r in rows]
-    roles = list(ROLE_COLORS)
-    y = alt.Y("label:N", sort=order, title=None,
-              axis=alt.Axis(labelFont=MONO, labelFontSize=11, labelColor=INK, labelLimit=330,
-                            ticks=False, domain=False, labelPadding=8))
-    x = alt.X("v:Q", title=f"operating cost over the horizon, {cur}",
-              scale=alt.Scale(domain=[0, top], nice=False),
+
+def _two_lines(text: str) -> str:
+    """An axis label broken once, at its first space, for the axis's labelExpr."""
+    return text.replace(" ", "|", 1)
+
+
+def _full(v: float, cur: str, signed: bool = False) -> str:
+    """Money in full for a hover panel, with a true minus: −13,023,379 ₸."""
+    return (f"{v:+,.0f}" if signed else f"{v:,.0f}").replace("-", "\u2212") + f" {cur}"
+
+
+def _quiet(*layers):
+    """The layers, with the hover panel off on every one that names no tooltip.
+
+    Streamlit's chart theme turns tooltips on for every mark, so a layer drawn
+    only to decorate -- a link, a label, a wash, a stalk -- would answer the
+    pointer with its raw fields ("ref 200290708.508 · short Measured"). Only a
+    layer that says what to show is left to show it."""
+    for lc in layers:
+        if lc.encoding.tooltip is not alt.Undefined:
+            continue
+        m = lc.mark
+        lc.mark = alt.MarkDef(type=m, tooltip=False) if isinstance(m, str) else m.copy()
+        if not isinstance(m, str):
+            lc.mark.tooltip = False
+    return list(layers)
+
+
+def cost_bridge_chart(start: dict, steps: list[dict], end: dict, cur: str, *,
+                      scope: str | None = None, height: int = 300):
+    """From one scenario's operating cost to another's, part by part.
+
+    A bridge: the first column is ``start`` -- the scenario set against, its
+    cost the zero line -- each next one a part of the cost moving the level up
+    (it costs more there) or down (it costs less), the last ``end``, the picked
+    scenario, as one bar from that zero line to where the parts leave it. So
+    the reader sees not only which is cheaper but which parts make it so, and
+    that they add up: the end bar is the parts' sum, drawn.
+
+    ``start`` and ``end`` are dicts with ``letter`` and ``total``; ``steps``
+    with ``label``, ``a`` (the start's figure on that part) and ``b`` (the
+    end's). The axis is money against the start, so no bar is cut off at the
+    baseline: each one's length is the difference it stands for."""
+    s_col = f"{start['letter']}|{_m_label(start['total'], cur)}"
+    e_col = f"{end['letter']}|{_m_label(end['total'], cur)}"
+    cols = [s_col] + [_two_lines(st_["label"]) for st_ in steps] + [e_col]
+    full = lambda v: _full(v, cur)
+    bars, conn, lvl = [], [], 0.0
+    prev = s_col
+    for st_ in steps:
+        d = st_["b"] - st_["a"]
+        col = _two_lines(st_["label"])
+        conn.append({"col": prev, "col2": col, "y": lvl})
+        bars.append({"col": col, "y0": lvl, "y1": lvl + d,
+                     "kind": "up" if d > 0 else "down", "txt": _m_label(d, cur, signed=True),
+                     "part": st_["label"], "a": full(st_["a"]), "b": full(st_["b"]),
+                     "chg": _full(d, cur, signed=True)})
+        lvl += d
+        prev = col
+    total = end["total"] - start["total"]
+    conn.append({"col": prev, "col2": e_col, "y": lvl})
+    bars.append({"col": e_col, "y0": 0.0, "y1": total, "kind": "end",
+                 "txt": _m_label(total, cur, signed=True), "part": "operating cost",
+                 "a": full(start["total"]), "b": full(end["total"]),
+                 "chg": _full(total, cur, signed=True)})
+    df = pd.DataFrame(bars)
+    df["top"] = df[["y0", "y1"]].max(axis=1)
+    df["bot"] = df[["y0", "y1"]].min(axis=1)
+    df["upward"] = df["y1"] >= df["y0"]
+    levels = [0.0] + [b["y1"] for b in bars]
+    lo, hi = min(levels), max(levels)
+    pad = max(hi - lo, abs(start["total"]) * 0.01, 1.0) * 0.24
+    x = alt.X("col:N", sort=cols, title=None,
+              axis=alt.Axis(labelFont=MONO, labelFontSize=11, labelColor=INK, labelAngle=0,
+                            labelExpr="split(datum.label, '|')", labelPadding=8,
+                            ticks=False, domain=False, labelLimit=140))
+    y = alt.Y("y0:Q", title=f"cost against {start['letter']}, {cur}",
+              scale=alt.Scale(domain=[lo - pad, hi + pad], nice=False),
               axis=_axis(fmt="~s", domain=False))
-    tip = [alt.Tooltip("label:N", title="scenario"), alt.Tooltip("txt:N", title="total")] + [
-        alt.Tooltip(f"{k}:N", title=k) for k in parts]
-    bars = alt.Chart(df).mark_bar(size=18, cornerRadiusEnd=4).encode(
-        y=y, x=x, tooltip=tip,
-        color=alt.Color("role:N", legend=None,
-                        scale=alt.Scale(domain=roles, range=[ROLE_COLORS[k] for k in roles])))
-    text = alt.Chart(df).mark_text(align="left", dx=6, font=MONO, fontSize=11,
-                                   color=INK).encode(y=y, x=x, text="txt:N")
-    _tooltip_palette([INK] * (2 + len(parts)), scope)
-    return (alt.layer(bars, text)
-            .properties(height=34 * len(rows) + 46, background=PANEL,
-                        padding={"left": 4, "right": 10, "top": 8, "bottom": 2})
+    tip = [alt.Tooltip("part:N", title="part"),
+           alt.Tooltip("a:N", title=start["letter"]), alt.Tooltip("b:N", title=end["letter"]),
+           alt.Tooltip("chg:N", title=f"{end['letter']} − {start['letter']}")]
+    color = alt.Color("kind:N", legend=None,
+                      scale=alt.Scale(domain=["up", "down", "end"], range=[DISCHARGE, SAVE, INK]))
+    links = alt.Chart(pd.DataFrame(conn)).mark_rule(
+        color=MUTED, strokeDash=[3, 3], strokeWidth=1).encode(
+        x=alt.X("col:N", sort=cols), x2="col2:N", y="y:Q")
+    zero = alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(
+        color=CHARGE, strokeDash=[5, 3], strokeWidth=1.25).encode(y="y:Q")
+    mark = alt.Chart(pd.DataFrame({"col": [s_col], "y": [0.0]})).mark_circle(
+        color=CHARGE, size=150, opacity=1, stroke=PANEL, strokeWidth=2).encode(
+        x=alt.X("col:N", sort=cols), y="y:Q")
+    body = alt.Chart(df).mark_bar(size=24, cornerRadius=3).encode(
+        x=x, y=y, y2="y1:Q", color=color, tooltip=tip)
+    above = alt.Chart(df).transform_filter("datum.upward").mark_text(
+        baseline="bottom", dy=-6, font=MONO, fontSize=11, color=INK).encode(
+        x=alt.X("col:N", sort=cols), y="top:Q", text="txt:N")
+    below = alt.Chart(df).transform_filter("!datum.upward").mark_text(
+        baseline="top", dy=6, font=MONO, fontSize=11, color=INK).encode(
+        x=alt.X("col:N", sort=cols), y="bot:Q", text="txt:N")
+    _tooltip_palette([INK] * 4, scope)
+    return (alt.layer(*_quiet(zero, links, body, mark, above, below))
+            .properties(height=height, background=PANEL,
+                        padding={"left": 4, "right": 12, "top": 10, "bottom": 2})
             .configure_view(stroke=None)
             .configure_axis(labelFont=MONO, titleFont=MONO))
 
 
-def pair_delta_chart(rows: list[dict], cur: str, *, scope: str | None = None):
-    """Where one scenario's cost differs from another's, part by part.
+def cash_curve_chart(years: list[int], lo: list[float], hi: list[float], cur: str, *,
+                     payback: tuple[float, float | None] | None = None, replace_year: int = 0,
+                     horizon: int | None = None, scope: str | None = None,
+                     height: int = 300, title: str = "cumulative cash, discounted"):
+    """Money over the years: where it stands at each year's end, as one line.
 
-    ``rows`` are dicts with ``label`` and ``saving`` (money: + the scenario is
-    cheaper on that part, − it costs more), the total last. Diverging from a
-    zero rule: a saving to the right in green, an extra cost to the left in
-    orange, the signed figure at each tip, so the direction never rests on
-    colour alone."""
-    df = pd.DataFrame([{"label": r["label"], "v": r["saving"],
-                        "sign": "saving" if r["saving"] >= 0 else "extra cost",
-                        "total": i == len(rows) - 1,
-                        "txt": _m_label(r["saving"], cur, signed=True),
-                        "full": f"{r['saving']:+,.0f} {cur}"} for i, r in enumerate(rows)])
-    m = max([abs(r["saving"]) for r in rows] + [1.0]) * 1.45
+    For a battery, year 0 is its price, below the zero line, and every year
+    after adds that year's saving net of its O&M (less the replacement, in its
+    year), discounted: the line crosses zero where the battery has paid for
+    itself, and it ends on the net present value. The ground between the line
+    and zero is washed orange below and green above -- the side of the line
+    says the same, so the sign never rests on colour.
+
+    ``lo`` and ``hi`` are the curve at the low and at the high end of the
+    yearly saving (one curve when every month was measured): the low end is
+    the solid line, the high end dashed, the range between them shaded.
+    ``payback`` is (year, year), or (year, None) when only the high end pays
+    back. Hovering a year shows where both ends stand and what that year added."""
+    n = horizon or (years[-1] if years else 0)
+    ranged = any(abs(a - b) > 0.5 for a, b in zip(lo, hi))
+    rows = []
+    for i, (yr, a, b) in enumerate(zip(years, lo, hi)):
+        pa, pb = (lo[i - 1], hi[i - 1]) if i else (0.0, 0.0)
+        rows.append({"year": yr, "lo": a, "hi": b,
+                     "at": (_full(a, cur) if abs(b - a) < 0.5 else
+                            f"{_full(min(a, b), cur)[:-len(cur) - 1]} … {_full(max(a, b), cur)}"),
+                     "flow": (_full(a - pa, cur, signed=True) if abs((b - pb) - (a - pa)) < 0.5 else
+                              f"{_full(min(a - pa, b - pb), cur, signed=True)[:-len(cur) - 1]} … "
+                              f"{_full(max(a - pa, b - pb), cur, signed=True)}"),
+                     "yl": f"year {yr}" + (" · the price" if yr == 0 else
+                                           " · replacement" if yr == replace_year else "")})
+    df = pd.DataFrame(rows)
+    # the wash follows the low line exactly: its zero crossings are added as
+    # points, so neither colour spills over the line where it crosses
+    pts = []
+    for i, (yr, v) in enumerate(zip(years, lo)):
+        if i:
+            py, pv = years[i - 1], lo[i - 1]
+            if (pv < 0 < v) or (pv > 0 > v):
+                pts.append((py + (0 - pv) / (v - pv) * (yr - py), 0.0))
+        pts.append((yr, v))
+    wash = pd.DataFrame([{"year": x, "neg": min(v, 0.0), "pos": max(v, 0.0), "zero": 0.0}
+                         for x, v in pts])
+    vals = [*lo, *hi, 0.0]
+    vmin, vmax = min(vals), max(vals)
+    pad = max(vmax - vmin, 1.0) * 0.16
+    x = alt.X("year:Q", title="year",
+              scale=alt.Scale(domain=[min(years) - 0.5, n + 0.5], nice=False),
+              axis=_axis(values=list(range(0, n + 1, 5 if n > 12 else 1)), fmt="d",
+                         grid=False, domain=False))
+    y = alt.Y("lo:Q", title=f"{title}, {cur}",
+              scale=alt.Scale(domain=[vmin - pad, vmax + pad], nice=False),
+              axis=_axis(fmt="~s", domain=False))
+    tip = [alt.Tooltip("yl:N", title="end of"), alt.Tooltip("at:N", title="cumulative"),
+           alt.Tooltip("flow:N", title="that year")]
+    layers = []
+    if payback is not None:
+        # (year, year) or (year, None): the high end pays back, the low never does
+        p0, p1 = payback
+        if p1 is None:
+            b, lab = n + 0.5, f"pays back · year {p0:,.1f} … never"
+        else:
+            p0, p1 = sorted((p0, p1))
+            b = max(p1, p0 + 0.04)
+            lab = (f"pays back · year {p0:,.1f}" if p1 - p0 < 0.05 else
+                   f"pays back · year {p0:,.1f} … {p1:,.1f}")
+        # the words beside the band, or inside its left edge when it reaches the right
+        inside = b > n * 0.6
+        band = pd.DataFrame({"a": [p0], "b": [b], "lab": [lab], "at": [p0 if inside else b]})
+        layers += [
+            alt.Chart(band).mark_rect(color=SAVE, opacity=0.10).encode(x="a:Q", x2="b:Q"),
+            alt.Chart(band).mark_rule(color=SAVE, strokeWidth=1.5, strokeDash=[4, 3]).encode(
+                x="a:Q"),
+            alt.Chart(band).mark_text(align="right" if inside else "left", baseline="top",
+                                      dx=-6 if inside else 6, dy=4, font=MONO,
+                                      fontSize=11, color=INK).encode(
+                x="at:Q", y=alt.value(0), text="lab:N")]
+    layers += [
+        alt.Chart(wash).mark_area(color=DISCHARGE, opacity=0.13).encode(
+            x="year:Q", y="neg:Q", y2="zero:Q"),
+        alt.Chart(wash).mark_area(color=SAVE, opacity=0.15).encode(
+            x="year:Q", y="pos:Q", y2="zero:Q"),
+        alt.Chart(pd.DataFrame({"y": [0.0]})).mark_rule(color=INK, strokeWidth=1).encode(
+            y="y:Q")]
+    if ranged:
+        layers += [
+            alt.Chart(df).mark_area(color=CEILING, opacity=0.22).encode(x=x, y=y, y2="hi:Q"),
+            alt.Chart(df).mark_line(color=INK, strokeWidth=1.5, strokeDash=[5, 3]).encode(
+                x="year:Q", y="hi:Q")]
+    layers.append(alt.Chart(df).mark_line(color=INK, strokeWidth=2, strokeJoin="round",
+                                          strokeCap="round").encode(x=x, y=y))
+    ends = df.iloc[[0, -1]]
+    layers.append(alt.Chart(ends).mark_circle(size=64, color=INK, opacity=1, stroke=PANEL,
+                                              strokeWidth=2).encode(x="year:Q", y="lo:Q"))
+    if lo[0] < 0 and years[0] == 0:
+        start = pd.DataFrame({"x": [0], "y": [lo[0]], "lab": [f"{_m_label(lo[0], cur)} · the price"]})
+        layers.append(alt.Chart(start).mark_text(
+            align="left", baseline="top", dx=2, dy=9, font=MONO, fontSize=11,
+            color=INK).encode(x="x:Q", y="y:Q", text="lab:N"))
+    if replace_year and replace_year in years:
+        i = years.index(replace_year)
+        rep = pd.DataFrame({"x": [replace_year], "y": [min(lo[i], hi[i])],
+                            "lab": ["replacement"]})
+        layers.append(alt.Chart(rep).mark_text(baseline="top", dy=8, font=MONO, fontSize=10.5,
+                                               color=MUTED).encode(x="x:Q", y="y:Q", text="lab:N"))
+    last_lo, last_hi = lo[-1], hi[-1]
+    end_txt = (_m_label(last_lo, cur, signed=True) if abs(last_hi - last_lo) < 0.5e5 else
+               f"{_m_label(min(last_lo, last_hi), cur, signed=True)} … "
+               f"{_m_label(max(last_lo, last_hi), cur, signed=True)}")
+    up = last_lo >= 0
+    end = pd.DataFrame({"x": [years[-1]], "y": [max(last_lo, last_hi) if up
+                                                 else min(last_lo, last_hi)],
+                        "lab": [end_txt]})
+    layers.append(alt.Chart(end).mark_text(
+        align="right", baseline="bottom" if up else "top", dy=-9 if up else 9,
+        font=MONO, fontSize=11, fontWeight=600, color=INK).encode(
+        x="x:Q", y="y:Q", text="lab:N"))
+    if payback is None and lo[0] < 0:
+        never = pd.DataFrame({"lab": [f"does not pay back in {n} years"]})
+        layers.append(alt.Chart(never).mark_text(
+            align="right", baseline="top", dx=-4, dy=4, font=MONO, fontSize=11,
+            color=INK).encode(x=alt.value("width"), y=alt.value(0), text="lab:N"))
+    # hover: a year at a time, the whole column of the plot as the target
+    hover = alt.selection_point(fields=["year"], nearest=True, on="pointerover",
+                                clear="pointerout", empty=False)
+    layers += [
+        alt.Chart(df).mark_rule(color=MUTED, strokeWidth=1).encode(x="year:Q").transform_filter(
+            hover),
+        alt.Chart(df).mark_circle(size=70, color=INK, opacity=1, stroke=PANEL,
+                                  strokeWidth=2).encode(x="year:Q", y="lo:Q").transform_filter(
+            hover),
+        alt.Chart(df).mark_rule(strokeWidth=16, opacity=0).encode(
+            x="year:Q", tooltip=tip).add_params(hover)]
+    _tooltip_palette([INK] * 3, scope)
+    return (alt.layer(*_quiet(*layers))
+            .properties(height=height, background=PANEL,
+                        padding={"left": 4, "right": 12, "top": 10, "bottom": 2})
+            .configure_view(stroke=None)
+            .configure_axis(labelFont=MONO, titleFont=MONO))
+
+
+def scenario_ladder_chart(rows: list[dict], cur: str, *, ref: dict,
+                          scope: str | None = None):
+    """Every scenario's operating cost, cheapest on top, set against one of them.
+
+    A dot a scenario on one money axis, and a stalk from the scenario set
+    against (``ref``: ``letter`` and ``total``; its cost the dashed teal line)
+    to each dot, so the distance a stalk runs is what that scenario costs more
+    or less than it. Dots carry no length, so the axis need not start at zero
+    and the differences -- a few per cent of the total -- are not flattened
+    against it, as they were when every scenario was a bar from zero. The
+    figures stand in a column at the right, clear of the dots.
+
+    ``rows``: ``label`` (the full name, for the hover panel), ``short`` (the
+    axis text), ``role`` (a ROLE_COLORS key), ``total``, and ``tip`` (the
+    per-year figure for the hover panel)."""
+    rows = sorted(rows, key=lambda r: r["total"])
+    ref_v = ref["total"]
+    df = pd.DataFrame([{"label": r["label"], "short": r.get("short", r["label"]),
+                        "role": r["role"], "v": r["total"], "ref": ref_v,
+                        "txt": _m_label(r["total"], cur),
+                        "dtxt": ("—" if r["role"] == "against" else
+                                 _m_label(r["total"] - ref_v, cur, signed=True)),
+                        "full": _full(r["total"], cur),
+                        "d": ("—" if r["role"] == "against" else
+                              _full(r["total"] - ref_v, cur, signed=True)),
+                        "tip": r.get("tip", "")} for r in rows])
+    vals = [r["total"] for r in rows] + [ref_v]
+    lo, hi = min(vals), max(vals)
+    pad = max(hi - lo, abs(ref_v) * 0.02, 1.0) * 0.12
+    order = [r.get("short", r["label"]) for r in rows]
+    roles = list(ROLE_COLORS)
+    y = alt.Y("short:N", sort=order, title=None,
+              axis=alt.Axis(labelFont=MONO, labelFontSize=11, labelColor=INK, labelLimit=180,
+                            ticks=False, domain=False, labelPadding=10))
+    x = alt.X("v:Q", title=f"operating cost, {cur} — not from zero",
+              scale=alt.Scale(domain=[lo - pad, hi + pad], nice=False, zero=False),
+              axis=_axis(fmt="~s", domain=False))
+    tip = [alt.Tooltip("label:N", title="scenario"), alt.Tooltip("full:N", title="cost"),
+           alt.Tooltip("d:N", title=f"against {ref['letter']}"),
+           alt.Tooltip("tip:N", title="per year")]
+    refl = alt.Chart(pd.DataFrame({"v": [ref_v]})).mark_rule(
+        color=CHARGE, strokeDash=[5, 3], strokeWidth=1.25).encode(x="v:Q")
+    stalk = alt.Chart(df).mark_rule(color=RULE, strokeWidth=2.5).encode(
+        y=y, x="ref:Q", x2="v:Q")
+    dots = alt.Chart(df).mark_circle(size=170, opacity=1, stroke=PANEL, strokeWidth=2).encode(
+        y=y, x=x, tooltip=tip,
+        color=alt.Color("role:N", legend=None,
+                        scale=alt.Scale(domain=roles, range=[ROLE_COLORS[k] for k in roles])))
+    cost = alt.Chart(df).mark_text(align="right", dx=96, font=MONO, fontSize=11,
+                                   color=INK).encode(y=y, x=alt.value("width"), text="txt:N")
+    diff = alt.Chart(df).mark_text(align="right", dx=180, font=MONO, fontSize=11,
+                                   color=MUTED).encode(y=y, x=alt.value("width"), text="dtxt:N")
+    heads = pd.DataFrame({"t": ["cost", f"vs {ref['letter']}"], "dx": [96, 180]})
+    head_cost = alt.Chart(heads.iloc[[0]]).mark_text(
+        align="right", baseline="bottom", dx=96, dy=-4, font=MONO, fontSize=10, color=MUTED).encode(
+        x=alt.value("width"), y=alt.value(0), text="t:N")
+    head_diff = alt.Chart(heads.iloc[[1]]).mark_text(
+        align="right", baseline="bottom", dx=180, dy=-4, font=MONO, fontSize=10, color=MUTED).encode(
+        x=alt.value("width"), y=alt.value(0), text="t:N")
+    _tooltip_palette([INK] * 4, scope)
+    return (alt.layer(*_quiet(refl, stalk, dots, cost, diff, head_cost, head_diff))
+            # the figures' column sits past the plot's right edge; Vega's fit
+            # already makes room for it, so no padding is added for it here
+            .properties(height=44 * len(rows) + 50, background=PANEL,
+                        padding={"left": 4, "right": 12, "top": 20, "bottom": 2})
+            .configure_view(stroke=None)
+            .configure_axis(labelFont=MONO, titleFont=MONO))
+
+
+def energy_mix_chart(rows: list[dict], sources: list[tuple[str, str]], *,
+                     scope: str | None = None, min_share: float = 0.07,
+                     unit: str = "MWh"):
+    """Where each scenario's energy came from: one tall segmented bar a row.
+
+    ``sources`` is ``(name, colour)`` in stack order -- each engine in the
+    dispatch chart's own colour, then the grid -- so a source wears the same
+    colour here as in every other chart on the page. ``rows``: ``label``,
+    ``parts`` (source -> kWh) and ``tips`` (source -> one line for the hover
+    panel). Each block prints its share where the share fits inside it; the
+    legend names the blocks, the hover panel carries the rest."""
+    df_rows = []
+    for r in rows:
+        tot = sum(max(0.0, r["parts"].get(nm, 0.0)) for nm, _ in sources) or 1.0
+        x0 = 0.0
+        for nm, col in sources:
+            v = max(0.0, r["parts"].get(nm, 0.0))
+            if v <= 0:
+                continue
+            sh = v / tot
+            df_rows.append({"label": r["label"], "src": nm, "x0": x0 / 1e3, "x1": (x0 + v) / 1e3,
+                            "mid": (x0 + v / 2) / 1e3, "mwh": f"{v / 1e3:,.0f} {unit}",
+                            "share": f"{sh * 100:,.1f} %",
+                            "lab": f"{sh * 100:,.0f}%" if sh >= min_share else "",
+                            "tc": _ink_on(col), "more": (r.get("tips") or {}).get(nm, "—")})
+            x0 += v
+    df = pd.DataFrame(df_rows)
     order = [r["label"] for r in rows]
+    names = [nm for nm, _ in sources]
     y = alt.Y("label:N", sort=order, title=None,
-              axis=alt.Axis(labelFont=MONO, labelFontSize=11, labelColor=INK, labelLimit=220,
-                            ticks=False, domain=False, labelPadding=8))
-    x = alt.X("v:Q", title=f"saving over the horizon, {cur}  (− = costs more)",
-              scale=alt.Scale(domain=[-m, m], nice=False), axis=_axis(fmt="~s", domain=False))
-    color = alt.Color("sign:N", legend=None,
-                      scale=alt.Scale(domain=["saving", "extra cost"], range=[SAVE, DISCHARGE]))
-    tip = [alt.Tooltip("label:N", title="part"), alt.Tooltip("full:N", title="saving")]
-    bars = alt.Chart(df).mark_bar(size=18, cornerRadiusEnd=4).encode(
-        y=y, x=x, color=color, tooltip=tip,
-        opacity=alt.condition("datum.total", alt.value(1.0), alt.value(0.78)))
-    right = alt.Chart(df).transform_filter("datum.v >= 0").mark_text(
-        align="left", dx=6, font=MONO, fontSize=11, color=INK).encode(
-        y=y, x=x, text="txt:N")
-    left = alt.Chart(df).transform_filter("datum.v < 0").mark_text(
-        align="right", dx=-6, font=MONO, fontSize=11, color=INK).encode(
-        y=y, x=x, text="txt:N")
-    zero = alt.Chart(pd.DataFrame({"v": [0.0]})).mark_rule(color=INK, strokeWidth=1).encode(
-        x="v:Q")
-    _tooltip_palette([INK, INK], scope)
-    return (alt.layer(bars, zero, right, left)
-            .properties(height=34 * len(rows) + 46, background=PANEL,
-                        padding={"left": 4, "right": 10, "top": 8, "bottom": 2})
+              axis=alt.Axis(labelFont=MONO, labelFontSize=11, labelColor=INK, labelLimit=330,
+                            ticks=False, domain=False, labelPadding=10))
+    x = alt.X("x0:Q", title=f"energy, {unit}", axis=_axis(fmt=",.0f", domain=False),
+              scale=alt.Scale(domain=[0, max(df["x1"].max() if len(df) else 1.0, 1.0) * 1.02],
+                              nice=False))
+    tip = [alt.Tooltip("label:N", title="scenario"), alt.Tooltip("src:N", title="source"),
+           alt.Tooltip("mwh:N", title="energy"), alt.Tooltip("share:N", title="share"),
+           alt.Tooltip("more:N", title="ran")]
+    bars = alt.Chart(df).mark_bar(size=26, cornerRadius=4, stroke=PANEL, strokeWidth=2).encode(
+        y=y, x=x, x2="x1:Q", tooltip=tip,
+        color=alt.Color("src:N", legend=None,
+                        scale=alt.Scale(domain=names, range=[c for _, c in sources])))
+    text = alt.Chart(df).transform_filter("datum.lab != ''").mark_text(
+        font=MONO, fontSize=11, fontWeight=600).encode(
+        y=y, x="mid:Q", text="lab:N", color=alt.Color("tc:N", scale=None, legend=None))
+    _tooltip_palette([INK] * 5, scope)
+    return (alt.layer(*_quiet(bars, text))
+            .properties(height=46 * len(rows) + 50, background=PANEL,
+                        padding={"left": 4, "right": 12, "top": 8, "bottom": 2})
             .configure_view(stroke=None)
             .configure_axis(labelFont=MONO, titleFont=MONO))
 

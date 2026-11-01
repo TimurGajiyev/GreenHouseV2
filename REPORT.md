@@ -2377,6 +2377,96 @@ No figure changed: every number in the tables is the same before and after
 the swap, both pictures, the chart's head) and in
 `tools/test_year_measured.py` part G (what *Against* says each scenario is).
 
+## Revised 01.11.2026 (3): the pair, face to face, in four pictures
+
+The two pictures above had a weakness. The cost bars started from zero, so scenarios a few
+per cent apart drew bars of almost the same length. The part-by-part chart did not show how
+the parts added up to the total. Nothing showed the battery's money over the years, or how
+each scenario's energy split. The block now reads, top to bottom:
+
+* **The pair, face to face.** The scenario is on the left, what it is set against on the right,
+  each with a badge in the colour the charts give its role (ink, teal). Each side shows:
+  * what it carries: battery size or *no battery*, *cheapest without a battery*, a starts cap;
+  * its operating cost per year;
+  * its cost over the window, its engine and grid MWh and its starts.
+
+  The difference sits in the middle: over the window, as a per cent, and per year.
+* **The verdict**, unchanged (stat strip and its note).
+* **From A's cost to B's, part by part** (a bridge). The set-against scenario's cost is the
+  zero line. Each part of the cost (generation, grid, starts, battery wear) moves the level up
+  (orange) or down (green), joined by dashed links. The last bar is the whole difference, so the
+  reader sees that the parts add up to it. Every bar's length is the difference it stands for;
+  none is cut at a baseline.
+* **The battery's money, year by year**, from the side that buys it:
+  * year 0 is its price, below zero;
+  * each year adds its saving less O&M, escalated and discounted, less the replacement in its
+    year;
+  * the line ends on the verdict's net present value;
+  * the payback year is marked where the line stays above zero; otherwise the chart says it does
+    not pay back.
+
+  Where a month was not measured, the low end of the saving is solid, the high end dashed, the
+  range shaded. With no battery between the two, it is the saving added up in present value
+  from year 1.
+* **Every scenario against A.** A dot per scenario on one money axis, the logger's own
+  operation included. A stalk runs from A's cost (dashed teal) to each dot. Cost and difference
+  stand in a column at the right. Dots have no length, so the axis need not start at zero and
+  a 4 % difference is visible.
+* **Where the energy came from.** One segmented bar per scenario, logger included: each engine
+  in the dispatch chart's colour, then the grid, its share printed where it fits. A caption
+  gives what the battery delivered (MWh, full cycles): it moves energy in time, it makes none.
+
+What the pictures show:
+
+| Pair | Bridge (window) | Money over the years |
+|---|---|---|
+| Ours, B against A, 186 days | generation +3.0, grid −13.0, starts +1.9, wear +0.3 = **−7.8 M ₸** | from −391.0 M ₸ at year 0 down to −545.7 … −435.4 M ₸ after the year-10 replacement: does not pay back in 25 years |
+| His, B against C, 182 days | generation −3.7, grid −12.1, starts +3.4 = **−12.4 M ₸** | from −273.0 M ₸, crosses zero in year 10.9, ends at +103.4 M ₸ (15 years, no discounting) |
+| His, A against C | generation +0.3, grid −7.8, starts −1.6 = **−9.1 M ₸** | no battery between them: 17.9 M ₸ a year, 267.9 M ₸ over 15 years |
+
+Ours, B's battery delivered 572 MWh over the 186 days (104 full cycles). The engines' share
+barely moves (A 49 / 38 %, B 50 / 40 %); B buys 9 % from the grid against A's 12 %.
+
+Hovering any picture gives its figures in full:
+* the bridge: the part, both sides, the difference;
+* the cash line: a year at a time, cumulative and that year's flow;
+* a ladder dot: the scenario, its cost, the difference, per year;
+* an energy block: source, MWh, share, hours on and starts.
+
+Streamlit's chart theme turns tooltips on for every mark. So a decorative layer (a link, a
+label, a wash, a ladder stalk) used to answer the pointer with its raw fields
+(`ref 200290708.508 · short Measured`). Every such layer now has its tooltip off (`_quiet`).
+
+The design layer gained `matchup`, `cost_bridge_chart`, `cash_curve_chart`,
+`scenario_ladder_chart` and `energy_mix_chart`, replacing `scenario_cost_chart` and
+`pair_delta_chart`. No figure in any table changed, and the solver core is untouched.
+
+`tools/test_compare_viz.py` checks every plotted number against a figure recomputed outside
+the page:
+
+* **Part A**, made-up numbers:
+  * the bridge closes;
+  * the cash line starts at the price and its washes meet the line at the zero crossings;
+  * the ladder is sorted;
+  * energy blocks add up and do not overlap;
+  * every label inside a block is legible (contrast at least 3:1);
+  * only layers that name a tooltip answer the pointer (this check fails, listing 27 layers,
+    without `_quiet`);
+  * the stylesheet has no tag in it.
+* **Part B**, the page headless, on our values and his, every ordered pair (A↔B on ours; A↔B,
+  A↔C, B↔C on his), plus the swap. Every chart is read back from what Streamlit sends (spec and
+  Arrow data) and checked:
+  * the bridge ends at the solver's own difference of objectives;
+  * its grid part is Σ price × grid, its starts part is starts × start cost;
+  * each ladder dot is that scenario's objective;
+  * each energy block is the solver's kWh, and the logger's bar is its engines plus its
+    purchase;
+  * the cash line is the discounted cash recomputed year by year from first principles, and it
+    ends on the verdict's NPV. The only gap is REopt's own rounding of the present-worth factor
+    to five decimals (`utils.jl:11`): 34 ₸ on 493 M ₸.
+
+160 checks, none failed.
+
 ## Reproduce
 
 ```bash
@@ -2387,6 +2477,7 @@ python calculator/tools/battery_real_data.py solve --cases site3 --workers 8
                                                     # one case; the saved rows of the others stay
 python calculator/tools/test_year_window.py         # a window of measured days to a year and 25 years
 python calculator/tools/test_tailscale_values.py    # his values on the page; ours unmoved (1 min)
+python calculator/tools/test_compare_viz.py         # the comparison's pictures, every pair, both values
 python calculator/tools/test_tailscale_values.py --compare=K   # a year on his values against his run
                                                     # K, M or KM, one at a time, ~6 min each
 python calculator/tools/battery_real_data.py report --grid-price 46.25   # after a solve at that price

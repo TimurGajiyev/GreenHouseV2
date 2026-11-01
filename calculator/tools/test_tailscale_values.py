@@ -444,9 +444,13 @@ def e_page() -> None:
     a_, b_ = [r["name"] for r in out["runs"]]
     check("our study opens on B against A, the only run without a battery",
           at.session_state["gd_pick"] == b_ and at.session_state[f"gd_vs_{b_}"] == a_)
-    check("with the verdict, both pictures and the chart's head",
-          "so this saving is the battery's own" in html and "Operating cost over the" in html
-          and f"{b_.split(' · ')[0]} against {a_.split(' · ')[0]}, part by part" in html
+    la, lb = a_.split(" · ")[0], b_.split(" · ")[0]
+    check("with the verdict, the pair face to face, the four pictures and the chart's head",
+          "so this saving is the battery's own" in html
+          and f'ghp-badge-scenario">{lb}<' in html and f'ghp-badge-against">{la}<' in html
+          and f"From {la}'s cost to {lb}'s, part by part" in html
+          and f"{lb}'s battery against {la}, year by year" in html
+          and f"Every scenario against {la}" in html and "Where the energy came from" in html
           and f'ghp-title">{b_}<' in html)
     at.button(key="gd_swap").click().run()
     html = " ".join(h.proto.body for h in at.get("html"))

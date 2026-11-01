@@ -1347,44 +1347,271 @@ _PARTS = (("Generation", "gen_cost"), ("Grid purchase", "grid_cost"),
           ("Starts", "start_cost"), ("Battery wear", "wear_cost"))
 
 
-def _pair_charts(run: dict, base: dict, runs: list[dict], out: dict, hours: int) -> None:
-    """Two pictures beside the verdict. Left, every scenario's operating cost
-    over the horizon, from zero, the picked pair in colour and the logger's own
-    operation beside them where there is one: how far apart the scenarios are,
-    and how far from today. Right, the pair's difference part by part, from the
-    side that buys the battery: what it saves on generation and on the grid,
-    what its extra starts cost."""
-    cur = out["currency"]
-    parts = [(lab, k) for lab, k in _PARTS if any(r["acc"].get(k) for r in runs)]
+def _span_words(hours: int) -> str:
+    """The horizon in words: "186 days", or hours when it is not whole days."""
     days = hours / 24.0
-    span = f"{days:,.0f} days" if abs(days - round(days)) < 1e-9 else f"{hours:,} hours"
+    return f"{days:,.0f} days" if abs(days - round(days)) < 1e-9 else f"{hours:,} hours"
+
+
+def _rest(name: str) -> str:
+    """A scenario's name less its letter ("ГПУ от 90% + батарея")."""
+    parts = str(name).split(" · ", 1)
+    return parts[1] if len(parts) > 1 else parts[0]
+
+
+def _bridge_steps(run: dict, base: dict, runs: list[dict]) -> list[dict]:
+    """The parts of the operating cost that move ``base``'s total to ``run``'s:
+    one step a part either of the two carries, ``a`` the base's figure on it and
+    ``b`` the run's. A part that is zero for every scenario is left out, so the
+    steps always add up to the difference of the two totals."""
+    keys = [(lab, k) for lab, k in _PARTS if any(abs(r["acc"].get(k, 0.0)) > 0.5 for r in runs)]
+    return [{"label": lab, "a": base["acc"].get(k, 0.0), "b": run["acc"].get(k, 0.0)}
+            for lab, k in keys]
+
+
+def _cash_curve(run: dict, base: dict, out: dict, hours: int) -> dict:
+    """The pair's money year by year, for the cash chart.
+
+    With a battery between the two, from the side that buys it: year 0 is the
+    battery's price, each year after adds its discounted saving net of O&M and
+    of the replacement in its year (``Lifecycle.cumulative``), so the last year
+    is the net present value the verdict states. Without one, what ``run``
+    saves on ``base`` added up in present value from year 1. ``lo``/``hi`` are
+    the curve at the low and high end of the yearly saving."""
+    n = _pair_numbers(run, base, out, hours)
+    years = n["years"]
+    if n["lcs"]:
+        low, high = n["lcs"]
+        cap = low.capex
+        lo = [-cap] + [c - cap for c in low.cumulative]
+        hi = [-cap] + [c - cap for c in high.cumulative]
+        p_hi, p_lo = high.discounted_payback_years, low.discounted_payback_years
+        # (year, None) when only the high end of the saving pays it back
+        pay = None if p_hi is None else (p_hi, p_lo)
+        buyer, other = (run, base) if n["extra"] > 0 else (base, run)
+        return dict(years=list(range(0, years + 1)), lo=lo, hi=hi, payback=pay,
+                    replace_year=low.replace_year, capex=cap, buyer=buyer, other=other,
+                    battery=True, n=n)
+    life = out.get("life") or {}
+    esc, disc = float(life.get("escalation", 0.0)), float(life.get("discount", 0.0))
+    curves = [Y.lifecycle(0.0, years=years, escalation=esc, discount=disc,
+                          annual_saving=v).cumulative for v in n["year"]]
+    return dict(years=list(range(1, years + 1)), lo=curves[0], hi=curves[1], payback=None,
+                replace_year=0, capex=0.0, buyer=run, other=base, battery=False, n=n)
+
+
+def _unit_names(runs: list[dict]) -> list[str]:
+    """Every engine any scenario solved, in the order the dispatch chart draws
+    them, so an engine wears one colour everywhere on the page."""
+    names: list[str] = []
+    for r in runs:
+        for u in r["res"]["sizes"].get("fueltech_units") or []:
+            if u["name"] not in names:
+                names.append(u["name"])
+    return names
+
+
+def _mix_rows(run: dict, base: dict, runs: list[dict], out: dict, hours: int):
+    """Each scenario's energy by source over the horizon -- every engine's own
+    output and the grid purchase -- and the logger's where there is one.
+    Returns (rows, sources) for ``P.energy_mix_chart``."""
+    names = _unit_names(runs)
+    sources = [(nm, P.unit_color(i)) for i, nm in enumerate(names)]
     rows = []
     meas = out.get("measured")
     if meas and len(meas.get("gpu") or []) == hours:
-        m = measured_account(meas, out.get("price_raw") or out["price"], out["units"])
-        rows.append({"label": "Measured (logger)", "role": "measured", "total": m["total"],
-                     "parts": {lab: m[k] for lab, k in parts if k in m}})
+        units = out["units"]
+        live = [str(u[U_NAME]) for _, u in units.iterrows() if float(u[U_KW] or 0.0) > 0]
+        per = meas.get("gpu_units") or []
+        buy = meas.get("buy") or [max(0.0, g) for g in meas["grid"]]
+        if per and len(per) == len(live):
+            parts = {nm: float(sum(s)) for nm, s in zip(live, per)}
+            tips = {nm: f"{sum(1 for kw in s if kw > ON_KW):,} h above {ON_KW:,.0f} kW"
+                    for nm, s in zip(live, per)}
+            for nm in live:
+                if nm not in names:
+                    names.append(nm)
+                    sources.append((nm, P.unit_color(len(sources))))
+        else:
+            parts, tips = {"Engines (logger)": float(sum(meas["gpu"]))}, {}
+            sources.append(("Engines (logger)", P.CEILING))
+        parts["Grid"] = float(sum(buy))
+        tips["Grid"] = f"peak {max(buy, default=0.0):,.0f} kW"
+        rows.append({"label": "Measured (logger)", "parts": parts, "tips": tips})
+    for r in runs:
+        tag = "  · scenario" if r is run else "  · against" if r is base else ""
+        units = r["res"]["sizes"].get("fueltech_units") or []
+        on_of = r["res"]["series"].get("fueltech_unit_on") or {}
+        parts = {u["name"]: float(u["energy_kwh"]) for u in units}
+        tips = {}
+        for u in units:
+            on = on_of.get(u["name"])
+            h = (sum(1 for x in on if x > 0.5) if on is not None
+                 else int(u.get("running_hours") or 0))
+            tips[u["name"]] = f"{h:,} h on · {int(u.get('starts') or 0):,} starts"
+        parts["Grid"] = float(r["acc"]["grid_kwh"])
+        tips["Grid"] = f"peak {r['acc']['peak']:,.0f} kW"
+        rows.append({"label": r["name"] + tag, "parts": parts, "tips": tips})
+    sources.append(("Grid", P.GRID_COLOR))
+    return rows, sources
+
+
+def _ladder_rows(run: dict, base: dict, runs: list[dict], out: dict, hours: int) -> list[dict]:
+    """Every scenario's operating cost over the horizon, and the logger's, each
+    with its per-year figure for the hover panel."""
+    cur = out["currency"]
+    money = lambda v: _money(v, cur)
+    rows = []
+    meas = out.get("measured")
+    if meas and len(meas.get("gpu") or []) == hours:
+        price = out.get("price_raw") or out["price"]
+        m = measured_account(meas, price, out["units"])
+        yr = _annual(out, hours, m["total"], measured_hourly(meas, price, out["units"]))
+        rows.append({"label": "Measured (logger)", "short": "Measured", "role": "measured",
+                     "total": m["total"], "tip": _span(yr, money, cur)})
     for r in runs:
         role = "scenario" if r is run else "against" if r is base else "other"
         tag = {"scenario": "  · scenario", "against": "  · against", "other": ""}[role]
-        rows.append({"label": r["name"] + tag, "role": role, "total": r["acc"]["total"],
-                     "parts": {lab: r["acc"].get(k, 0.0) for lab, k in parts}})
-    # the difference, said from the side that buys the battery where one does
-    a, b = (base, run) if (base["battery"] and not run["battery"]) else (run, base)
-    delta = [{"label": lab, "saving": b["acc"].get(k, 0.0) - a["acc"].get(k, 0.0)}
-             for lab, k in parts]
-    delta.append({"label": "Total", "saving": b["acc"]["total"] - a["acc"]["total"]})
-    left, right = st.columns([1.15, 1], gap="medium")
+        rows.append({"label": r["name"] + tag, "short": _short(r["name"]) + tag.replace("  ", " "),
+                     "role": role, "total": r["acc"]["total"],
+                     "tip": _span(_run_year(r, out, hours), money, cur)})
+    return rows
+
+
+def _matchup(run: dict, base: dict, runs: list[dict], out: dict, hours: int) -> None:
+    """The pair face to face before any figure: who is who, what each carries,
+    what each costs a year, and the difference between them in the middle."""
+    cur = out["currency"]
+    money = lambda v: _money(v, cur)
+    fair = _fair_base(runs)
+    span = _span_words(hours)
+    bat = out["bat"]
+
+    def side(r: dict, role: str) -> dict:
+        acc = r["acc"]
+        chips = ([f"battery {bat['kwh']:,.0f} kWh · {bat['kw']:,.0f} kW"] if r["battery"]
+                 else [("no battery", "dim")])
+        if r is fair:
+            chips.append("cheapest without a battery")
+        if r.get("starts") is not None:
+            chips.append(f"≤ {r['starts']} starts a day")
+        return {"letter": _short(r["name"]), "role": role, "name": _rest(r["name"]),
+                "chips": chips, "key": "operating cost per year",
+                "fig": _span(_run_year(r, out, hours), money, cur),
+                "mini": (f"{_mill(acc['total'], cur, 1)} over the {span}<br>"
+                         f"engines {acc['gen_kwh'] / 1e3:,.0f} MWh · grid "
+                         f"{acc['grid_kwh'] / 1e3:,.0f} MWh · "
+                         f"{int(round(acc['starts'])):,} starts")}
+
+    rs, bs = _short(run["name"]), _short(base["name"])
+    d = run["acc"]["total"] - base["acc"]["total"]
+    pct = d / base["acc"]["total"] * 100 if abs(base["acc"]["total"]) > 0.5 else 0.0
+    lo, hi = _gain_year(run, base, out, hours)        # what run saves a year
+    if abs(d) < 0.5:
+        delta, says = ("0", "ghp-dim"), "they cost the same to run"
+    elif d < 0:
+        delta, says = (_m_head(d, cur), "ghp-pos"), f"{rs} is cheaper to run"
+    else:
+        delta, says = (_m_head(d, cur), "ghp-neg"), f"{rs} costs more to run"
+    A._CUR = cur
+    year = _span((-hi, -lo), A._signed, cur, signed=True)
+    P.matchup(side(run, "scenario"),
+              {"head": f"{rs} against {bs}", "delta": delta,
+               "under": f"over the {span} · {pct:+.1f} %".replace("-", "−") + f"<br>{year} a year",
+               "says": says},
+              side(base, "against"))
+
+
+def _m_head(v: float, cur: str) -> str:
+    """Signed money in millions, the matchup's headline: −7.8 M ₸."""
+    sign = "+" if v > 0.05e6 else "−" if v < -0.05e6 else ""
+    body = f"{abs(v) / 1e6:,.1f}"
+    return f"{sign}${body}M" if cur == "$" else f"{sign}{body} M {cur}"
+
+
+def _pair_charts(run: dict, base: dict, runs: list[dict], out: dict, hours: int) -> None:
+    """Four pictures of the picked pair, two by two.
+
+    Top left, the bridge from what ``base`` costs to what ``run`` costs, part
+    by part: which parts make the difference and that they add up to it. Top
+    right, the money year by year over the analysis period -- the battery's,
+    from the side that buys it, when one is between them. Bottom left, every
+    scenario's cost on one axis against ``base``, the logger's too. Bottom
+    right, where each one's energy came from, engine by engine and the grid."""
+    cur = out["currency"]
+    span = _span_words(hours)
+    rs, bs = _short(run["name"]), _short(base["name"])
+
+    left, right = st.columns([1.08, 1], gap="medium")
     with left:
-        P.sub(f"Operating cost over the {span}")
-        with st.container(key="gd_cost_chart"):
-            st.altair_chart(P.scenario_cost_chart(rows, cur, scope="gd_cost_chart"),
-                            use_container_width=True)
+        P.sub(f"From {bs}'s cost to {rs}'s, part by part")
+        with st.container(key="gd_bridge_chart"):
+            st.altair_chart(P.cost_bridge_chart(
+                {"letter": bs, "total": base["acc"]["total"]}, _bridge_steps(run, base, runs),
+                {"letter": rs, "total": run["acc"]["total"]}, cur, scope="gd_bridge_chart"),
+                use_container_width=True)
+        P.legend([(f"{rs} pays more", P.DISCHARGE), (f"{rs} pays less", P.SAVE),
+                  (f"{rs} against {bs}, all parts", P.INK), (f"{bs}'s cost: the zero line", P.CHARGE)])
+        P.caption(f"operating cost over the {span}: generation is fuel and O&M, "
+                  "starts and battery wear as charged in the objective")
     with right:
-        P.sub(f"{_short(a['name'])} against {_short(b['name'])}, part by part")
-        with st.container(key="gd_delta_chart"):
-            st.altair_chart(P.pair_delta_chart(delta, cur, scope="gd_delta_chart"),
+        c = _cash_curve(run, base, out, hours)
+        n, life = c["n"], out.get("life") or {}
+        esc, disc = float(life.get("escalation", 0.0)), float(life.get("discount", 0.0))
+        ub, uo = _short(c["buyer"]["name"]), _short(c["other"]["name"])
+        if c["battery"]:
+            P.sub(f"{ub}'s battery against {uo}, year by year")
+        else:
+            P.sub(f"What {rs} saves on {bs}, added up over {n['years']} years")
+        with st.container(key="gd_cash_chart"):
+            st.altair_chart(P.cash_curve_chart(
+                c["years"], c["lo"], c["hi"], cur, payback=c["payback"],
+                replace_year=c["replace_year"], horizon=n["years"], scope="gd_cash_chart",
+                title=("battery's cash, discounted" if c["battery"] else
+                       "saving, present value")), use_container_width=True)
+        rep = (f", less its replacement in year {c['replace_year']}" if c["replace_year"] else "")
+        rate = (f"escalated {esc * 100:.2f} % and discounted {disc * 100:.2f} % a year"
+                if esc or disc else "neither escalated nor discounted")
+        if c["battery"]:
+            ranged = any(abs(a - b) > 0.5 for a, b in zip(c["lo"], c["hi"]))
+            P.caption(f"year 0 is the battery's price, <b>{_money(c['capex'], cur)}</b>; each "
+                      f"year adds what it saves less its O&M{rep}, {rate}. The line ends on the "
+                      "net present value"
+                      + ("; solid at the low end of the yearly saving, dashed at the high end, "
+                         "the range between them shaded — a month was not measured"
+                         if ranged else ""))
+        else:
+            P.caption(f"no battery between them, so nothing to repay; the yearly saving "
+                      f"{rate}, added up")
+
+    left, right = st.columns([1, 1.08], gap="medium")
+    with left:
+        P.sub(f"Every scenario against {bs}, over the {span}")
+        with st.container(key="gd_ladder_chart"):
+            st.altair_chart(P.scenario_ladder_chart(
+                _ladder_rows(run, base, runs, out, hours), cur,
+                ref={"letter": bs, "total": base["acc"]["total"]}, scope="gd_ladder_chart"),
+                use_container_width=True)
+        P.legend([(f"{rs} · scenario", P.INK), (f"{bs} · against", P.CHARGE)]
+                 + ([("other scenario", P.CEILING)] if len(runs) > 2 else [])
+                 + ([("the logger's own operation", P.GRID_COLOR)]
+                    if out.get("measured") else []))
+    with right:
+        rows, sources = _mix_rows(run, base, runs, out, hours)
+        P.sub(f"Where the energy came from over the {span}")
+        with st.container(key="gd_mix_chart"):
+            st.altair_chart(P.energy_mix_chart(rows, sources, scope="gd_mix_chart"),
                             use_container_width=True)
+        P.legend(sources)
+        held = [r for r in (run, base) if r["battery"]]
+        if held:
+            r = held[0]
+            kwh = float(out["bat"].get("kwh") or 0.0)
+            cyc = r["acc"]["discharge"] / kwh if kwh > 0 else 0.0
+            P.caption(f"the battery in {_short(r['name'])} delivered "
+                      f"<b>{r['acc']['discharge'] / 1e3:,.0f} MWh</b> over the {span} "
+                      f"({cyc:,.0f} full cycles), charged from the engines and the grid "
+                      "drawn here — so it moves when they run, not how much they make")
 
 
 def _economics(run: dict, others: list[dict], out: dict, hours: int,
@@ -2840,6 +3067,7 @@ def render() -> None:
         T.panel_head("Compare two scenarios")
         run, base = _pick_pair(runs)
         others = [r for r in runs if r is not run]
+        _matchup(run, base, runs, out, H)
         _pair_verdict(run, base, runs, out, H)
         _pair_charts(run, base, runs, out, H)
         P.sub(f"{run['name']} against every other scenario")
