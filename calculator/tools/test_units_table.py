@@ -75,17 +75,29 @@ def b_page() -> None:
         cols = json.loads(ed[0].proto.columns)
         check(f"{values}: Spread services is hidden",
               cols.get(D.U_MSPACE, {}).get("hidden") is True, str(cols.get(D.U_MSPACE)))
-        shown = [c for c in (D.U_KW, D.U_MIN, D.U_UP, D.U_DOWN, D.U_MEV, D.U_MDUR, D.U_MPU,
-                             D.U_MINT, D.U_MCOST) if not cols.get(c, {}).get("hidden")]
-        check(f"{values}: the other service columns still show",
-              len(shown) == 9, str(shown))
+        # the service columns left on show are the two of test_service_columns.py
+        shown = [c for c in (D.U_KW, D.U_MIN, D.U_UP, D.U_DOWN, D.U_MINT, D.U_MCOST)
+                 if not cols.get(c, {}).get("hidden")]
+        check(f"{values}: the columns around it still show",
+              len(shown) == 6, str(shown))
         df = at.session_state["gd_units_df"]
         check(f"{values}: every row still carries the column, on",
               D.U_MSPACE in df.columns and bool(df[D.U_MSPACE].all()), str(list(df[D.U_MSPACE])))
 
 
 def c_solved() -> None:
-    print("\nC. what it does, solved")
+    # Spacing belongs to the core's scheduled maintenance, which the page poses
+    # only with SERVICE_IN_CORE (services are otherwise priced per running hour,
+    # test_service_columns.py); it is switched on here to show what it does.
+    print("\nC. what it does, solved (the core's scheduled maintenance, SERVICE_IN_CORE)")
+    D.SERVICE_IN_CORE = True
+    try:
+        _c_solved()
+    finally:
+        D.SERVICE_IN_CORE = False
+
+
+def _c_solved() -> None:
     load = [1500.0] * 96
     sc = dict(D.default_scenarios().iloc[0])
     u = D.default_units("2 units (Jenbacher + TEDOM)")

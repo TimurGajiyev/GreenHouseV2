@@ -2511,6 +2511,79 @@ still replaces the count, and the spacing with it.
 * the column is hidden in both value sets, and the other service columns still show;
 * solved, four services fall one in each quarter of the horizon.
 
+## Revised 02.11.2026 (3): service, two columns instead of six
+
+The units table had six service columns driving the core's scheduled-maintenance model (PyPSA's
+formulation, with HOMER Pro's running-hour trigger):
+* a count per horizon;
+* hours per service;
+* capacity lost;
+* spread or free;
+* a service every N running hours, which silently replaced the count;
+* a cost per service.
+
+They were tested before anything was changed (`tools/service_columns_study.py`, ЖКПЗ, 14 measured
+days, scenario A, both value sets).
+
+| What was set | One window | Every day on its own (the default for a measured plant) |
+|---|---|---|
+| 1 service × 8 h, availability as measured | costs **nothing**: it lands in hours the logger shows the engine down | **+4.6 M ₸**: one service *every day* |
+| 2 services × 8 h | +0.08 M (ours) / +0.14 M ₸ (his) | **+12.2 M / +7.9 M ₸**: two every day, engines 615 → 224 h |
+| 4 services × 8 h | +0.32 / +0.52 M ₸ | error: 32 h do not fit in 24 |
+| a cost per service | in the objective, **not in the accounts**: the tables show 2.0 M ₸ less | the same, 28 M ₸ apart |
+| one service every 100 run h | solver stopped at its **300 s** limit | error: no interval fits in 24 h |
+| one service every 2,000 run h (the OEM's) | error: needs 2,008 h | error |
+| a count and an interval | the interval wins, nothing says so | error |
+
+The default way a measured plant is solved therefore cannot take a service plan at all.
+
+**Now two columns**, written the way a service plan is written: **Service every (run h)** and
+**Service cost**.
+* Each running hour uses 1/N of a service, so it carries C / N. For example, 1,500,000 ₸ every
+  2,000 h is 750 ₸ per running hour.
+* That is added to the O&M per running hour the core already prices (`om_cost_per_running_hour`),
+  so the solver sees it hour by hour.
+* It is the same in a window, day by day and on typical days, with or without measured
+  availability.
+* The accounts include it, so they add up to the objective.
+* One of the two columns without the other prices nothing, and a caption says so.
+
+What it leaves out is the service's own downtime:
+* At the OEM's interval, 8 h in 2,000 is 0.4 % of running hours.
+* On these engines, always available, one 8-hour service cost about 16,000 ₸ per engine over
+  14 days.
+* On a measured plant the logger's own stops already include the real services.
+
+Count, hours, capacity lost and spread are hidden, not removed. The core's scheduled maintenance
+is untouched (`reopt_core` is a03fbd3's, byte for byte), and `SERVICE_IN_CORE = True` poses the
+six columns as before.
+
+Against the core's own running-hour trigger, on windows short enough for it to solve (a 2–4 h
+service every 30–50 run h, 96–168 h):
+* the number of services agrees: 3 per engine against 2.9–3.2 by running hours ÷ interval;
+* the trigger stopped at the solver's 300 s limit on every one of them without proving its
+  optimum, while per running hour solved in under half a second;
+* per running hour costs 3–11 % less there (−4.7, −2.8, −11.1, −4.5 %). That is mostly the
+  downtime, which at those short intervals is 7–8 % of running hours, 20 times the OEM's, and
+  partly the gap the trigger left open.
+
+`tools/test_service_columns.py`, 53 checks:
+* **Part A** reproduces each failure of the six columns.
+* **Part B**, both value sets, three ways of solving, checks:
+  * nothing changes with both columns at zero;
+  * the hidden columns change nothing;
+  * an OEM interval poses everywhere;
+  * the accounts add up to the objective;
+  * the service part equals hours on × C / N from the solver's own on/off series;
+  * running hours never rise as a service gets dearer;
+  * on a measured plant the services are not free.
+* **Part C**, the page in both value sets:
+  * two columns shown, four hidden;
+  * the rate stated under the table and in the inputs;
+  * a solve with services on;
+  * accounts equal to objectives.
+* **Part D** checks the core is unchanged.
+
 ## Reproduce
 
 ```bash
@@ -2524,6 +2597,8 @@ python calculator/tools/test_tailscale_values.py    # his values on the page; ou
 python calculator/tools/test_compare_viz.py         # the comparison's pictures, every pair, both values
 python calculator/tools/test_app_entry.py           # the app opens on the dispatch study; the REopt tool hidden
 python calculator/tools/test_units_table.py         # Spread services hidden and always on
+python calculator/tools/test_service_columns.py     # service: two columns, priced per running hour
+python calculator/tools/service_columns_study.py    # the six columns as they were (~45 min)
 python calculator/tools/test_tailscale_values.py --compare=K   # a year on his values against his run
                                                     # K, M or KM, one at a time, ~6 min each
 python calculator/tools/battery_real_data.py report --grid-price 46.25   # after a solve at that price

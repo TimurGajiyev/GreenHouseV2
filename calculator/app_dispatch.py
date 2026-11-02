@@ -344,6 +344,49 @@ def _num(v) -> float:
     return 0.0 if math.isnan(x) else x
 
 
+# ---- service: two columns, priced per running hour ---------------------------
+# The units table used to carry six service columns driving the core's
+# scheduled-maintenance model: a count per horizon, its duration, the capacity
+# lost, how the count is spread, a running-hour interval that silently
+# overrode the count, and a cost per service. Tested on ЖКПЗ's measured days
+# (REPORT.md, "Revised 02.11.2026 (3)"), they contradicted each other and the
+# page's own solving:
+#   * a measured plant is solved day by day by default, and every day was
+#     posed with the same row -- "2 services" became two services EVERY DAY
+#     (+12.2 M ₸ on 14 days), four 8-hour ones an error, and any running-hour
+#     interval an error, since no interval fits in 24 hours;
+#   * with availability as measured, a service went into hours the logger
+#     already shows the engine down, and cost nothing;
+#   * the cost per service reached the solver's objective but not the
+#     accounts, so the tables and the objective parted by the services' price;
+#   * the running-hour interval took the solver to its 300 s limit on 14 days.
+# Now two columns remain, as a service plan is written: one service every N
+# RUNNING hours, at C each. Every running hour then uses 1/N of a service, so
+# it carries C / N on top of the O&M per running hour -- the core's existing
+# om_cost_per_running_hour, the solver seeing it hour by hour. Nothing new in
+# the core, the same in every way of solving, and nothing to contradict. What
+# it leaves out is the service's own downtime: 8 h in 2,000 is 0.4 %, worth
+# ~16,000 ₸ a service on these engines when they are always available, and
+# already in the logger's stops on a measured plant.
+#
+# The other four columns are hidden, not removed, and the core's scheduled-
+# maintenance model is untouched. SERVICE_IN_CORE = True poses them as before.
+SERVICE_IN_CORE = False
+
+
+def service_rate(u) -> float:
+    """What a running hour costs in services: one every N running hours at C,
+    so C / N. 0 unless both are set."""
+    n, c = _num(u.get(U_MINT)), _num(u.get(U_MCOST))
+    return c / n if n > 0 and c > 0 else 0.0
+
+
+def run_rate(u) -> float:
+    """Everything an hour of running costs beyond fuel: the O&M per running
+    hour and, unless the core schedules the services, their share C / N."""
+    return _num(u.get(U_OMH)) + (0.0 if SERVICE_IN_CORE else service_rate(u))
+
+
 def _by_unit(live: pd.DataFrame, value, fmt) -> tuple:
     """One input across the engines: (value, text). One figure when every engine
     has it; else each engine's own, by name (a tuple of values, and the names
@@ -434,6 +477,11 @@ def _sources_panel(units: pd.DataFrame, grid: float, bat: dict, cur: str, y: dic
         if first is not None and any(_num(u.get(U_OMH)) for _, u in live.iterrows()):
             omh = _by_unit(live, lambda u: _num(u.get(U_OMH)), lambda v: f"{v:,.0f} {cur}/h")
             rows.append(["O&M per running hour", omh[1], (typed, ""), ""])
+        if (first is not None and not SERVICE_IN_CORE
+                and any(service_rate(u) for _, u in live.iterrows())):
+            svc = _by_unit(live, lambda u: service_rate(u),
+                           lambda v: f"{v:,.0f} {cur}/h" if v else "—")
+            rows.append(["Services, per running hour", svc[1], (typed, ""), ""])
         if bat.get("own_kw"):
             rows.append(["Battery's own use", f"{bat['own_kw']:,.0f} kW", (typed, ""), ""])
         # the source texts stay in each row, but the page shows three columns
@@ -476,7 +524,7 @@ def fuel_curve(u) -> tuple[float, float, float] | None:
 def unit_hour_cost(u, kw: float, on: float) -> float:
     """What one unit's hour of output costs: fuel by the curve, plus O&M."""
     om = float(u.get(U_OM) or 0.0)
-    run = _num(u.get(U_OMH)) * (1.0 if on > 0.5 else 0.0)
+    run = run_rate(u) * (1.0 if on > 0.5 else 0.0)
     c = fuel_curve(u)
     if c is None:
         return (float(u[U_COST] or 0.0) + om) * kw + run
@@ -614,7 +662,35 @@ def fleet_capex(units: pd.DataFrame) -> float:
 
 
 def _maint_note(units: pd.DataFrame, hours: int) -> None:
+    """What the two service columns come to: per unit, the cost each running
+    hour carries, and a word where only one of the two is filled in (a cost
+    with no interval, or an interval with no cost, prices nothing)."""
+    if SERVICE_IN_CORE:
+        _maint_note_core(units, hours)
+        return
+    rows, half = [], []
+    for _, u in units.iterrows():
+        if _num(u.get(U_KW)) <= 0:
+            continue
+        n, c, name = _num(u.get(U_MINT)), _num(u.get(U_MCOST)), u.get(U_NAME)
+        if n > 0 and c > 0:
+            rows.append(f"**{name}**: one service every **{n:,.0f} running hours** at "
+                        f"{c:,.0f} = **{c / n:,.0f} per running hour**, charged on every hour "
+                        "the unit runs")
+        elif n > 0 or c > 0:
+            half.append(str(name))
+    if rows:
+        st.caption("Services — " + "  \n".join(rows) + "  \nThe service's own downtime is "
+                   "not modelled: a shift in 1,000–2,000 running hours is under 1 % of them, "
+                   "and on a measured plant the logger's stops already hold it.")
+    if half:
+        st.caption("Services: " + ", ".join(f"**{h}**" for h in half) + " — set both the "
+                   "interval and the cost; one without the other prices nothing.")
+
+
+def _maint_note_core(units: pd.DataFrame, hours: int) -> None:
     """What the service settings mean in the units the OEM writes the plan in.
+    Used only when SERVICE_IN_CORE poses the core's scheduled maintenance.
 
     A gas engine's interval is in OPERATING hours: TEDOM and Jenbacher minor
     service is every 1,000-2,000 running hours, one shift (4-8 h) out. Running
@@ -870,7 +946,7 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
         fleet.append(M.FuelTechInputs(
             enabled=True, kind="CHP", label="CHP", name=str(u[U_NAME] or f"Unit {len(fleet) + 1}"),
             installed_cost_per_kw=0.0, om_cost_per_kw=0.0, om_cost_per_kwh=_om,
-            om_cost_per_running_hour=_num(u.get(U_OMH)),
+            om_cost_per_running_hour=run_rate(u),
             fuel_cost_per_mmbtu=_fuel, electric_efficiency_full_load=_e100,
             electric_efficiency_half_load=_e50,
             thermal_efficiency_full_load=0.0,
@@ -881,15 +957,21 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
             # it spills like the preset rows do
             can_curtail=bool(True if pd.isna(u.get(U_SPILL)) else u.get(U_SPILL)),
             max_starts_per_day=(st_over if st_over is not None else _opt_int(u.get(U_MAXST))),
-            maintenance_events=max(0, _opt_int(u.get(U_MEV)) or 0),
-            maintenance_duration_hours=max(0, _opt_int(u.get(U_MDUR)) or 0),
+            # the core schedules services only when SERVICE_IN_CORE; otherwise a
+            # duration of 0 creates no maintenance variable at all, and the
+            # services are in om_cost_per_running_hour above (run_rate)
+            maintenance_events=max(0, _opt_int(u.get(U_MEV)) or 0) if SERVICE_IN_CORE else 0,
+            maintenance_duration_hours=(max(0, _opt_int(u.get(U_MDUR)) or 0)
+                                        if SERVICE_IN_CORE else 0),
             maintenance_pu=min(1.0, max(0.0, float(u.get(U_MPU) or 100.0) / 100.0)),
             # always even while the column is hidden (SPREAD_ALWAYS_ON); a
             # row added on the page has no value, and that reads as on too
             maintenance_spacing=("even" if SPREAD_ALWAYS_ON or pd.isna(u.get(U_MSPACE))
                                  or bool(u.get(U_MSPACE)) else "free"),
-            maintenance_interval_running_hours=max(0.0, float(u.get(U_MINT) or 0.0)),
-            maintenance_cost_per_event=max(0.0, float(u.get(U_MCOST) or 0.0)),
+            maintenance_interval_running_hours=(max(0.0, float(u.get(U_MINT) or 0.0))
+                                                if SERVICE_IN_CORE else 0.0),
+            maintenance_cost_per_event=(max(0.0, float(u.get(U_MCOST) or 0.0))
+                                        if SERVICE_IN_CORE else 0.0),
             production_factor_series=(list(avail[len(fleet)][:len(loads)])
                                       if avail is not None else None),
             macrs_option_years=0, macrs_bonus_fraction=0.0, federal_itc_fraction=0.0))
@@ -969,7 +1051,7 @@ def account(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> 
     def _gen_cost(r):
         u = by_name.get(r["name"])
         c = fuel_curve(u) if u is not None else None
-        run = _hours(r) * _num(u.get(U_OMH)) if u is not None else 0.0
+        run = _hours(r) * run_rate(u) if u is not None else 0.0
         if c is None:
             return r["energy_kwh"] * cost_of.get(r["name"], (0.0, 0.0))[0] + run
         # the solver's own fuel burn (MMBtu) at the curve's price, plus O&M
@@ -1091,7 +1173,7 @@ def hourly(res: dict, price: list[float], units: pd.DataFrame, wear: float) -> d
     on_of = ser.get("fueltech_unit_on") or {}
     for name, kw in (ser.get("fueltech_unit_kw") or {}).items():
         u = by_name.get(name)
-        if u is not None and (fuel_curve(u) is not None or _num(u.get(U_OMH)) > 0):
+        if u is not None and (fuel_curve(u) is not None or run_rate(u) > 0):
             on = on_of.get(name) or [1.0 if x > 1e-6 else 0.0 for x in kw]
             for t in range(H):
                 energy[t] += unit_hour_cost(u, kw[t], on[t])
@@ -1732,7 +1814,7 @@ def measured_account(meas: dict, price: list[float], units: pd.DataFrame,
                 for u in live]
         e_cost = sum(r[0] for r in rows) / len(rows) if rows else 0.0
         s_cost = sum(r[1] for r in rows) / len(rows) if rows else 0.0
-        h_cost = sum(_num(u.get(U_OMH)) for u in live) / len(live) if live else 0.0
+        h_cost = sum(run_rate(u) for u in live) / len(live) if live else 0.0
         starts = sum(1 for a, b in zip(gpu, gpu[1:]) if a < on_kw <= b)
         gen_cost = gen * e_cost + h_cost * sum(1 for g in gpu if g > on_kw)
         start_cost = starts * s_cost
@@ -1768,7 +1850,7 @@ def measured_hourly(meas: dict, price: list[float], units: pd.DataFrame,
             for u in live]
     e_cost = sum(r[0] for r in rows) / len(rows) if rows else 0.0
     s_cost = sum(r[1] for r in rows) / len(rows) if rows else 0.0
-    h_cost = sum(_num(u.get(U_OMH)) for u in live) / len(live) if live else 0.0
+    h_cost = sum(run_rate(u) for u in live) / len(live) if live else 0.0
     for t in range(H):
         cost[t] += gpu[t] * e_cost + (h_cost if gpu[t] > on_kw else 0.0)
         if t and gpu[t - 1] < on_kw <= gpu[t]:
@@ -2543,35 +2625,42 @@ def render() -> None:
                 U_MAXST: st.column_config.NumberColumn(
                     min_value=0, step=1, format="%d",
                     help="At most this many starts in any calendar day. Blank = no limit."),
-                U_MEV: st.column_config.NumberColumn(
+                # hidden, not removed: the core's scheduled-maintenance inputs, shown
+                # and read only when SERVICE_IN_CORE (see service_rate)
+                U_MEV: (st.column_config.NumberColumn(
                     min_value=0, step=1, format="%d",
                     help="Scheduled services in the horizon, one in each equal slice "
                          "of it, as a service plan reads; the optimiser picks the "
-                         "hour inside each slice. 0 = no maintenance modelled."),
-                U_MDUR: st.column_config.NumberColumn(
+                         "hour inside each slice. 0 = no maintenance modelled.")
+                    if SERVICE_IN_CORE else None),
+                U_MDUR: (st.column_config.NumberColumn(
                     min_value=0, step=1, format="%d",
                     help="Hours the unit is out per service. A gas engine's minor "
-                         "service is one shift: TEDOM and Jenbacher practice is 4-8 h."),
-                U_MPU: st.column_config.NumberColumn(
+                         "service is one shift: TEDOM and Jenbacher practice is 4-8 h.")
+                    if SERVICE_IN_CORE else None),
+                U_MPU: (st.column_config.NumberColumn(
                     min_value=0.0, max_value=100.0, step=5.0, format="%.0f",
                     help="Capacity the service takes away. 100% = fully out, which is "
-                         "what a service visit is; below that is a derate."),
+                         "what a service visit is; below that is a derate.")
+                    if SERVICE_IN_CORE else None),
                 # hidden, not removed: every row keeps it (on), and services are
                 # always spread evenly (SPREAD_ALWAYS_ON)
                 U_MSPACE: None,
                 U_MINT: st.column_config.NumberColumn(
-                    min_value=0, step=100, format="%d",
-                    help="Service every this many RUNNING hours — how INNIO Jenbacher "
-                         "and TEDOM write the interval (minor service 1,000–2,000 h). "
-                         "Set it and the count above is ignored: the number of "
-                         "services becomes an outcome of how much the unit runs, and a "
-                         "unit that never runs is never serviced. 0 = use the count."),
+                    "Service every (run h)", min_value=0, step=100, format="%d",
+                    help="One service every this many RUNNING hours, as the OEM's plan "
+                         "writes it -- INNIO Jenbacher and TEDOM minor service is every "
+                         "1,000-2,000 h. With the service cost beside it, every running "
+                         "hour carries cost ÷ interval, so the optimiser sees the service "
+                         "hour by hour. 0 = no services."),
                 U_MCOST: st.column_config.NumberColumn(
-                    min_value=0.0, format="%.0f",
-                    help="Parts and labour for one service. The interval is a ceiling "
-                         "on banked hours, so with no price an extra service in an "
-                         "idle hour is free and the solver may take it. Any positive "
-                         "figure makes the count the minimum the interval requires."),
+                    f"Service cost ({cur})", min_value=0.0, format="%.0f",
+                    help="Parts and labour for one service. Only read with an interval "
+                         "beside it: 1,500,000 every 2,000 h is 750 per running hour. "
+                         "The service's own downtime is not modelled (8 h in 2,000 is "
+                         "0.4 %; on a measured plant the logger's stops already hold "
+                         "it). If O&M per running hour is a full service contract "
+                         "already -- as in the Tailscale app's values -- leave this at 0."),
             })
         wear_h = st.number_input(
             "Start wear, equivalent running hours per start (report only)", 0.0, 100.0,
