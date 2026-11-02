@@ -629,6 +629,11 @@ def _starts_section(sh: dict, series: dict, idx: pd.DatetimeIndex, res: dict) ->
                     f"{'es' if t['k'] != 1 else ''}, each one window "
                     f"({t.get('starts_from_joins', 0):,} of {sum(totals):,} starts come from "
                     f"the joins between stretches)")
+    elif res.get("typical") and res["typical"].get("every"):
+        t = res["typical"]
+        bits.append(f"every day is solved on its own and laid end to end "
+                    f"({t.get('starts_from_joins', 0):,} of {sum(totals):,} starts come from "
+                    f"the joins between days)")
     elif res.get("typical"):
         t = res["typical"]
         bits.append(f"the {'year' if H == HOURS else 'horizon'} is replayed from "

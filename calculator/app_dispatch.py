@@ -95,8 +95,14 @@ COVER_EVERY = "Every day solved on its own"
 # is then exactly REopt's window. On our values it put the battery's saving 1 %
 # above every-day-on-its-own (REPORT.md, "Revised 02.11.2026 (5)").
 COVER_STRETCH = "Every unbroken stretch as one window (REopt's way)"
-# The three older ways are hidden, not removed: SHOW_ALL_COVERS = True offers
-# them again beside this one.
+# It is also slow: on the deployed page a full horizon with a battery ran past
+# half an hour at stretch 6 of 48, and on the Tailscale app's values a battery
+# stretch of a few days does not prove its optimum in 300 s. Every day solved on
+# its own is the one way shown (COVER_SHOWN): about 2 minutes on our values and
+# 5.5 on his, every day proven to 0.01 %, and within about 1 % of the stretch
+# way on the battery's saving (REPORT.md, "Revised 02.11.2026 (6)"). The other
+# ways are hidden, not removed: SHOW_ALL_COVERS = True offers them all again.
+COVER_SHOWN = COVER_EVERY
 SHOW_ALL_COVERS = False
 
 # Engine availability on a measured plant. The logger says when each engine
@@ -1796,7 +1802,7 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int,
             "replacement (Battery panel); the table below discounts it",
             *([_fair_note(base)] if base is not None else []),
             _year_basis(out, hours)]
-    if hours != MAX_H and not out.get("time") and not out.get("typical"):
+    if annualised_window(out, hours):
         # How good that scaling is, measured rather than assumed: tools/
         # test_year_horizon.py cut a solved year 52 ways and annualised each week.
         note.append("this is an annualisation of one window, not a full-year run. Measured "
@@ -1804,6 +1810,17 @@ def _economics(run: dict, others: list[dict], out: dict, hours: int,
                     "−15% and +23% of it, a single month up to +18%. The payback carries "
                     "that error")
     P.note(note)
+
+
+def annualised_window(out: dict, hours: int) -> bool:
+    """Is the per-year figure one window scaled by 8,760 / hours?
+
+    So it is for any uploaded or generated horizon with no clock and shorter
+    than a year, however it was solved -- one window, day by day or by stretch:
+    the year is the horizon times 8,760 / hours (``_year_basis``), and the caveat
+    that goes with scaling (a week lands between −15 % and +23 % of its year) is
+    its own. Measured hours are weighted by calendar month instead."""
+    return hours != MAX_H and not out.get("time")
 
 
 def _pair_life(run: dict, o: dict, out: dict, hours: int):
@@ -2909,11 +2926,10 @@ def render() -> None:
         with c1:
             tlim = st.number_input("Time limit per window (s) — 0 for none", 0, 86_400, 600,
                                    step=10, key="gd_tlim",
-                                   help="For each window the solver is handed -- each unbroken "
-                                        "stretch of the horizon. 600 s is the REopt web tool's "
-                                        "own timeout. 0 lets the solver run until it proves the "
-                                        "optimum; a long stretch with a battery can take a long "
-                                        "time, and the page waits for it.")
+                                   help="For each window the solver is handed -- each day of "
+                                        "the horizon, which takes seconds. 600 s is the REopt web "
+                                        "tool's own timeout, a ceiling rather than a wait. 0 lets "
+                                        "the solver run until it proves the optimum.")
         with c2:
             gap = st.number_input(
                 "Optimality gap (%)", 0.0, 10.0, GAP_DEFAULT, step=0.01, format="%.2f",
@@ -2930,27 +2946,26 @@ def render() -> None:
     T.panel_head("Year and lifetime")
     with st.expander("How the year is solved · lifetime finance", expanded=True):
         whole = len(load) % 24 == 0 and len(load) // 24 >= 4
-        _runs = Y.stretches(times, len(load)) if load else []
         if not SHOW_ALL_COVERS:
-            cover = COVER_STRETCH
-            _n = len(_runs)
+            cover = COVER_SHOWN
+            _nd = len(load) // 24
             st.caption(
-                f"**{COVER_STRETCH}** — "
-                + (f"the horizon has no gap, so it is solved as one window of "
-                   f"{len(load):,} hours, as REopt solves a year" if _n <= 1 else
-                   f"the {len(load) // 24:,} measured days are **{_n} unbroken stretches** "
-                   f"between gaps in the data (the longest {max(b - a for a, b in _runs) // 24:,} "
-                   f"days, {sum(1 for a, b in _runs if b - a == 24):,} of a single day); each "
-                   "is solved as one window, as REopt solves a year — the battery carries "
-                   "charge across midnight and a minimum up or down time holds across it, and "
-                   "nothing is joined across a gap")
-                + ". Each stretch is a closed cycle (the battery ends where it began) and the "
-                  "starts at the joins between stretches are counted and charged. The most "
-                  "exact way the data allows, and the slowest: a long stretch with a battery "
-                  "can take the whole time limit.")
+                f"**{COVER_SHOWN}** — "
+                + (f"the {_nd:,} days of the horizon are each solved as a 24-hour cycle"
+                   + (" with that day's own measured engine availability" if site is not None
+                      else "")
+                   + ", every one to the optimality gap below, and laid end to end; the "
+                     "starts where two days meet are counted and charged. Fast — a few "
+                     "minutes for a measured year — and the battery's saving lands within "
+                     "about 1 % of solving each unbroken stretch whole, which takes hours: "
+                     "across midnight the battery cannot carry its charge, and a minimum up "
+                     "or down time spanning midnight is not enforced."
+                   if whole else
+                   f"the horizon is {len(load):,} hours, short of four whole days, so it "
+                   "is solved as one window."))
         cover = cover if not SHOW_ALL_COVERS else st.radio(
             "How to cover the horizon",
-            [COVER_STRETCH, COVER_WINDOW, COVER_DAYS, COVER_EVERY], key="gd_cover",
+            [COVER_EVERY, COVER_STRETCH, COVER_WINDOW, COVER_DAYS], key="gd_cover",
             horizontal=True,
             # A measured plant is thousands of hours of binaries, so it is never
             # solved as one window. It is solved day by day: its few hundred days
@@ -3092,6 +3107,8 @@ def render() -> None:
                             text=f"Solving {_n}: {day_word} {c + 1} of {k}"))
                     if stretch_mode and res.get("typical"):
                         res["typical"]["stretch"] = True
+                    if every_mode and res.get("typical"):
+                        res["typical"]["every"] = True
                 else:
                     res = M.solve(inp, time_limit=lim, mip_gap=float(gap) / 100.0)
                 # A rule the solver could not answer is not a cheap rule. Its

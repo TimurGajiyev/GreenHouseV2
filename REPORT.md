@@ -2683,6 +2683,44 @@ set a 60 s limit per window, because a long stretch with a battery can take the 
 600 s and outlast the test's own wait. Their checks read every figure back from the solve itself,
 whatever gap it leaves.
 
+## Revised 02.11.2026 (6): back to every day on its own — fast and within 1 %
+
+The stretch way of (5) is exact but too slow to use:
+* on the deployed page a full horizon on his values ran past half an hour at "stretch 6 of 48"
+  for the battery scenario;
+* on his values a battery stretch of a few days does not prove its optimum in 300 s;
+* on ours the eight 7–20-day stretches take up to 600 s each.
+
+The history settles which way to keep. `df926b7` (28.10) made **every day solved on its own** the
+default for a measured plant:
+* twelve typical days kept the total within 0.3 %, but put the battery's saving 17–21 % low and
+  flipped the 90 % rule's sign;
+* day by day reproduced the independent battery study to the tenge.
+
+Measured now, full horizon, default inputs, every day proven to 0.01 %:
+
+| | Every day on its own | Every unbroken stretch as one window |
+|---|---|---|
+| Our study, 186 days, A + B | **116 s** | over an hour (8 long battery stretches up to 600 s each) |
+| Tailscale app, 182 days, A + B + C | **329 s** | hours, and battery windows unproven at 300 s |
+| Battery's saving, our values, 22 stretches of 2–6 days | 2,661 k ₸ | 2,688 k ₸ (+1.0 %) |
+| Totals, same stretches | A +0.04 %, B +0.08 % | — |
+
+On his values the per-stretch difference in B's cost is 0–1.5 %, but his stretch windows did not
+prove their optimum, so it is not a firm figure.
+
+Every day on its own is therefore **the one way shown again** (`COVER_SHOWN`). Its caption gives
+its cost: across midnight the battery cannot carry its charge, and a minimum up or down time
+spanning midnight is not enforced. That costs the battery about 1 % of its saving on our values.
+The stretch way stays in the code, tested, behind `SHOW_ALL_COVERS` with the other two. The time
+limit stays at 600 s per window, a ceiling a day never reaches.
+
+Found on the way and fixed: the caveat that a window scaled by 8,760 / hours carries (a week lands
+between −15 % and +23 % of its year) was hidden whenever the result came from typical days, day by
+day or stretches. It now shows for any horizon with no clock shorter than a year, however it was
+solved (`annualised_window`). The period view also says when every day was solved on its own,
+instead of calling the days "typical".
+
 ## Reproduce
 
 ```bash

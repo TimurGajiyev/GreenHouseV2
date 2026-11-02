@@ -6,7 +6,8 @@ REopt solves a year as one window (``time_steps = 1:length(loads_kw)``,
 reopt_inputs.jl:175). A measured plant's horizon is not one run: ЖКПЗ's days lie
 in unbroken stretches between gaps in the data. The page now solves each stretch
 as one window and lays them end to end (``year_study.stretches``, ``by_stretch``);
-the three older ways are hidden behind ``SHOW_ALL_COVERS``.
+it is exact but slow (hours with a battery), so the page shows every day on
+its own instead, and keeps this way, with the others, behind ``SHOW_ALL_COVERS``.
 
   A. the stretches: cut exactly where the logger's clock jumps (recounted here
      from the timestamps), whole days, tiling the horizon in order; one stretch
@@ -17,8 +18,9 @@ the three older ways are hidden behind ``SHOW_ALL_COVERS``.
      every-day-on-its-own, the starts charged at the joins are the ones a
      cyclic recount finds, the accounts add up to the objective; a load with no
      gap is exactly the one window REopt would solve;
-  C. the page, both value sets: this way only, said in the panel and in the
-     results; the older ways come back with their flag;
+  C. the page, both value sets: every day on its own the one way shown, said in
+     the panel and the results; the flag brings the others back, and the stretch
+     way picked there solves by stretches;
   D. the core is the core of a03fbd3, byte for byte.
 
 Needs the measured table (real_data) and HiGHS; no API key, nothing online.
@@ -79,6 +81,15 @@ def a_stretches() -> None:
     check("inside a stretch every hour follows the last", inside)
     check("no timestamps: the whole horizon is one stretch, as REopt's window",
           Y.stretches(None, 240) == [(0, 240)] and Y.stretches([], 240) == [(0, 240)])
+    # the caveat that a scaled window carries reaches the stretch way's results too
+    st_ = {"stretch": True, "bounds": [(0, 240)]}
+    check("a horizon with no clock, shorter than a year, keeps its scaling caveat, "
+          "however it was solved",
+          D.annualised_window({"time": None, "typical": st_}, 240)
+          and D.annualised_window({"time": None, "typical": None}, 240)
+          and not D.annualised_window({"time": ["t"] * 240, "typical": st_}, 240)
+          and D.annualised_window({"time": None, "typical": {"every": True}}, 240)
+          and not D.annualised_window({"time": None, "typical": st_}, D.MAX_H))
     try:
         Y.by_stretch([1.0] * 48, [1.0] * 48, [(0, 24), (30, 48)])
         check("stretches that do not tile the horizon are refused", False)
@@ -205,34 +216,47 @@ def c_page() -> None:
     for values in (D.VALUES_OURS, D.VALUES_ZH):
         at.segmented_control(key="gd_values").set_value(values).run()
         caps = " ".join(c.value for c in at.caption)
-        check(f"{values}: one way only, no choice offered, said in the panel",
+        # the stretch way is exact but slow (hours with a battery); every day on
+        # its own is the one way shown, a few minutes for a measured year
+        check(f"{values}: one way only, every day on its own, said in the panel",
               not any((r.key or "") == "gd_cover" for r in at.radio)
-              and D.COVER_STRETCH in caps and "unbroken stretches" in caps)
+              and D.COVER_SHOWN == D.COVER_EVERY and D.COVER_EVERY in caps
+              and "within about 1 % of solving each unbroken stretch whole" in caps)
         ln = next(w for w in at.number_input if (w.key or "").startswith("gd_len_"))
         ln.set_value(24 * 10).run()
-        at.number_input(key="gd_tlim").set_value(120).run()
         at.button(key="gd_run").click().run(timeout=900)
         check(f"{values}: a solve raises no error", not at.exception and not at.error,
               str([e.value for e in [*at.exception, *at.error]][:1]))
         out = at.session_state["gd_results"]
         t = (out or {}).get("typical") or {}
-        check(f"{values}: the results were solved by stretches, and remember them",
-              t.get("stretch") is True and t.get("bounds") == Y.stretches(out.get("time"), out["hours"])
-              and all(r["res"]["typical"].get("stretch") for r in out["runs"]))
+        check(f"{values}: the results were solved day by day, and say so",
+              t.get("every") is True and not t.get("stretch") and t.get("k") == 10
+              and all(r["res"]["typical"].get("every") for r in out["runs"]))
         check(f"{values}: every scenario's accounts add up to its objective",
               all(close(r["acc"]["total"], r["res"]["objective_lifecycle_cost"], 1e-6, 1.0)
                   for r in out["runs"]))
         html = " ".join(h.proto.body for h in at.get("html"))
         caps = " ".join(c.value for c in at.caption)
         check(f"{values}: the results say how the horizon was solved",
-              "unbroken stretch" in html and "solved as" in caps)
+              "every day solved on its own" in html and "every day is solved on its own" in caps)
+    # the stretch way, still there behind the flag, still solves on the page
     D.SHOW_ALL_COVERS = True
     try:
         at.run()
         r = [w for w in at.radio if (w.key or "") == "gd_cover"]
-        check("SHOW_ALL_COVERS = True offers the four ways again, this one first",
-              not at.exception and len(r) == 1 and list(r[0].options)[0] == D.COVER_STRETCH
-              and len(r[0].options) == 4, str(r[0].options if r else None))
+        check("SHOW_ALL_COVERS = True offers the four ways again, every day first",
+              not at.exception and len(r) == 1 and list(r[0].options)[0] == D.COVER_EVERY
+              and D.COVER_STRETCH in r[0].options and len(r[0].options) == 4,
+              str(r[0].options if r else None))
+        if r:
+            r[0].set_value(D.COVER_STRETCH).run()
+            at.number_input(key="gd_tlim").set_value(120).run()
+            at.button(key="gd_run").click().run(timeout=900)
+            out = at.session_state["gd_results"]
+            t = (out or {}).get("typical") or {}
+            check("and the stretch way, picked there, solves by stretches",
+                  not at.exception and t.get("stretch") is True
+                  and t.get("bounds") == Y.stretches(out.get("time"), out["hours"]))
     finally:
         D.SHOW_ALL_COVERS = False
 
