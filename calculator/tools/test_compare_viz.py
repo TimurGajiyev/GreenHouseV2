@@ -425,7 +425,11 @@ def b_page() -> None:
         # his per-year figure (month_mean) drops a month with under a quarter of its
         # hours measured, so four days give him a year of zero: a month, then
         ln.set_value(96 if values == D.VALUES_OURS else 744).run()
-        at.button(key="gd_run").click().run(timeout=300)
+        # every unbroken stretch is one window now, and a long one with a battery
+        # may take the page's whole 600 s; these checks read the numbers back from
+        # the solve, whatever its gap, so a minute per window serves them
+        at.number_input(key="gd_tlim").set_value(60).run()
+        at.button(key="gd_run").click().run(timeout=1800)
         check(f"{values}: a solve raises no error", not at.exception and not at.error,
               str([e.value for e in [*at.exception, *at.error]][:1]))
         out = at.session_state["gd_results"]

@@ -215,6 +215,42 @@ def every_day(load: Sequence[float], price: Sequence[float]) -> Typical:
                    weights=[1] * n_days, day_of=list(range(n_days)))
 
 
+def stretches(stamps: Sequence | None, hours: int) -> list[tuple[int, int]]:
+    """The horizon's unbroken runs of hours, as (first, end) index pairs.
+
+    A run ends where the next timestamp is not one hour after the last: a gap
+    in the measured data. Without timestamps -- an uploaded or generated load,
+    hour after hour -- the whole horizon is one run. This is how REopt solves a
+    year (``time_steps = 1:length(loads_kw)``, reopt_inputs.jl:175): one window,
+    nothing cut. A measured plant's runs are each solved that way, so nothing is
+    cut where the data is continuous and nothing is spliced where it is not.
+    """
+    if not stamps or len(stamps) != hours:
+        return [(0, hours)] if hours else []
+    import pandas as pd
+    t = pd.to_datetime(pd.Series(list(stamps)))
+    step = t.diff().dt.total_seconds()
+    cuts = [0] + [i for i in range(1, hours) if step.iloc[i] != 3600.0] + [hours]
+    return [(cuts[i], cuts[i + 1]) for i in range(len(cuts) - 1)]
+
+
+def by_stretch(load: Sequence[float], price: Sequence[float],
+               bounds: list[tuple[int, int]]) -> Typical:
+    """Each unbroken run its own "day", however long, in calendar order.
+
+    The same container as ``every_day`` so ``solve_year`` and ``replay`` serve
+    it unchanged: piece ``c`` is solved once, as one window (a closed cycle --
+    the battery ends where it began and commitment wraps, as a day does), and
+    the pieces are laid end to end, the starts at their joins counted and
+    charged. A piece of one day is exactly a day of ``every_day``."""
+    if not bounds or bounds[0][0] != 0 or bounds[-1][1] != len(load) or any(
+            a >= b or b != bounds[i + 1][0] for i, (a, b) in enumerate(bounds[:-1])):
+        raise ValueError("stretches must tile the horizon, in order")
+    return Typical(load=[list(load[a:b]) for a, b in bounds],
+                   price=[list(price[a:b]) for a, b in bounds],
+                   weights=[1] * len(bounds), day_of=list(range(len(bounds))))
+
+
 def members(typ: Typical, c: int) -> list[int]:
     """The horizon's days that typical day ``c`` stands for."""
     return [d for d, cc in enumerate(typ.day_of) if cc == c]
@@ -222,21 +258,26 @@ def members(typ: Typical, c: int) -> list[int]:
 
 # ------------------------------------------------------------------- the year
 def _concat(days: list[dict], order: Sequence[int], key: str):
-    """Lay the typical days out over the real calendar, in the order they occur."""
+    """Lay the typical days out over the real calendar, in the order they occur.
+
+    A piece missing a series is filled with zeros for its own length -- a day's
+    24 hours, or a whole stretch's (``by_stretch``)."""
+    def hours_of(c: int) -> int:
+        return len(days[c]["series"].get("load_kw") or []) or HOURS_PER_DAY
     first = days[0]["series"].get(key)
     if isinstance(first, dict):
         out: dict[str, list[float]] = {name: [] for name in first}
         for c in order:
             src = days[c]["series"].get(key) or {}
             for name in out:
-                out[name].extend(src.get(name) or [0.0] * HOURS_PER_DAY)
+                out[name].extend(src.get(name) or [0.0] * hours_of(c))
         return out
     if isinstance(first, list):
         if not first:
             return []
         out2: list[float] = []
         for c in order:
-            out2.extend(days[c]["series"].get(key) or [0.0] * HOURS_PER_DAY)
+            out2.extend(days[c]["series"].get(key) or [0.0] * hours_of(c))
         return out2
     return first
 

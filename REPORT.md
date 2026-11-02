@@ -2620,6 +2620,69 @@ sets:
   plan and hourly O&M;
 * the page states the same figures.
 
+## Revised 02.11.2026 (5): REopt's way, stretch by stretch, and nothing else offered
+
+**How REopt solves the horizon.** REopt.jl solves the year as **one window**:
+* `time_steps = 1:length(loads_kw)` (reopt_inputs.jl:175), and the load must be 8,760 hours per
+  step per hour;
+* no typical days, nothing cut at midnight;
+* the battery starts the year at `soc_init_fraction` (50 %), with its end free unless
+  `optimize_soc_init_fraction` (storage_constraints.jl:41-52);
+* the web tool's results report a 1.0 % optimality tolerance and a 600 s timeout;
+* twenty-five years are that one year times the present-worth factor, with separate escalation
+  rates (electricity 1.66 %, CHP fuel 3.48 %, O&M 2.5 %) and a 6.24 % discount rate.
+
+REopt has no minimum up or down time and no start cost: those are ours.
+
+**What that means for a measured plant.** ЖКПЗ's 186 measured days are not one run. They are
+**49 unbroken stretches** between 48 gaps in the data (19 of one day, 22 of 2–6 days, 8 of 7–20
+days). The two candidates each fail at one end:
+* REopt's single window would splice days weeks apart;
+* every day solved on its own cuts each stretch at every midnight, where the battery cannot carry
+  its charge and a minimum up or down time does not hold.
+
+**The way the page now solves.** **Every unbroken stretch as one window** (`year_study.stretches`,
+`by_stretch`):
+* nothing is cut where the data is continuous, and nothing is joined across a gap;
+* each stretch closes on itself, and the starts at the joins are counted and charged;
+* a load without gaps is one stretch, which is then exactly REopt's window.
+
+On 22 stretches of 2–6 days, our values, solved to 0.01 %:
+* totals barely move: A +0.04 %, B +0.08 % for every-day against one window per stretch;
+* the battery's saving was **1.0 % higher** by stretch (2,688 k ₸ against 2,661 k ₸), because
+  every-day solving keeps the battery from carrying charge across midnight;
+* single stretches moved from −0.7 % to +2.5 % on B.
+
+On his values the battery windows did not prove optimal within 300 s (gaps up to 2 %), so his
+difference is not yet a firm figure. Typical days remain the least exact (the battery's saving
+17 % low at 12).
+
+The other three ways (one window, typical days, every day) are hidden, not removed;
+`SHOW_ALL_COVERS = True` offers them again beside this one. The time limit is now per window and
+defaults to REopt's 600 s. The gap stays at 0.01 %, a hundred times stricter than REopt's 1 %,
+because a battery moves the cost by about 1 %. A long stretch with a battery can take the whole
+limit, and the page's "Not proved" warning names any comparison the gap cannot resolve.
+
+`tools/test_stretch_cover.py` checks, from outside:
+* the stretches are cut exactly where the logger's clock jumps (recounted from the timestamps),
+  whole days, tiling the horizon;
+* on both value sets, each piece equals its window solved directly, and the whole equals the
+  pieces plus the starts a cyclic recount finds at the joins;
+* a one-day stretch is that day of every-day solving;
+* a load without gaps is REopt's single window;
+* the accounts equal the objective;
+* the page offers this way only and says so in the panel and the results, and the flag brings
+  the others back;
+* the core is unchanged.
+
+The first probe counted 48 stretches: it dropped the first one, a single day, so its 2–6-day
+figures stand.
+
+`test_compare_viz.py` and `test_service_columns.py` solve a 744-hour window on his values. They now
+set a 60 s limit per window, because a long stretch with a battery can take the page's full
+600 s and outlast the test's own wait. Their checks read every figure back from the solve itself,
+whatever gap it leaves.
+
 ## Reproduce
 
 ```bash
@@ -2634,6 +2697,7 @@ python calculator/tools/test_compare_viz.py         # the comparison's pictures,
 python calculator/tools/test_app_entry.py           # the app opens on the dispatch study; the REopt tool hidden
 python calculator/tools/test_units_table.py         # Spread services hidden and always on
 python calculator/tools/test_service_columns.py     # service: two columns, priced per running hour
+python calculator/tools/test_stretch_cover.py       # every unbroken stretch as one window (REopt's way)
 python calculator/tools/service_columns_study.py    # the six columns as they were (~45 min)
 python calculator/tools/test_tailscale_values.py --compare=K   # a year on his values against his run
                                                     # K, M or KM, one at a time, ~6 min each

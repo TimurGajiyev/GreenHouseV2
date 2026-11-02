@@ -623,7 +623,13 @@ def _starts_section(sh: dict, series: dict, idx: pd.DatetimeIndex, res: dict) ->
             "already running at hour 0 is not charged a start on day 0"]
     if ndays > 31:
         bits.insert(1, "folded onto weekdays because the horizon is longer than a month")
-    if res.get("typical"):
+    if res.get("typical") and res["typical"].get("stretch"):
+        t = res["typical"]
+        bits.append(f"the horizon is solved as {t['k']} unbroken stretch"
+                    f"{'es' if t['k'] != 1 else ''}, each one window "
+                    f"({t.get('starts_from_joins', 0):,} of {sum(totals):,} starts come from "
+                    f"the joins between stretches)")
+    elif res.get("typical"):
         t = res["typical"]
         bits.append(f"the {'year' if H == HOURS else 'horizon'} is replayed from "
                     f"{t['k']} typical days, so the per-day "

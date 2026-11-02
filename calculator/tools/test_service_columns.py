@@ -252,7 +252,11 @@ def c_page() -> None:
               f"{C_OEM / N_OEM:,.0f} per running hour" in caps, caps[caps.find("Services"):][:90])
         ln = next(w for w in at.number_input if (w.key or "").startswith("gd_len_"))
         ln.set_value(96 if values == D.VALUES_OURS else 744).run()
-        at.button(key="gd_run").click().run(timeout=300)
+        # every unbroken stretch is one window now, and a long one with a battery
+        # may take the page's whole 600 s; these checks read the numbers back from
+        # the solve, whatever its gap, so a minute per window serves them
+        at.number_input(key="gd_tlim").set_value(60).run()
+        at.button(key="gd_run").click().run(timeout=1800)
         check(f"{values}: a solve with services on raises no error",
               not at.exception and not at.error,
               str([e.value for e in [*at.exception, *at.error]][:1]))

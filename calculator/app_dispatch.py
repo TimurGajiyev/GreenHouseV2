@@ -86,6 +86,18 @@ S_MAXST = "Max starts/day (blank = per unit)"
 COVER_WINDOW = "Solve the window as posed"
 COVER_DAYS = "A year from typical days (weighted)"
 COVER_EVERY = "Every day solved on its own"
+# REopt's own way (reopt_inputs.jl:175, ``time_steps = 1:length(loads_kw)``): the
+# horizon solved as ONE window, nothing cut. A measured plant's horizon is not
+# one run -- ЖКПЗ's 186 days are 48 unbroken runs between gaps in the data -- so
+# each run is solved that way: nothing cut where the data is continuous (the
+# battery carries charge across midnight, a minimum up or down time holds across
+# it), nothing spliced where it is not. A load without gaps is one run, and this
+# is then exactly REopt's window. On our values it put the battery's saving 1 %
+# above every-day-on-its-own (REPORT.md, "Revised 02.11.2026 (5)").
+COVER_STRETCH = "Every unbroken stretch as one window (REopt's way)"
+# The three older ways are hidden, not removed: SHOW_ALL_COVERS = True offers
+# them again beside this one.
+SHOW_ALL_COVERS = False
 
 # Engine availability on a measured plant. The logger says when each engine
 # actually ran; an engine that stood still was down for maintenance, a fault or
@@ -2178,7 +2190,8 @@ def _measured_vs(out: dict, runs: list[dict], cur: str) -> None:
             _year_basis(out, H),
             *(["a typical-days year is the clustered year, so its load is not hour for hour "
                "the logged one — compare totals, not hours"]
-              if out.get("typical") and not out["typical"].get("every") else []),
+              if out.get("typical") and not out["typical"].get("every")
+              and not out["typical"].get("stretch") else []),
             "<b>this saving is not the battery's</b>: a scenario without a battery saves "
             "nearly as much"
             + (f" — the battery's own is its saving against <b>{base['name']}</b>, the cheapest "
@@ -2894,11 +2907,13 @@ def render() -> None:
                     f"that these rows describe a different site.")
         c1, c2 = st.columns(2)
         with c1:
-            tlim = st.number_input("Time limit per scenario (s) — 0 for none", 0, 86_400, 120,
+            tlim = st.number_input("Time limit per window (s) — 0 for none", 0, 86_400, 600,
                                    step=10, key="gd_tlim",
-                                   help="0 lets the solver run until it proves the optimum. "
-                                        "A year of commitment can take a long time; the page "
-                                        "waits for it.")
+                                   help="For each window the solver is handed -- each unbroken "
+                                        "stretch of the horizon. 600 s is the REopt web tool's "
+                                        "own timeout. 0 lets the solver run until it proves the "
+                                        "optimum; a long stretch with a battery can take a long "
+                                        "time, and the page waits for it.")
         with c2:
             gap = st.number_input(
                 "Optimality gap (%)", 0.0, 10.0, GAP_DEFAULT, step=0.01, format="%.2f",
@@ -2915,15 +2930,34 @@ def render() -> None:
     T.panel_head("Year and lifetime")
     with st.expander("How the year is solved · lifetime finance", expanded=True):
         whole = len(load) % 24 == 0 and len(load) // 24 >= 4
-        cover = st.radio(
+        _runs = Y.stretches(times, len(load)) if load else []
+        if not SHOW_ALL_COVERS:
+            cover = COVER_STRETCH
+            _n = len(_runs)
+            st.caption(
+                f"**{COVER_STRETCH}** — "
+                + (f"the horizon has no gap, so it is solved as one window of "
+                   f"{len(load):,} hours, as REopt solves a year" if _n <= 1 else
+                   f"the {len(load) // 24:,} measured days are **{_n} unbroken stretches** "
+                   f"between gaps in the data (the longest {max(b - a for a, b in _runs) // 24:,} "
+                   f"days, {sum(1 for a, b in _runs if b - a == 24):,} of a single day); each "
+                   "is solved as one window, as REopt solves a year — the battery carries "
+                   "charge across midnight and a minimum up or down time holds across it, and "
+                   "nothing is joined across a gap")
+                + ". Each stretch is a closed cycle (the battery ends where it began) and the "
+                  "starts at the joins between stretches are counted and charged. The most "
+                  "exact way the data allows, and the slowest: a long stretch with a battery "
+                  "can take the whole time limit.")
+        cover = cover if not SHOW_ALL_COVERS else st.radio(
             "How to cover the horizon",
-            [COVER_WINDOW, COVER_DAYS, COVER_EVERY], key="gd_cover", horizontal=True,
+            [COVER_STRETCH, COVER_WINDOW, COVER_DAYS, COVER_EVERY], key="gd_cover",
+            horizontal=True,
             # A measured plant is thousands of hours of binaries, so it is never
             # solved as one window. It is solved day by day: its few hundred days
             # take about a minute, each day keeps its own engine availability, and
             # a scenario difference -- the battery's saving -- survives, which it
             # does not through 12 typical days (REPORT.md Part 16).
-            index=2 if site is not None else 0,
+            index=0,
             help="A full year of on/off units is 8,760 hours of binaries and does not "
                  "solve as one window. Typical days cluster the days into a few and weight "
                  "them by how many real days each stands for (Kotzur et al., Applied Energy "
@@ -2934,36 +2968,42 @@ def render() -> None:
                  "engine availability, at the price of solving them all.")
         year_mode = cover == COVER_DAYS and whole
         every_mode = cover == COVER_EVERY and whole
+        stretch_mode = cover == COVER_STRETCH and bool(load)
         if cover in (COVER_DAYS, COVER_EVERY) and not whole:
             st.warning(f"{'Typical days' if cover == COVER_DAYS else 'Solving day by day'} "
                        f"needs at least four whole days of load; this horizon is "
                        f"{len(load):,} hours. Solving the window as posed instead.",
                        icon=":material/warning:")
-        c1, c2, c3 = st.columns(3)
+        kdays = Y.suggest_k(365)
+        if SHOW_ALL_COVERS:
+            c0, c1, c2, c3 = st.columns(4)
+            with c0:
+                # A fixed default, not one derived from the load: a widget whose
+                # default moves with the page keeps whatever number the first render
+                # happened to produce, and the first render carries the 24-hour day.
+                kdays = st.number_input("Typical days", 2, 60, Y.suggest_k(365),
+                                        step=1, key="gd_kdays", disabled=not year_mode,
+                                        help="Each one is solved once, then laid down on every "
+                                             "real day of its cluster. On a synthetic year 12 "
+                                             "landed within 0.01 % of the total cost; on the "
+                                             "measured plants within 0.3 %, but a scenario "
+                                             "difference such as a battery's saving was off by "
+                                             "up to 17 % at 12 and still 4 % at 60.")
+        else:
+            c1, c2, c3 = st.columns(3)
         with c1:
-            # A fixed default, not one derived from the load: a widget whose
-            # default moves with the page keeps whatever number the first render
-            # happened to produce, and the first render carries the 24-hour day.
-            kdays = st.number_input("Typical days", 2, 60, Y.suggest_k(365),
-                                    step=1, key="gd_kdays", disabled=not year_mode,
-                                    help="Each one is solved once, then laid down on every "
-                                         "real day of its cluster. On a synthetic year 12 "
-                                         "landed within 0.01 % of the total cost; on the "
-                                         "measured plants within 0.3 %, but a scenario "
-                                         "difference such as a battery's saving was off by "
-                                         "up to 17 % at 12 and still 4 % at 60.")
-        with c2:
             yrs = st.number_input("Analysis period (years)", 1, 40, V["years"], step=1,
                                   key=vk("gd_years"), help="REopt's own default is 25 years.")
-        with c3:
+        with c2:
             esc = st.number_input("Operating cost escalation (%/yr)", 0.0, 20.0, V["esc"], step=0.1,
                                   key=vk("gd_esc"),
                                   help="REopt's default fuel escalation is 3.4 %/yr and its "
                                        "electricity escalation 1.66 %/yr. One rate is used "
                                        "here because the study prices one operating cost.")
-        disc = st.number_input("Discount rate (%/yr)", 0.0, 30.0, V["disc"], step=0.01,
-                               key=vk("gd_disc"),
-                               help="REopt's own offtaker default is 6.24 %/yr, nominal.")
+        with c3:
+            disc = st.number_input("Discount rate (%/yr)", 0.0, 30.0, V["disc"], step=0.01,
+                                   key=vk("gd_disc"),
+                                   help="REopt's own offtaker default is 6.24 %/yr, nominal.")
         if year_mode:
             _kk = max(1, min(int(kdays), len(load) // 24))
             st.caption(f"{_kk} typical days × 24 h = {_kk * 24:,} hours to solve per scenario "
@@ -2981,7 +3021,7 @@ def render() -> None:
                        f"starts created where two days meet are counted and charged; a minimum "
                        f"up or down time spanning midnight is not enforced, and the battery "
                        f"cannot carry energy from one day to the next.")
-        elif len(load) > 168 and len(units.index):
+        elif cover == COVER_WINDOW and len(load) > 168 and len(units.index):
             st.info(f"{len(load):,} hours with on/off units means "
                     f"{len(load) * len(units.index):,} commitment binaries per scenario; "
                     "expect the time limit to be reached and a small remaining gap. "
@@ -3006,14 +3046,16 @@ def render() -> None:
             # build(), after the day has been chosen.
             # Never ask for more typical days than the load has days to give.
             kk = max(1, min(int(kdays), len(load) // 24))
-            typ = (Y.every_day(load, price) if every_mode else
+            typ = (Y.by_stretch(load, price, Y.stretches(times, len(load))) if stretch_mode else
+                   Y.every_day(load, price) if every_mode else
                    Y.cluster(load, price, kk) if year_mode else None)
             if typ is not None:
                 kk = typ.k
             price_used = list(price)
             if typ is not None:
                 price_used = [p for c in typ.day_of for p in typ.price[c]]
-            day_word = "day" if every_mode else "typical day"
+            day_word = ("stretch" if stretch_mode else "day" if every_mode else "typical day")
+            _bounds = Y.stretches(times, len(load)) if stretch_mode else None
             for i, sc in enumerate(rows):
                 prog.progress(i / len(rows), text=f"Solving {sc[S_NAME]} ({i + 1} of {len(rows)})")
                 inp = build(load, price, units, bat, sc, grid_cap, avail=avail)
@@ -3041,11 +3083,15 @@ def render() -> None:
                         None, load, price, kk, typical=typ,
                         day_pose=lambda c, dl, dp, _sc=sc: build(
                             dl, dp, units, bat, _sc, grid_cap,
-                            avail=day_availability(avail, typ, c)),
+                            avail=(None if avail is None else
+                                   [a[_bounds[c][0]:_bounds[c][1]] for a in avail])
+                            if stretch_mode else day_availability(avail, typ, c)),
                         time_limit=lim, mip_gap=float(gap) / 100.0,
                         on_day=lambda c, k, _n=sc[S_NAME], _i=i: prog.progress(
                             (i + c / k) / len(rows),
                             text=f"Solving {_n}: {day_word} {c + 1} of {k}"))
+                    if stretch_mode and res.get("typical"):
+                        res["typical"]["stretch"] = True
                 else:
                     res = M.solve(inp, time_limit=lim, mip_gap=float(gap) / 100.0)
                 # A rule the solver could not answer is not a cheap rule. Its
@@ -3092,7 +3138,9 @@ def render() -> None:
                                 "grid_cap": grid_cap,
                                 "typical": (None if typ is None else
                                             {"k": typ.k, "weights": list(typ.weights),
-                                             "every": bool(every_mode)}),
+                                             "every": bool(every_mode),
+                                             "stretch": bool(stretch_mode),
+                                             "bounds": (_bounds if stretch_mode else None)}),
                                 "availability": avail_mode,
                                 "life": {"years": int(yrs), "escalation": float(esc) / 100.0,
                                          "discount": float(disc) / 100.0}}
@@ -3179,7 +3227,18 @@ def render() -> None:
         n_days = sum(t["weights"])
         # a measured plant's horizon is its measured days, not a calendar year
         full_year = n_days * 24 == MAX_H
-        if t.get("every"):
+        if t.get("stretch"):
+            bounds = t.get("bounds") or []
+            days = sum(b - a for a, b in bounds) // 24
+            how = (f"the {days:,} days of the horizon as <b>{len(bounds)} unbroken "
+                   f"stretch{'es' if len(bounds) != 1 else ''}</b>, each solved as one window "
+                   "— REopt's way — and laid end to end; nothing clustered, nothing cut at "
+                   "midnight, nothing joined across a gap in the data")
+            edge = ("energy, peak and every hour's own load are exact; across midnight the "
+                    "battery carries its charge and a minimum up or down time holds; each "
+                    "stretch closes where it began, and the starts at the joins between "
+                    "stretches are counted and charged")
+        elif t.get("every"):
             how = (f"{'a year' if full_year else f'the {n_days:,} days of the horizon'}, "
                    f"<b>every day solved on its own</b> and laid end to end — nothing clustered")
             edge = ("energy, peak and every day's own load are exact; the starts the joins "
