@@ -1,5 +1,8 @@
 """GreenHouse — the REopt tool (steps 1-5, four technologies) and a custom dispatch study.
 
+The REopt tool is hidden for now (SHOW_REOPT_TOOL below): the app opens on the
+custom dispatch study, and the REopt tool's code stays here, unchanged.
+
 Field labels, option values/order, defaults and help text are generated from a
 live extraction of https://reopt.nlr.gov/tool (see reopt_core/ui_fields.py).
 Formulas and defaults come from the REopt.jl v0.61.1 source in ../REopt.
@@ -111,11 +114,20 @@ st.title(":material/bolt: GreenHouse")
 
 # Two studies. The REopt tool mirrors reopt.nlr.gov field for field; the custom
 # dispatch study is GreenHouse's own and carries inputs REopt does not have.
-study = st.segmented_control(
-    "Study", ["REopt tool", "Custom dispatch study (not REopt)"], default="REopt tool",
-    key="study", label_visibility="collapsed",
-)
-if study == "Custom dispatch study (not REopt)":
+#
+# The REopt tool is hidden for now, not removed: the app opens straight on the
+# custom dispatch study. Set SHOW_REOPT_TOOL to True to bring back the switch
+# at the top, and with it every step of the REopt tool below, unchanged.
+SHOW_REOPT_TOOL = False
+DISPATCH = "Custom dispatch study (not REopt)"
+if SHOW_REOPT_TOOL:
+    study = st.segmented_control(
+        "Study", ["REopt tool", DISPATCH], default="REopt tool",
+        key="study", label_visibility="collapsed",
+    )
+else:
+    study = DISPATCH
+if study == DISPATCH:
     import app_dispatch
     app_dispatch.render()
     st.stop()

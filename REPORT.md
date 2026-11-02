@@ -2474,6 +2474,17 @@ the page:
 
 169 checks, none failed.
 
+## Revised 02.11.2026: the app opens on the dispatch study
+
+The switch at the top of the app between the **REopt tool** and the **Custom dispatch study** is
+hidden, so the app opens straight on the dispatch study. Nothing is deleted: the REopt tool's
+steps 1–5 stay in `streamlit_app.py`, unchanged, behind one flag. Setting
+`SHOW_REOPT_TOOL = True` brings back the switch and the tool. `tools/test_app_entry.py` runs the
+app headless both ways:
+* as it ships: no switch, the dispatch study's own controls, nothing of the REopt tool drawn;
+* with the flag on: the switch with both studies, the REopt tool drawing its first step, and its
+  second option still opening the dispatch study.
+
 ## Reproduce
 
 ```bash
@@ -2485,6 +2496,7 @@ python calculator/tools/battery_real_data.py solve --cases site3 --workers 8
 python calculator/tools/test_year_window.py         # a window of measured days to a year and 25 years
 python calculator/tools/test_tailscale_values.py    # his values on the page; ours unmoved (1 min)
 python calculator/tools/test_compare_viz.py         # the comparison's pictures, every pair, both values
+python calculator/tools/test_app_entry.py           # the app opens on the dispatch study; the REopt tool hidden
 python calculator/tools/test_tailscale_values.py --compare=K   # a year on his values against his run
                                                     # K, M or KM, one at a time, ~6 min each
 python calculator/tools/battery_real_data.py report --grid-price 46.25   # after a solve at that price
