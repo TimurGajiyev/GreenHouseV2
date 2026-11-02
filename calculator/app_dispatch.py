@@ -373,6 +373,13 @@ def _num(v) -> float:
 # maintenance model is untouched. SERVICE_IN_CORE = True poses them as before.
 SERVICE_IN_CORE = False
 
+# Variable O&M per kWh is hidden, not removed: it is 0 in every preset of both
+# value sets, the Tailscale app has no such cost, and our 22 ₸/kWh is already
+# "всё включено". Every row keeps the column and build() still reads it into
+# om_cost_per_kwh, so a value in it still prices; SHOW_VARIABLE_OM = True
+# shows it again.
+SHOW_VARIABLE_OM = False
+
 
 def service_rate(u) -> float:
     """What a running hour costs in services: one every N running hours at C,
@@ -659,6 +666,41 @@ def fleet_capex(units: pd.DataFrame) -> float:
         if str(u.get(U_OWN) or OWN_PAID) == OWN_BUY:
             total += float(u.get(U_CAPEX) or 0.0)
     return total
+
+
+def unit_cost_line(u) -> dict | None:
+    """What an hour of one unit costs, everything in: fuel on its curve, O&M
+    per kWh, O&M per running hour and services. ``unit_hour_cost`` is the
+    price the accounts use, and it is straight in output while the unit is on,
+    so two points give it whole: a part per kWh and a part per hour on (the
+    curve's idle gas, the hourly O&M, the services). Returns the cost per kWh
+    at full and at half load, and those two parts; None for a row with no
+    rating."""
+    kw = _num(u.get(U_KW))
+    if kw <= 0:
+        return None
+    full, half = unit_hour_cost(u, kw, 1.0), unit_hour_cost(u, 0.5 * kw, 1.0)
+    per_kwh = (full - half) / (0.5 * kw)
+    return {"full": full / kw, "half": half / (0.5 * kw),
+            "per_kwh": per_kwh, "per_hour": full - per_kwh * kw}
+
+
+def _cost_note(units: pd.DataFrame, cur: str) -> None:
+    """Each unit's cost of running, all in, under the table: the price of a
+    kWh at full and at half load, and the two parts every hour is made of."""
+    rows = []
+    for _, u in units.iterrows():
+        c = unit_cost_line(u)
+        if c is None:
+            continue
+        rows.append(f"**{u.get(U_NAME)}**: **{c['full']:,.1f}** {cur}/kWh at full load, "
+                    f"**{c['half']:,.1f}** at half load = {c['per_kwh']:,.2f} {cur} per kWh "
+                    f"+ {c['per_hour']:,.0f} {cur} per hour on")
+    if rows:
+        st.caption("Cost of running, everything in (fuel on its curve, O&M, services) — "
+                   + "  \n".join(rows) + "  \nThe part per hour on is paid whatever the "
+                   "output: the curve's idle gas, the O&M per running hour and the services. "
+                   "It is why a kWh at half load costs more.")
 
 
 def _maint_note(units: pd.DataFrame, hours: int) -> None:
@@ -2588,12 +2630,14 @@ def render() -> None:
                     min_value=1.0, max_value=100.0, step=0.1, format="%.1f",
                     help="Electrical efficiency at 50 % load. Passport: "
                          + _pp("eff", lambda p: f"{p['eff'][50]} %") + "."),
-                U_OM: st.column_config.NumberColumn(
+                # hidden, not removed (SHOW_VARIABLE_OM): still read into the model
+                U_OM: (st.column_config.NumberColumn(
                     f"Variable O&M ({cur}/kWh)", min_value=0.0,
                     help="Стоимость моточаса per kWh generated — oil, filters, plugs, "
                          "overhaul reserve. Added to the fuel cost above and charged the "
                          "same way, on rated output. Leave at 0 and pricing is exactly "
-                         "what it was before this column existed."),
+                         "what it was before this column existed.")
+                    if SHOW_VARIABLE_OM else None),
                 U_OMH: st.column_config.NumberColumn(
                     f"O&M per running hour ({cur}/h)", min_value=0.0, format="%.0f",
                     help="A service contract billed per engine hour, whatever the load. "
@@ -2685,6 +2729,7 @@ def render() -> None:
                   "fuel cost (the gas tariff), start cost, minimum up / down, starts per "
                   "day, services and O&M. Every value and its status: **Data sources** "
                   "below.")
+        _cost_note(units, cur)
         _maint_note(units, len(load))
         # A measured plant's engines were not always there to run: the logger
         # shows when each one stood still. "As measured" lets an engine run only

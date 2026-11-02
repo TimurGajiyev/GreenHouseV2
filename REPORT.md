@@ -2584,6 +2584,42 @@ service every 30–50 run h, 96–168 h):
   * accounts equal to objectives.
 * **Part D** checks the core is unchanged.
 
+## Revised 02.11.2026 (4): one cost column fewer, and the cost of running said
+
+The core prices an engine hour in two shapes only, and every cost column feeds one of them:
+* **per kWh**: the fuel curve's slope at the gas price, plus O&M per kWh (`om_cost_per_kwh`,
+  REopt's own);
+* **per hour on**: the curve's idle gas (its intercept, REopt's `fuel_slope_and_intercept`), the
+  O&M per running hour (`om_cost_per_running_hour`, ours) and the services' cost ÷ interval.
+
+**Variable O&M per kWh is hidden**, not removed. It is 0 in every preset of both value sets, and
+the Tailscale app has no such cost. Our 22 ₸/kWh is already «всё включено». Every row keeps the
+column, `build()` still reads it, and `SHOW_VARIABLE_OM = True` shows it again. No figure changes.
+
+It was not folded into the fuel cost, because the two are not the same thing:
+* With efficiencies set, the fuel cost is scaled by the curve at part load, and O&M per kWh is
+  not. Folding one into the other would change the price of every part-load hour.
+* Without efficiencies, the page already passes the two as one price a kWh.
+
+**Under the units table**, each unit's cost of running, everything in:
+* the price of a kWh at full and at half load;
+* the two parts every hour is made of.
+
+| TEDOM | Full load | Half load | Per kWh | Per hour on |
+|---|---:|---:|---:|---:|
+| Our study (22 ₸, no hourly O&M) | 22.0 ₸ | 23.9 ₸ | 20.14 ₸ | 2,233 ₸ (idle gas) |
+| Tailscale app (gas 16.27 ₸, service 7,200 ₸/h) | 22.3 ₸ | 29.6 ₸ | 14.89 ₸ | 8,851 ₸ |
+
+At full load the two value sets price a TEDOM kWh alike. His service per engine hour makes a
+half-load kWh a quarter dearer. `tools/test_units_table.py` parts D and E check, on both value
+sets:
+* the column is hidden, kept at 0, still read into the model (on its own with efficiencies,
+  added to the fuel cost without), and shown again by its flag;
+* the summary, recomputed from each row on its own (gas price = full-load cost × efficiency,
+  the gas line through the 100 % and 50 % points), with and without efficiencies, a service
+  plan and hourly O&M;
+* the page states the same figures.
+
 ## Reproduce
 
 ```bash
