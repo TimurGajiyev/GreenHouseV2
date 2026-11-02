@@ -2485,6 +2485,32 @@ app headless both ways:
 * with the flag on: the switch with both studies, the REopt tool drawing its first step, and its
   second option still opening the dispatch study.
 
+## Revised 02.11.2026 (2): services always spread evenly
+
+The units table no longer shows **Spread services**, in either value set. It is hidden, not
+removed: every row keeps the column, on, and the code that reads it stays. A scenario now always
+spreads a unit's services evenly (`SPREAD_ALWAYS_ON`), with one service in each equal slice of the
+horizon, as a service plan reads. The optimiser still picks the hour inside each slice.
+
+On 96 hours with four 4-hour services per engine:
+
+| | Service start hours | Cost |
+|---|---|---:|
+| even (now always) | Jenbacher 22, 26, 71, 75 · TEDOM 1, 44, 48, 93 | 3,673,664 |
+| free (no longer offered) | Jenbacher 18, 22, 26, 30 · TEDOM 0, 84, 88, 92 | 3,643,664 |
+
+Left free, the optimiser bunched all four Jenbacher services into one 16-hour stop. That is
+30,000 cheaper on paper and is not how engines are serviced. Even spacing allows one service per
+slice, but two can still meet at a slice boundary, as Jenbacher's 22 and 26 do.
+
+The services column's help now says how they are placed. A running-hours interval, when set,
+still replaces the count, and the spacing with it.
+
+`tools/test_units_table.py` checks:
+* a row holding on, off or nothing is passed to the model as even;
+* the column is hidden in both value sets, and the other service columns still show;
+* solved, four services fall one in each quarter of the horizon.
+
 ## Reproduce
 
 ```bash
@@ -2497,6 +2523,7 @@ python calculator/tools/test_year_window.py         # a window of measured days 
 python calculator/tools/test_tailscale_values.py    # his values on the page; ours unmoved (1 min)
 python calculator/tools/test_compare_viz.py         # the comparison's pictures, every pair, both values
 python calculator/tools/test_app_entry.py           # the app opens on the dispatch study; the REopt tool hidden
+python calculator/tools/test_units_table.py         # Spread services hidden and always on
 python calculator/tools/test_tailscale_values.py --compare=K   # a year on his values against his run
                                                     # K, M or KM, one at a time, ~6 min each
 python calculator/tools/battery_real_data.py report --grid-price 46.25   # after a solve at that price

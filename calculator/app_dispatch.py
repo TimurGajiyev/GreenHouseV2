@@ -64,6 +64,12 @@ U_OMH = "O&M per running hour"
 # service takes away, so 100% is the unit fully out -- which is what a gas
 # engine service is: it cools down, is worked on, and is started again.
 MSPACE_EVEN, MSPACE_FREE = "Evenly", "Anywhere"
+# "Spread services" is hidden, not removed: it stays in every row (on by
+# default) and in the code that reads it, but a scenario always spreads its
+# services evenly -- one per equal slice of the horizon, as a service plan
+# reads. Set this to False, and the column back to a CheckboxColumn in the
+# units table, to let a row choose again.
+SPREAD_ALWAYS_ON = True
 # Part-load efficiency, as an OEM data sheet gives it. With both columns set the
 # energy cost column is the cost per kWh AT FULL LOAD, and every other load is
 # priced by REopt's own fuel curve (utils.jl:645, fuel_slope_and_intercept):
@@ -878,7 +884,10 @@ def build(load: list[float], price: list[float], units: pd.DataFrame, bat: dict,
             maintenance_events=max(0, _opt_int(u.get(U_MEV)) or 0),
             maintenance_duration_hours=max(0, _opt_int(u.get(U_MDUR)) or 0),
             maintenance_pu=min(1.0, max(0.0, float(u.get(U_MPU) or 100.0) / 100.0)),
-            maintenance_spacing=("even" if bool(u.get(U_MSPACE, True)) else "free"),
+            # always even while the column is hidden (SPREAD_ALWAYS_ON); a
+            # row added on the page has no value, and that reads as on too
+            maintenance_spacing=("even" if SPREAD_ALWAYS_ON or pd.isna(u.get(U_MSPACE))
+                                 or bool(u.get(U_MSPACE)) else "free"),
             maintenance_interval_running_hours=max(0.0, float(u.get(U_MINT) or 0.0)),
             maintenance_cost_per_event=max(0.0, float(u.get(U_MCOST) or 0.0)),
             production_factor_series=(list(avail[len(fleet)][:len(loads)])
@@ -2536,8 +2545,9 @@ def render() -> None:
                     help="At most this many starts in any calendar day. Blank = no limit."),
                 U_MEV: st.column_config.NumberColumn(
                     min_value=0, step=1, format="%d",
-                    help="Scheduled services in the horizon. The optimiser picks the "
-                         "hours; 0 = no maintenance modelled."),
+                    help="Scheduled services in the horizon, one in each equal slice "
+                         "of it, as a service plan reads; the optimiser picks the "
+                         "hour inside each slice. 0 = no maintenance modelled."),
                 U_MDUR: st.column_config.NumberColumn(
                     min_value=0, step=1, format="%d",
                     help="Hours the unit is out per service. A gas engine's minor "
@@ -2546,11 +2556,9 @@ def render() -> None:
                     min_value=0.0, max_value=100.0, step=5.0, format="%.0f",
                     help="Capacity the service takes away. 100% = fully out, which is "
                          "what a service visit is; below that is a derate."),
-                U_MSPACE: st.column_config.CheckboxColumn(
-                    help="On: one service per equal slice of the horizon, as a service "
-                         "plan reads. Off: the optimiser may put them anywhere, and "
-                         "nothing in the cost stops it bunching them. Unused when a "
-                         "running-hour interval is set."),
+                # hidden, not removed: every row keeps it (on), and services are
+                # always spread evenly (SPREAD_ALWAYS_ON)
+                U_MSPACE: None,
                 U_MINT: st.column_config.NumberColumn(
                     min_value=0, step=100, format="%d",
                     help="Service every this many RUNNING hours — how INNIO Jenbacher "
