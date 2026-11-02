@@ -2465,7 +2465,14 @@ the page:
     ends on the verdict's NPV. The only gap is REopt's own rounding of the present-worth factor
     to five decimals (`utils.jl:11`): 34 ₸ on 493 M ₸.
 
-160 checks, none failed.
+  Our values are solved over 96 hours, his over 744. His per-year figure (`month_mean`) drops a
+  month with under a quarter of its hours measured, so four days give him a year of zero. The
+  first version of this test ran his values on 96 hours too, and its cash checks there compared
+  zero with zero. Each cash check now also requires a yearly saving that is not zero. On 744
+  hours, his B against C pays back in year 14.2 and A against C adds up to 247.0 M ₸ over
+  15 years, each equal to the figure recomputed here.
+
+169 checks, none failed.
 
 ## Reproduce
 

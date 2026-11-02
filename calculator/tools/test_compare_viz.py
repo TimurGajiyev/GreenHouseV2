@@ -366,6 +366,8 @@ def _pair_checks(at, out: dict, run: dict, base: dict, tag: str) -> None:
     if between:
         buyer, other = (run, base) if run["battery"] else (base, run)
         s_lo, s_hi = D._gain_year(buyer, other, out, hours)      # the buyer's saving a year
+        check(f"{tag}: the yearly saving the line is built on is not zero",
+              abs(s_lo) + abs(s_hi) > 1.0, f"{s_lo:,.0f} … {s_hi:,.0f}")
         terms = dict(capex=float(bat.get("capex", 0.0)), years=years, esc=esc, disc=disc,
                      om_fraction=float(bat.get("om_fraction", 0.0)),
                      replace_year=int(bat.get("replace_year", 0) or 0),
@@ -398,6 +400,8 @@ def _pair_checks(at, out: dict, run: dict, base: dict, tag: str) -> None:
                   f"year {p:,.1f}" in texts, f"{p:.2f} · {texts[:100]}")
     else:
         s_lo, s_hi = D._gain_year(run, base, out, hours)
+        check(f"{tag}: the yearly saving the line is built on is not zero",
+              abs(s_lo) + abs(s_hi) > 1.0, f"{s_lo:,.0f} … {s_hi:,.0f}")
         f = [((1 + esc) / (1 + disc)) ** y for y in range(1, years + 1)]
         want = [sum(f[:y]) * s_lo for y in range(1, years + 1)]
         check(f"{tag}: no battery between them -- the saving added up from year 1, nothing to repay",
@@ -418,7 +422,9 @@ def b_page() -> None:
         print(f"\n  -- {values}")
         at.segmented_control(key="gd_values").set_value(values).run()
         ln = next(w for w in at.number_input if (w.key or "").startswith("gd_len_"))
-        ln.set_value(96).run()
+        # his per-year figure (month_mean) drops a month with under a quarter of its
+        # hours measured, so four days give him a year of zero: a month, then
+        ln.set_value(96 if values == D.VALUES_OURS else 744).run()
         at.button(key="gd_run").click().run(timeout=300)
         check(f"{values}: a solve raises no error", not at.exception and not at.error,
               str([e.value for e in [*at.exception, *at.error]][:1]))
