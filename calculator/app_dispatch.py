@@ -2909,9 +2909,11 @@ def render() -> None:
                      "a second on a day. A comparison the gap cannot resolve is named under "
                      "the results.")
 
-    # ---- 6. how a year is covered, and what 25 of them are worth ----------------
-    T.panel_head("A year, and twenty-five of them")
-    with st.expander("Coverage and lifetime", expanded=True):
+    # ---- 6. how the year is solved, and what the years are worth ----------------
+    # (was "A year, and twenty-five of them" -- wrong on the Tailscale app's
+    # values, whose period is 15 years)
+    T.panel_head("Year and lifetime")
+    with st.expander("How the year is solved · lifetime finance", expanded=True):
         whole = len(load) % 24 == 0 and len(load) // 24 >= 4
         cover = st.radio(
             "How to cover the horizon",
@@ -3214,7 +3216,9 @@ def render() -> None:
         _pair_charts(run, base, runs, out, H)
         P.sub(f"{run['name']} against every other scenario")
         _economics(run, others, out, H, vs=base)
-        T.panel_head(f"Over {int((out.get('life') or {}).get('years', 25))} years")
+        # the results half of "Year and lifetime", the inputs panel of that name
+        T.panel_head(f"Year and lifetime · over "
+                     f"{int((out.get('life') or {}).get('years', 25))} years")
         _lifecycle(run, others, out, H, vs=base)
         sav = savings(run, base, out)
     else:

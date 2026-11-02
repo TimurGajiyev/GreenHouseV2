@@ -1,4 +1,4 @@
-"""How "A year, and twenty-five of them" carries a window of a measured plant
+"""How "Year and lifetime" (once "A year, and twenty-five of them") carries a window of a measured plant
 to a year and to 25 years.
 
     python calculator/tools/test_year_window.py
