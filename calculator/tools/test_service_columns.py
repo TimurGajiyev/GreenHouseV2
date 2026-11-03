@@ -247,8 +247,16 @@ def c_page() -> None:
         if "gd_units" in at.session_state:      # edits made on the old table
             del at.session_state["gd_units"]
         at.run()
-        caps = " ".join(x.value for x in at.caption)
-        check(f"{values}: the rate is said under the table",
+        check(f"{values}: the rate note is hidden with the other notes",
+              "per running hour" not in " ".join(x.value for x in at.caption))
+        D.SHOW_NOTES = True
+        try:
+            at.run()
+            caps = " ".join(x.value for x in at.caption)
+        finally:
+            D.SHOW_NOTES = False
+        at.run()
+        check(f"{values}: SHOW_NOTES = True says the rate under the table",
               f"{C_OEM / N_OEM:,.0f} per running hour" in caps, caps[caps.find("Services"):][:90])
         ln = next(w for w in at.number_input if (w.key or "").startswith("gd_len_"))
         ln.set_value(96 if values == D.VALUES_OURS else 744).run()

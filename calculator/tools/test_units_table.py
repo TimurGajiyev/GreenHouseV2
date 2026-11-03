@@ -190,11 +190,19 @@ def d_variable_om() -> None:
         check(f"{values}: Variable O&M is hidden, every row keeps it at 0",
               cols.get(D.U_OM, {}).get("hidden") is True
               and D.U_OM in df.columns and (df[D.U_OM] == 0).all(), str(cols.get(D.U_OM)))
-        caps = " ".join(x.value for x in at.caption)
+        check(f"{values}: the cost-of-running note is hidden with the other notes",
+              "Cost of running" not in " ".join(x.value for x in at.caption))
+        D.SHOW_NOTES = True
+        try:
+            at.run()
+            caps = " ".join(x.value for x in at.caption)
+        finally:
+            D.SHOW_NOTES = False
         want = [expected(r) for _, r in df.iterrows() if float(r[D.U_KW]) > 0]
         said = all(f"**{w['full']:,.1f}**" in caps and f"**{w['half']:,.1f}**" in caps
                    and f"{w['per_hour']:,.0f}" in caps for w in want)
-        check(f"{values}: the cost of running is said under the table, as recomputed here",
+        check(f"{values}: SHOW_NOTES = True says the cost of running under the table, "
+              "as recomputed here",
               "Cost of running, everything in" in caps and said,
               "; ".join(f"{w['full']:.1f} / {w['half']:.1f}" for w in want))
     D.SHOW_VARIABLE_OM = True

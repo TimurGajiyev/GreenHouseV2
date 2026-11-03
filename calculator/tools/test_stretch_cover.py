@@ -215,13 +215,19 @@ def c_page() -> None:
           at.number_input(key="gd_tlim").value == 600)
     for values in (D.VALUES_OURS, D.VALUES_ZH):
         at.segmented_control(key="gd_values").set_value(values).run()
-        caps = " ".join(c.value for c in at.caption)
         # the stretch way is exact but slow (hours with a battery); every day on
-        # its own is the one way shown, a few minutes for a measured year
-        check(f"{values}: one way only, every day on its own, said in the panel",
+        # its own is the one way shown, a few minutes for a measured year. With
+        # the notes hidden (SHOW_NOTES) the panel names it, and what it does and
+        # gets wrong is the label's help -- the battery's saving reads 3-7 % high
+        # on our values (REPORT.md, "Revised 03.11.2026"), not "within about 1 %"
+        lab = [m for m in at.markdown if m.value == f"**{D.COVER_EVERY}**"]
+        hlp = lab[0].proto.help if lab else ""
+        check(f"{values}: one way only, every day on its own, named in the panel, "
+              "its note the label's help",
               not any((r.key or "") == "gd_cover" for r in at.radio)
-              and D.COVER_SHOWN == D.COVER_EVERY and D.COVER_EVERY in caps
-              and "within about 1 % of solving each unbroken stretch whole" in caps)
+              and D.COVER_SHOWN == D.COVER_EVERY and len(lab) == 1
+              and "3–7 % high" in hlp and "within about 1 %" not in hlp
+              and "picks its battery charge afresh at midnight" in hlp, hlp[:80])
         ln = next(w for w in at.number_input if (w.key or "").startswith("gd_len_"))
         ln.set_value(24 * 10).run()
         at.button(key="gd_run").click().run(timeout=900)

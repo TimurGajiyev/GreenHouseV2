@@ -2685,6 +2685,8 @@ whatever gap it leaves.
 
 ## Revised 02.11.2026 (6): back to every day on its own — fast and within 1 %
 
+*Corrected 03.11.2026: the "within 1 %" below was measured on short stretches only. Over the whole horizon every day on its own puts the battery's saving 3–7 % high on our values (see "Revised 03.11.2026").*
+
 The stretch way of (5) is exact but too slow to use:
 * on the deployed page a full horizon on his values ran past half an hour at "stretch 6 of 48"
   for the battery scenario;
@@ -2721,6 +2723,85 @@ day or stretches. It now shows for any horizon with no clock shorter than a year
 solved (`annualised_window`). The period view also says when every day was solved on its own,
 instead of calling the days "typical".
 
+## Revised 03.11.2026: why stretches take hours, what every day on its own gets wrong
+
+**Why hours against minutes.** 582 solves, both value sets, every scenario, each unbroken stretch
+solved whole (0.01 %, 600 s, the page's settings), day by day, and in 2-day windows; HiGHS's own
+log for every whole stretch. The time is all in the battery scenario (B, battery and a 90 %
+minimum load):
+* without a battery (A, C) a 20-day window solves in 1.5–2 s, at the root node;
+* with one, every hour is tied to every other through the charge, and an engine is either off or
+  at 90–100 %, so the solver searches which hours to run in bursts and store. The search grows
+  explosively with the window:
+
+| Window, B | 1 day | 2 days | 3 days | 5 days | 7 days |
+|---|---|---|---|---|---|
+| Our study | 0.9 s | 4.8 s | 10 s | 67 s | 600 s limit |
+| Tailscale app | 1.1 s | 25 s | 600 s limit | limit | limit |
+
+* our B: 8 of 30 stretches hit the 600 s limit, 1.5 h for B alone; his B: 19 of 29, 3.4 h;
+* 0.01 % of a 20-day window is 2,000 ₸, less than one start (15,000 ₸); at REopt's own 1 % his
+  20-day window still has 4.5 % left after 600 s;
+* the capped answers kept improving to the end: a 60 s limit instead of 600 s would leave them
+  0.13 % (ours) and 0.41 % (his) dearer, so the stretch way's figure depends on the wait and on
+  the CPU. A day proves its optimum in 0.5–2 s, the same on any machine.
+
+**They were not more accurate.** Cost over the horizon, M ₸ (exact = the range the true optimum
+is proven to lie in, from each stretch's best plan and its dual bound):
+
+| | Every day on its own | Every stretch whole | Exact |
+|---|---|---|---|
+| Our study, B | 192.46 (2 min) | 192.85 (1.5 h) | 192.56–192.85 |
+| Our study, battery's saving A − B | 7.80 | 7.30 | 7.30–7.59 |
+| Tailscale app, B | 175.26 (6 min) | 175.30 (3.4 h) | 171.46–175.29 |
+
+On his values the hours bought a dearer plan than the minutes did.
+
+**What every day on its own gets wrong.** Each day closes its own battery cycle, so each picks
+its charge afresh at midnight: on an 11-day stretch of ours the battery ends one day at 1,650 kWh
+and opens the next at 5,500 — the whole usable range, overnight, for nothing. On a 7-day stretch
+whose optimum the stretch solve proved, day by day came out 3.8 % below that proven minimum, with
+no up or down time broken there: the jump alone. Over the horizon our B also breaks a minimum up
+or down time 26 times at midnight. The result reads a battery scenario cheaper than it can run,
+and **the battery's saving 3–7 % high on our values** (7.80 M ₸ against 7.30–7.59). Section (6)
+said "within about 1 %, a little low": that was measured on 22 stretches of 2–6 days only, and
+it is wrong in size and sign. On his values the exact range is too wide to say.
+
+**Option 2, prototyped outside the page** (not in the app): each day solved as a 48-hour window
+with the next one, the first 24 hours kept, the battery's charge and each engine's state carried
+into the next day, a stopped engine held off for its minimum down time, the horizon closing at no
+less than its opening 50 %. On our study, A then B, one process, page settings: **6 min** (19 s
++ 5 min 46 s), all 372 windows proven to 0.01 %, no jump, no minimum time broken; the battery's
+saving 7.50 M ₸, inside the exact range. On 9 stretches with a proven optimum it was 0–0.6 %
+above it and never below what is physically possible, where day by day missed by −3.7 to
++3.5 %. On his values 2-day windows average ~50 s, so an estimated 1.5–2.5 h: not measured, and
+not yet a fit for his values.
+
+**On the page now.** Every day on its own stays the way shown. Its note now says what it gets
+wrong: the charge picked afresh at midnight, the saving 3–7 % high on our values
+(`every_day_note`). The explanatory notes under the inputs are hidden, not removed (`SHOW_NOTES`),
+in both value sets:
+* what the Tailscale app's values are;
+* the load-section notes and "no export";
+* what a unit row is, the passport values, each unit's cost of running and the service notes;
+* the battery and rules lines;
+* how the year is solved.
+
+The way is still named in four words, its corrected note as the label's help. What stays:
+warnings and errors (a half-filled service row among them), and the one-line readouts of
+numbers (the load's hours and kWh, the price range, the hours each engine was down). The
+results' notes and chart captions are untouched.
+
+`tools/test_notes_hidden.py` checks, from outside:
+* none of the ten notes is drawn in either value set, before or after a solve;
+* the readouts and the half-filled-service warning stay;
+* the label's help is the corrected note, calling availability measured only where it is;
+* `SHOW_NOTES = True` draws every note again;
+* the core is unchanged.
+
+`test_units_table`, `test_service_columns` and `test_stretch_cover` now read the hidden notes with
+the flag on.
+
 ## Reproduce
 
 ```bash
@@ -2736,6 +2817,7 @@ python calculator/tools/test_app_entry.py           # the app opens on the dispa
 python calculator/tools/test_units_table.py         # Spread services hidden and always on
 python calculator/tools/test_service_columns.py     # service: two columns, priced per running hour
 python calculator/tools/test_stretch_cover.py       # every unbroken stretch as one window (REopt's way)
+python calculator/tools/test_notes_hidden.py        # the input notes hidden, the way's note corrected
 python calculator/tools/service_columns_study.py    # the six columns as they were (~45 min)
 python calculator/tools/test_tailscale_values.py --compare=K   # a year on his values against his run
                                                     # K, M or KM, one at a time, ~6 min each

@@ -99,9 +99,11 @@ COVER_STRETCH = "Every unbroken stretch as one window (REopt's way)"
 # half an hour at stretch 6 of 48, and on the Tailscale app's values a battery
 # stretch of a few days does not prove its optimum in 300 s. Every day solved on
 # its own is the one way shown (COVER_SHOWN): about 2 minutes on our values and
-# 5.5 on his, every day proven to 0.01 %, and within about 1 % of the stretch
-# way on the battery's saving (REPORT.md, "Revised 02.11.2026 (6)"). The other
-# ways are hidden, not removed: SHOW_ALL_COVERS = True offers them all again.
+# 5.5 on his, every day proven to 0.01 % (REPORT.md, "Revised 02.11.2026 (6)").
+# It is not exact: each day picks its battery charge afresh at midnight, and over
+# the whole horizon that put the battery's saving 3-7 % high on our values
+# ("Revised 03.11.2026"; every_day_note says so). The other ways are hidden, not
+# removed: SHOW_ALL_COVERS = True offers them all again.
 COVER_SHOWN = COVER_EVERY
 SHOW_ALL_COVERS = False
 
@@ -127,6 +129,41 @@ REAL_PRESET = "Zharkent · "
 # The note under a measured source (period, days kept, balance hours, months
 # not measured) is hidden, not removed. True shows it again.
 SHOW_MEASURED_NOTE = False
+
+# The explanatory notes under the inputs, in both value sets -- what the Tailscale
+# app's values are, what the load and units sections mean, where the passport
+# values come from, each unit's cost of running, the battery and rules lines, how
+# the year is solved -- are hidden, not removed (``explain``). True shows them
+# all again. Warnings and errors stay, and so do the one-line readouts of numbers
+# (the load's hours and kWh, the price range, the hours each engine was down).
+SHOW_NOTES = False
+
+
+def explain(body: str) -> None:
+    """An explanatory note under an input: drawn only when SHOW_NOTES."""
+    if SHOW_NOTES:
+        st.caption(body)
+
+
+def every_day_note(days: int, measured_avail: bool) -> str:
+    """What "every day solved on its own" does, and what it gets wrong.
+
+    Measured over the whole horizon on our values (REPORT.md, "Revised
+    03.11.2026"): the battery's saving came out 7.80 M ₸ against 7.30-7.59 M ₸
+    proven for the horizon solved without cuts -- 3-7 % high, not the "within
+    about 1 %, a little low" this note used to say, which came from short
+    stretches only. A day that picks its battery charge afresh at midnight is a
+    plan the battery cannot run."""
+    return (f"The {days:,} days of the horizon are each solved as a 24-hour cycle"
+            + (" with that day's own measured engine availability" if measured_avail else "")
+            + ", every one to the optimality gap below, and laid end to end; the starts "
+              "where two days meet are counted and charged. Fast: a few minutes for a "
+              "measured year. What it gets wrong: each day picks its battery charge afresh "
+              "at midnight, as if the battery could go from empty to full overnight, and a "
+              "minimum up or down time spanning midnight is not held. Both make a battery "
+              "scenario look cheaper than it can run: on our values the battery's saving "
+              "reads about 3–7 % high (7.80 M ₸ against 7.30–7.59 M ₸ proven over the 186 "
+              "days). On the Tailscale app's values the solver cannot bound it that closely.")
 
 # bess_profile_v2.jsx / CHP_BESS_model_v2.xlsx, «Допущения»
 JSX_UNITS = {
@@ -715,7 +752,7 @@ def _cost_note(units: pd.DataFrame, cur: str) -> None:
                     f"**{c['half']:,.1f}** at half load = {c['per_kwh']:,.2f} {cur} per kWh "
                     f"+ {c['per_hour']:,.0f} {cur} per hour on")
     if rows:
-        st.caption("Cost of running, everything in (fuel on its curve, O&M, services) — "
+        explain("Cost of running, everything in (fuel on its curve, O&M, services) — "
                    + "  \n".join(rows) + "  \nThe part per hour on is paid whatever the "
                    "output: the curve's idle gas, the O&M per running hour and the services. "
                    "It is why a kWh at half load costs more.")
@@ -740,7 +777,7 @@ def _maint_note(units: pd.DataFrame, hours: int) -> None:
         elif n > 0 or c > 0:
             half.append(str(name))
     if rows:
-        st.caption("Services — " + "  \n".join(rows) + "  \nThe service's own downtime is "
+        explain("Services — " + "  \n".join(rows) + "  \nThe service's own downtime is "
                    "not modelled: a shift in 1,000–2,000 running hours is under 1 % of them, "
                    "and on a measured plant the logger's stops already hold it.")
     if half:
@@ -810,8 +847,8 @@ def _maint_note_core(units: pd.DataFrame, hours: int) -> None:
                 f"~{interval:,.0f} running hours{flag}")
     if not rows:
         return
-    st.caption("Service plan — " + "  \n".join(rows))
-    st.caption(
+    explain("Service plan — " + "  \n".join(rows))
+    explain(
         "The interval is in **running** hours, which is how INNIO Jenbacher and "
         "TEDOM write it; at continuous duty a unit clocks about 730 h a month, so "
         "a 1,000–2,000 h interval falls every 1.5–2.5 months, not monthly. "
@@ -2330,7 +2367,7 @@ def render() -> None:
     zh = values_on == VALUES_ZH
     vk = (lambda k: f"{k}_zh") if zh else (lambda k: k)
     if zh:
-        st.caption(
+        explain(
             "Every input below is the Tailscale app's: its twelve months of a measured plant, "
             "prices ex VAT, its J320 efficiencies (not the passport's), its service per engine "
             "hour, no O&M, no replacement, no discount, engines always available. Its 3 MWh "
@@ -2460,7 +2497,7 @@ def render() -> None:
             #   load, note = build_year(YEAR_SHAPES[shape], ex["week"])
             _avg = float(ss.get("gd_site_avg") or 0.0) or SITE_AVG_DEFAULT
             load, note = free_year(_avg)
-            st.caption(note + _prov)
+            explain(note + _prov)
         else:
             load = list(ex["day" if "day" in src else "week"])
         if load:
@@ -2540,22 +2577,22 @@ def render() -> None:
                     f"them otherwise, so the profile is left at its own level.")
             else:
                 load, _g, _note = fit_to_anchors(load, s_min, s_avg, s_max)
-                st.caption(_note)
-                st.caption(
+                explain(_note)
+                explain(
                     f"{len(load):,} hours · {sum(load):,.0f} kWh · "
                     f"load factor {100 * s_avg / s_max:.1f} %. The shape is kept and every "
                     f"hour keeps its rank; only the level is the site's. An affine stretch "
                     f"would hit the minimum and the maximum and miss the average by up to "
                     f"14 % on these shapes, which is why a single exponent is solved instead.")
         elif fit_on:
-            st.caption("Load a profile above and its shape will be refitted onto these three.")
+            explain("Load a profile above and its shape will be refitted onto these three.")
         elif site is not None:
-            st.caption(
+            explain(
                 "A measured plant is its own demand: the level is the meter's, and "
                 "refitting it would invent another, so the box stays off. The three "
                 "numbers matter only to an upload and to Free mode.")
         else:
-            st.caption(
+            explain(
                 "Not scaling. The profile keeps the level it arrived with — in Free "
                 "mode that is the average above, already applied; for an upload or an "
                 "example week it is the file's own. Tick the box to pin the minimum "
@@ -2621,7 +2658,7 @@ def render() -> None:
                 st.caption(f"hourly prices {min(price):,.2f}–{max(price):,.2f} {cur}/kWh")
             else:
                 st.error(f"{len(hp)} prices for {len(load)} hours — using the flat price.")
-        st.caption("No export and no demand charge in this study.")
+        explain("No export and no demand charge in this study.")
 
     # ---- 3. units -------------------------------------------------------------
     T.panel_head("Fuel-fired units")
@@ -2742,7 +2779,7 @@ def render() -> None:
             help="CHP_BESS_dispatch_sim.xlsx: OEM maintenance plans count a start as 10–20 "
                  "running hours. Used for the 'effective hours' row; it does not change "
                  "the dispatch — the start cost does.")
-        st.caption("Each unit runs at a fixed nameplate: on/off, a minimum load while on, a "
+        explain("Each unit runs at a fixed nameplate: on/off, a minimum load while on, a "
                    "start cost, and minimum up and down times. Leave a row's rating at 0 to "
                    "drop it; an empty table means grid (and battery) only.")
         # which rows carry their passport, read off the rows themselves
@@ -2750,7 +2787,7 @@ def render() -> None:
                                            _num(u.get(U_EFF50)))))
                  for _, u in units.iterrows()]
         if any(src for _, src in _rows):
-            st.caption(
+            explain(
                 "**From the passports** (docs/equipment): rated kW, electrical efficiency "
                 "at 100 % and 50 % load and the 50 % minimum load — "
                 + ", ".join(f"{n} ✓" if src else f"{n}: not a passport row"
@@ -2854,7 +2891,7 @@ def render() -> None:
                      "replacement cost is 0; the study charges the battery's full price "
                      "because the project has no warranty or augmentation terms. Lower it "
                      "when you have them.")
-        st.caption("Size is fixed; each scenario below switches the battery on or off.")
+        explain("Size is fixed; each scenario below switches the battery on or off.")
     bat = dict(kw=b_kw, kwh=b_kwh, rte=rte / 100.0, soc_min=soc_min / 100.0,
                soc_init=soc_init / 100.0, cyclic=soc_mode.startswith("Cyclic"),
                wear=wear, grid_charge=grid_charge, capex=capex,
@@ -2885,7 +2922,7 @@ def render() -> None:
             ss["gd_scen_df"] = pd.DataFrame(
                 [_library[n] for n in picked],
                 columns=[S_NAME, S_MIN, S_BAT, S_SCALE, S_MAXST])
-        st.caption(f"{len(picked)} rule{'s' if len(picked) != 1 else ''} picked. Fine-tune "
+        explain(f"{len(picked)} rule{'s' if len(picked) != 1 else ''} picked. Fine-tune "
                    f"them below or add a row of your own; picking again resets the table.")
         scen = st.data_editor(
             ss["gd_scen_df"], num_rows="dynamic", use_container_width=True,
@@ -2948,21 +2985,15 @@ def render() -> None:
         whole = len(load) % 24 == 0 and len(load) // 24 >= 4
         if not SHOW_ALL_COVERS:
             cover = COVER_SHOWN
-            _nd = len(load) // 24
-            st.caption(
-                f"**{COVER_SHOWN}** — "
-                + (f"the {_nd:,} days of the horizon are each solved as a 24-hour cycle"
-                   + (" with that day's own measured engine availability" if site is not None
-                      else "")
-                   + ", every one to the optimality gap below, and laid end to end; the "
-                     "starts where two days meet are counted and charged. Fast — a few "
-                     "minutes for a measured year — and the battery's saving lands within "
-                     "about 1 % of solving each unbroken stretch whole, which takes hours: "
-                     "across midnight the battery cannot carry its charge, and a minimum up "
-                     "or down time spanning midnight is not enforced."
-                   if whole else
-                   f"the horizon is {len(load):,} hours, short of four whole days, so it "
-                   "is solved as one window."))
+            _how = (every_day_note(len(load) // 24, avail is not None) if whole else
+                    f"The horizon is {len(load):,} hours, short of four whole days, so it "
+                    "is solved as one window.")
+            # the way is named in four words; what it does and gets wrong is a note
+            # (shown with SHOW_NOTES) and, while the notes are hidden, the label's help
+            if SHOW_NOTES:
+                explain(f"**{COVER_SHOWN if whole else COVER_WINDOW}** — {_how}")
+            else:
+                st.markdown(f"**{COVER_SHOWN if whole else COVER_WINDOW}**", help=_how)
         cover = cover if not SHOW_ALL_COVERS else st.radio(
             "How to cover the horizon",
             [COVER_EVERY, COVER_STRETCH, COVER_WINDOW, COVER_DAYS], key="gd_cover",
@@ -3021,7 +3052,7 @@ def render() -> None:
                                    help="REopt's own offtaker default is 6.24 %/yr, nominal.")
         if year_mode:
             _kk = max(1, min(int(kdays), len(load) // 24))
-            st.caption(f"{_kk} typical days × 24 h = {_kk * 24:,} hours to solve per scenario "
+            explain(f"{_kk} typical days × 24 h = {_kk * 24:,} hours to solve per scenario "
                        f"instead of {len(load):,}. The horizon's energy is preserved exactly; "
                        f"its peak is smoothed by the clustering; the starts created where "
                        f"two unlike days meet are counted and charged, but a minimum up or "
@@ -3029,13 +3060,11 @@ def render() -> None:
                        + (" A typical day's engine availability is the mean of its days: an "
                           "outage becomes a derate. Solve every day on its own to keep the "
                           "outages." if avail is not None else ""))
-        elif every_mode:
-            st.caption(f"All {len(load) // 24:,} days solved one by one, each as a 24-hour "
-                       f"cycle{' with its own measured engine availability' if avail is not None else ''}, "
-                       f"then laid end to end: nothing is clustered and nothing smoothed. The "
-                       f"starts created where two days meet are counted and charged; a minimum "
-                       f"up or down time spanning midnight is not enforced, and the battery "
-                       f"cannot carry energy from one day to the next.")
+        elif every_mode and SHOW_ALL_COVERS:
+            # with one way shown, the note at the top of the panel already says this
+            explain(f"All {len(load) // 24:,} days solved one by one, then laid end to end: "
+                    f"nothing is clustered and nothing smoothed. "
+                    + every_day_note(len(load) // 24, avail is not None))
         elif cover == COVER_WINDOW and len(load) > 168 and len(units.index):
             st.info(f"{len(load):,} hours with on/off units means "
                     f"{len(load) * len(units.index):,} commitment binaries per scenario; "
