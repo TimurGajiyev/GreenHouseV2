@@ -120,16 +120,21 @@ st.title(":material/bolt: GreenHouse")
 # at the top, and with it every step of the REopt tool below, unchanged.
 SHOW_REOPT_TOOL = False
 DISPATCH = "Custom dispatch study (not REopt)"
-if SHOW_REOPT_TOOL:
-    study = st.segmented_control(
-        "Study", ["REopt tool", DISPATCH], default="REopt tool",
-        key="study", label_visibility="collapsed",
-    )
-else:
-    study = DISPATCH
+# The colleague's Zharkent app, rebuilt: his layout, defaults, rule and formulas
+# (app_tailscale.py, tailscale_method.py). Second in the switch while the REopt tool
+# is hidden.
+TAILSCALE = "Tailscale app (colleague's method)"
+studies = (["REopt tool"] if SHOW_REOPT_TOOL else []) + [DISPATCH, TAILSCALE]
+study = st.segmented_control(
+    "Study", studies, default=studies[0], key="study", label_visibility="collapsed",
+) or studies[0]
 if study == DISPATCH:
     import app_dispatch
     app_dispatch.render()
+    st.stop()
+if study == TAILSCALE:
+    import app_tailscale
+    app_tailscale.render()
     st.stop()
 
 st.caption(

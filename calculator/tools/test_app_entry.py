@@ -3,10 +3,11 @@
     python calculator/tools/test_app_entry.py
 
 The REopt tool is hidden, not removed (``SHOW_REOPT_TOOL`` in streamlit_app.py).
-This runs the app headless twice: as it ships, it must open straight on the
-custom dispatch study with no switch above it; with the flag turned on, the
-switch must be back with both studies and the REopt tool must still draw its
-first step. No API key, nothing online, no solve.
+This runs the app headless twice: as it ships, it must open on the custom
+dispatch study, with a switch above it offering the dispatch study and the
+Tailscale app (the colleague's method, app_tailscale.py) and nothing of the
+REopt tool; with the flag turned on, the REopt tool must be back first in the
+switch and still draw its first step. No API key, nothing online, no solve.
 """
 from __future__ import annotations
 
@@ -39,13 +40,18 @@ def main() -> None:
     at = AppTest.from_file(APP, default_timeout=120).run()
     check("the app opens", not at.exception, str([e.value for e in at.exception][:1]))
     keys = {w.key for w in at.segmented_control}
-    check("no study switch at the top", "study" not in keys, str(sorted(k for k in keys if k)))
-    check("it is the custom dispatch study: its Start from switch is there", "gd_values" in keys)
+    sw = [w for w in at.segmented_control if w.key == "study"]
+    check("the switch at the top: the dispatch study, then the Tailscale app; no REopt tool",
+          len(sw) == 1 and list(sw[0].options) == ["Custom dispatch study (not REopt)",
+                                                   "Tailscale app (colleague's method)"],
+          str(sw[0].options if sw else None))
+    check("it opens on the custom dispatch study: its Start from switch is there",
+          "gd_values" in keys and sw and sw[0].value == "Custom dispatch study (not REopt)")
     text = " ".join([*(h.proto.body for h in at.get("html")), *(m.value for m in at.markdown),
                      *(c.value for c in at.caption)])
     check("nothing of the REopt tool is drawn: neither its caption nor its first step",
           "Steps 1–5 of the REopt web tool" not in text and "Use case" not in text
-          and len(at.segmented_control) == 1, f"{len(at.segmented_control)} switches")
+          and len(at.segmented_control) == 2, f"{len(at.segmented_control)} switches")
 
     print("\nwith SHOW_REOPT_TOOL = True")
     src = open(APP, encoding="utf-8").read()
@@ -55,8 +61,9 @@ def main() -> None:
                              default_timeout=120).run()
     check("the app opens", not at.exception, str([e.value for e in at.exception][:1]))
     sw = [w for w in at.segmented_control if w.key == "study"]
-    check("the switch is back, with both studies, on the REopt tool",
-          len(sw) == 1 and list(sw[0].options) == ["REopt tool", "Custom dispatch study (not REopt)"]
+    check("the REopt tool is back first in the switch, and the app opens on it",
+          len(sw) == 1 and list(sw[0].options) == ["REopt tool", "Custom dispatch study (not REopt)",
+                                                   "Tailscale app (colleague's method)"]
           and sw[0].value == "REopt tool", str(sw[0].options if sw else None))
     caps = " ".join(c.value for c in at.caption)
     check("and the REopt tool still draws its first step",

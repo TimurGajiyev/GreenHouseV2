@@ -2802,6 +2802,92 @@ results' notes and chart captions are untouched.
 `test_units_table`, `test_service_columns` and `test_stretch_cover` now read the hidden notes with
 the flag on.
 
+## Revised 17.11.2026: the Tailscale app, rebuilt as a second study
+
+**What is on the page.** The switch at the top offers two studies (the REopt tool stays hidden):
+the custom dispatch study, as before, and **Tailscale app (colleague's method)**. The second is
+his Zharkent calculator rebuilt:
+* his sidebar and its five groups, every default of his `inputs.py`;
+* his three views: Battery scenarios, Data and Today;
+* his report: three entity tabs, three cards whose arithmetic opens under them, and his charts
+  (payback, profit over life, where the saving comes from, engine starts, the day by step, start
+  wear, wear per year two ways);
+* his 41-row inputs table with its sources and statuses.
+
+The arithmetic is `calculator/tailscale_method.py`: docs/zharkent-app/recreate.py, which matched
+his published run in 100 % of his 5-minute steps, with his constants turned into inputs. Not
+copied: his RU translation, his server-side run history (runs are kept for the session) and his
+dark theme.
+
+**The data check.** His 5-minute steps are not in this repository: his run file stays
+git-ignored, and his site is not reachable from outside his Tailscale network. So the page runs
+his rule on the steps it has:
+* his own 5-minute steps, when his run file `.playwright/output/zharkent/` is on disk;
+* else this project's hourly table, built by his data rules (study year, gaps up to 3 h
+  bridged, never in his never-filled months, load = engines + grid, Meshki +1 h, readings
+  rebuilt from the balance left out).
+
+Against his Data page, month by month:
+
+| | His | Ours | |
+|---|---:|---:|---|
+| Krakhmal grid import, MWh | 3,778 | 3,777 | the same |
+| Meshki grid import, MWh | 937 | 939 | the same |
+| Krakhmal MWM, MWh | 3,572 | 2,937 | MWM before Nov 2025 is not in our table; Nov–Sep identical |
+| Krakhmal Jenbacher 2, MWh | 5,654 | 6,168 | ours includes readings rebuilt from the balance |
+| Meshki Jenbacher 3, MWh | 4,832 | 4,654 | −3.7 % |
+| Krakhmal complete hours | 6,153 | 5,240 | his gaps filled, his MWM months |
+
+The grid meters agree to the MWh. The engines differ only where the two sources hold different
+hours.
+
+The bigger difference is the resolution. His rule on our hourly steps gives today's totals
+close to his:
+* Krakhmal 447.8 against 449.0 M KZT/yr;
+* Meshki 169.5 against 169.5;
+* Joined 588.8 against 600.7.
+
+The parts move apart, though, because an hour nets the swings inside it. Krakhmal's import
+falls to 2,784 MWh against his 3,318, and its starts to 219 against his 635. His saving and
+payback move with them:
+
+| | His (5-min) | His rule on our hours |
+|---|---|---|
+| Krakhmal, 3 MWh × 0.33 C | 90.5 M / 3.0 y | 74.4 M / 3.7 y |
+| Meshki | 26.1 M / 10.5 y | 11.9 M / 22.9 y |
+| Joined | 127.2 M / 2.1 y | 93.8 M / 2.9 y |
+
+To match his figures, the page needs his 5-minute steps. With his file on disk it uses them,
+and `test_tailscale_app.py` part F then checks his published figures.
+
+`tools/test_tailscale_app.py` (65 checks) checks:
+* on synthetic 5-minute steps, every step and every yearly figure is recreate.py's;
+* every default is his: the 41 rows, the derived prices, the 24 sizes, the 15 placeholders;
+* his 15 result formulas hold on every size of every entity;
+* the steps follow his data rules;
+* the page: the switch, the three views, the cards equal to the engine, Run scenario adds a run;
+* his published figures, when his file is present.
+
+`test_app_entry.py` now expects the two-study switch.
+
+**This project's period view on his rule.** Under his charts, each entity tab also carries the
+dispatch study's own "Dispatch by period" (`tailscale_method.period_state`, drawn by
+`app_periods.render_periods`). It has two parts.
+* **Measured** is the plant's meters as they ran (`app_measured`): Day, Week, Month or Year,
+  with the hover panel on every hour.
+* **Your battery under his rule** comes below it: his steps averaged to clock hours and cut into
+  whole 24-hour days, with real dates. The hover panel shows load, each engine, charge and
+  discharge, grid, units running, starts and state of charge. It also shows the hour's saving,
+  in his terms: today's fuel on his curve, engine hours and grid, less the rule's, with start
+  wear apart. The hour table, the summary, the per-unit table, starts by day and the battery
+  table follow.
+
+Every hour balances: engines + grid + discharge = load + charge + export. Recomputed
+independently from his steps, the hover panel's saving over the drawn days agrees to the tenge
+(Krakhmal 31,185,766 ₸ over 167 days). Hours in days the data does not complete are not drawn,
+and the page says how many (655 h on Krakhmal). `test_tailscale_app.py` part G checks all of
+this.
+
 ## Reproduce
 
 ```bash
@@ -2818,6 +2904,7 @@ python calculator/tools/test_units_table.py         # Spread services hidden and
 python calculator/tools/test_service_columns.py     # service: two columns, priced per running hour
 python calculator/tools/test_stretch_cover.py       # every unbroken stretch as one window (REopt's way)
 python calculator/tools/test_notes_hidden.py        # the input notes hidden, the way's note corrected
+python calculator/tools/test_tailscale_app.py       # the colleague's app rebuilt: his rule, defaults, formulas
 python calculator/tools/service_columns_study.py    # the six columns as they were (~45 min)
 python calculator/tools/test_tailscale_values.py --compare=K   # a year on his values against his run
                                                     # K, M or KM, one at a time, ~6 min each
