@@ -2804,6 +2804,8 @@ the flag on.
 
 ## Revised 17.11.2026: the Tailscale app, rebuilt as a second study
 
+*Renamed and redesigned in the next section; the files named here are now `payback_rule.py`, `app_payback.py` and `test_payback_study.py`.*
+
 **What is on the page.** The switch at the top offers two studies (the REopt tool stays hidden):
 the custom dispatch study, as before, and **Tailscale app (colleague's method)**. The second is
 his Zharkent calculator rebuilt:
@@ -2888,6 +2890,89 @@ independently from his steps, the hover panel's saving over the drawn days agree
 and the page says how many (655 h on Krakhmal). `test_tailscale_app.py` part G checks all of
 this.
 
+## Revised 17.11.2026 (2): the battery payback study, in this project's design
+
+The second study of the switch is now **Battery payback study (rule-based)**. The page names
+no person and no other app. The files are `calculator/app_payback.py` and
+`calculator/payback_rule.py` (renamed from `app_tailscale.py` and `tailscale_method.py`). The
+test is `tools/test_payback_study.py`. The calculations, results and formulas are still the
+reference run's (the section above). Only the inputs and the page around them changed.
+
+**The inputs.** They have left the sidebar. They now sit in the dispatch study's own panels:
+* the same orange bars, expanders and rows of four fields;
+* four panels: Engines and the rule, Prices, Battery, Measured steps.
+
+The Battery panel has the dispatch study's battery fields, with the same names: Power, Energy,
+Own use, Round-trip efficiency, Minimum SoC, Wear cost, Battery CAPEX, Start SoC, Battery O&M,
+Replacement in year and Replacement cost. It adds cycle life, calendar life and the other sizes
+compared.
+
+**Run scenario.** Nothing runs until the button is pressed. The result is kept for the session.
+When the inputs on screen differ from the ones that were run, the page says so.
+
+**Removed:**
+* the run history table and its Show picker;
+* the C-rates. Every size compared now has your battery's own hours of storage (3.03 h at the
+  defaults). To try another power, type it in Power.
+* the data check expander. The data check stays in the tests and in this report.
+
+The dispatch study's second value set is now called "Payback study values".
+
+**How the battery fields enter the rule:**
+
+| Field | In the rule |
+|---|---|
+| Power, Energy | the battery simulated; other sizes at the same hours of storage |
+| Battery CAPEX | the price of your battery; other sizes in proportion to their energy |
+| Wear cost | per kWh discharged, added to the rule's cost (default 0) |
+| Battery O&M | taken off the saving every year (default 0) |
+| Replacement | in the payback if it falls before the payback; in the profit if it falls inside the battery's life (default none) |
+| Start SoC | the charge each unbroken run of data starts at (default 50 %) |
+| Round-trip efficiency, Minimum SoC, Own use | the rule's own (defaults 88 %, 10 %, 15 kW) |
+
+Two of the dispatch study's battery fields are left out, because a fixed rule cannot honour
+them:
+* grid charging: the rule charges only from the engines' surplus;
+* the cyclic start: each stretch of data starts at the start SoC.
+
+The default CAPEX, 273,024,000 ₸, is the reference's price of this battery:
+(3,000 kWh × 150 + 990 kW × 120) USD × 480. At the same hours of storage, pricing in
+proportion to energy gives the same figure as its formula. So at the defaults every formula is
+the reference's:
+* payback = price ÷ saving;
+* profit = saving × life − price.
+
+**Results at the defaults, on this project's hourly steps:**
+
+| | Today, ₸ a year | Your battery, 3,000 kWh / 990 kW | Shortest payback |
+|---|---:|---|---|
+| ЖКПЗ | 447.8 M | saving 74.4 M, 3.7 y, profit over life 395.7 M | the same battery, 3.7 y |
+| Жаркент 3 | 169.5 M | saving 11.9 M, 22.9 y | none pays back before it wears out |
+| Both plants, one battery | 588.8 M | saving 93.8 M, 2.9 y, profit over life 628.9 M | the same battery, 2.9 y |
+
+On these steps, 1 and 2 MWh keep the engines below the band for more than 1 % of their running
+hours. They are left out of the payback and profit charts, and the page names them under the
+payback chart.
+
+With the run file on disk, the page runs on the 5-minute steps, and your battery's figures are
+the published ones (ЖКПЗ 3.02 y). The shortest-payback card now searches only sizes with your
+battery's hours of storage. The reference's 2 MWh × 0.5 C has 2 h of storage, so you reach it
+by typing 2,000 kWh / 1,000 kW and the CAPEX.
+
+`tools/test_payback_study.py` checks seven things:
+* **A.** recreate.py, step by step and row by row, with the battery priced the reference's way.
+* **B.** The defaults, the 43-row inputs table and the 14 placeholders.
+* **C.** Every formula on every size, at the defaults and with wear, O&M and a replacement.
+* **D.** The data rules.
+* **E.** The page:
+  * the battery fields are the dispatch study's;
+  * nothing runs before Run scenario, and there is no sidebar or history;
+  * no person, other app or C-rate is named in any text, label or help;
+  * the cards are the rule's own figures;
+  * a stale result is flagged, and the next press runs the inputs typed.
+* **F.** The published figures, when the run file is present.
+* **G.** The period view.
+
 ## Reproduce
 
 ```bash
@@ -2897,14 +2982,14 @@ python calculator/tools/battery_real_data.py all    # every measured day (~10 mi
 python calculator/tools/battery_real_data.py solve --cases site3 --workers 8
                                                     # one case; the saved rows of the others stay
 python calculator/tools/test_year_window.py         # a window of measured days to a year and 25 years
-python calculator/tools/test_tailscale_values.py    # his values on the page; ours unmoved (1 min)
+python calculator/tools/test_tailscale_values.py    # the payback study's values on the dispatch page; ours unmoved (1 min)
 python calculator/tools/test_compare_viz.py         # the comparison's pictures, every pair, both values
 python calculator/tools/test_app_entry.py           # the app opens on the dispatch study; the REopt tool hidden
 python calculator/tools/test_units_table.py         # Spread services hidden and always on
 python calculator/tools/test_service_columns.py     # service: two columns, priced per running hour
 python calculator/tools/test_stretch_cover.py       # every unbroken stretch as one window (REopt's way)
 python calculator/tools/test_notes_hidden.py        # the input notes hidden, the way's note corrected
-python calculator/tools/test_tailscale_app.py       # the colleague's app rebuilt: his rule, defaults, formulas
+python calculator/tools/test_payback_study.py      # the battery payback study: the rule, defaults, formulas, page
 python calculator/tools/service_columns_study.py    # the six columns as they were (~45 min)
 python calculator/tools/test_tailscale_values.py --compare=K   # a year on his values against his run
                                                     # K, M or KM, one at a time, ~6 min each

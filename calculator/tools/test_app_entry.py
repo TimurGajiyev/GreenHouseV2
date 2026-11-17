@@ -5,7 +5,7 @@
 The REopt tool is hidden, not removed (``SHOW_REOPT_TOOL`` in streamlit_app.py).
 This runs the app headless twice: as it ships, it must open on the custom
 dispatch study, with a switch above it offering the dispatch study and the
-Tailscale app (the colleague's method, app_tailscale.py) and nothing of the
+battery payback study (rule-based, app_payback.py) and nothing of the
 REopt tool; with the flag turned on, the REopt tool must be back first in the
 switch and still draw its first step. No API key, nothing online, no solve.
 """
@@ -41,9 +41,9 @@ def main() -> None:
     check("the app opens", not at.exception, str([e.value for e in at.exception][:1]))
     keys = {w.key for w in at.segmented_control}
     sw = [w for w in at.segmented_control if w.key == "study"]
-    check("the switch at the top: the dispatch study, then the Tailscale app; no REopt tool",
+    check("the switch at the top: the dispatch study, then the battery payback study; no REopt tool",
           len(sw) == 1 and list(sw[0].options) == ["Custom dispatch study (not REopt)",
-                                                   "Tailscale app (colleague's method)"],
+                                                   "Battery payback study (rule-based)"],
           str(sw[0].options if sw else None))
     check("it opens on the custom dispatch study: its Start from switch is there",
           "gd_values" in keys and sw and sw[0].value == "Custom dispatch study (not REopt)")
@@ -63,7 +63,7 @@ def main() -> None:
     sw = [w for w in at.segmented_control if w.key == "study"]
     check("the REopt tool is back first in the switch, and the app opens on it",
           len(sw) == 1 and list(sw[0].options) == ["REopt tool", "Custom dispatch study (not REopt)",
-                                                   "Tailscale app (colleague's method)"]
+                                                   "Battery payback study (rule-based)"]
           and sw[0].value == "REopt tool", str(sw[0].options if sw else None))
     caps = " ".join(c.value for c in at.caption)
     check("and the REopt tool still draws its first step",

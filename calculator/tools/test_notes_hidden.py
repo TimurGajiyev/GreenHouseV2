@@ -45,7 +45,7 @@ FAILS: list[str] = []
 
 # the opening words of every note the inventory found on the page (both value sets)
 NOTES = {
-    "the Tailscale app's values": "Every input below is the Tailscale app's",
+    "the Tailscale app's values": "Every input below is the battery payback study's",
     "the measured load's level": "A measured plant is its own demand",
     "no export": "No export and no demand charge",
     "what a unit row is": "Each unit runs at a fixed nameplate",

@@ -395,7 +395,7 @@ def e_page() -> None:
     check("each engine's own service per running hour",
           "7,200 ₸/h" in html and "6,396 ₸/h" in html)
     check("the legend names his source, not the workbook's KILLER items",
-          "Tailscale app's own value" in html and "KILLER" not in html)
+          "battery payback study's value" in html and "KILLER" not in html)
     check("no NaN or None reached a table", ">nan<" not in html and ">None<" not in html)
 
     # the pair the results compare: picked in one place, the chart following it

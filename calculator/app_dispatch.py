@@ -163,7 +163,7 @@ def every_day_note(days: int, measured_avail: bool) -> str:
               "minimum up or down time spanning midnight is not held. Both make a battery "
               "scenario look cheaper than it can run: on our values the battery's saving "
               "reads about 3–7 % high (7.80 M ₸ against 7.30–7.59 M ₸ proven over the 186 "
-              "days). On the Tailscale app's values the solver cannot bound it that closely.")
+              "days). On the payback study's values the solver cannot bound it that closely.")
 
 # bess_profile_v2.jsx / CHP_BESS_model_v2.xlsx, «Допущения»
 JSX_UNITS = {
@@ -473,8 +473,8 @@ def _legend() -> dict[str, str]:
                      "moves with each of them — replace them with the contract figures in the "
                      "panels above",
         TYPED: "typed on this page, not the workbook's figure",
-        SOURCE_ZH: "the Tailscale app's own value (docs/zharkent-app/README.md), not confirmed "
-                   "by us",
+        SOURCE_ZH: "the battery payback study's value (docs/zharkent-app/README.md), not "
+                   "confirmed",
     }
 
 
@@ -915,8 +915,8 @@ SCENARIO_DEFAULT = list(SCENARIO_LIBRARY)
 # These are his VALUES, not his method. The dispatch is still this page's optimiser
 # on measured hours; his is a fixed rule on 5-minute steps. What the model cannot
 # take over is stated on the page under the switch.
-VALUES_OURS, VALUES_ZH = "Our study", "Tailscale app"
-SOURCE_ZH = "tailscale app"
+VALUES_OURS, VALUES_ZH = "Our study", "Payback study values"
+SOURCE_ZH = "payback study"
 ZH_GAS = 75.0 / 1.12 / 9.44      # ₸ per kWh of gas: 75 ₸/m³ incl. 12 % VAT, 9.44 kWh/m³
 ZH_GRID = 50.0 / 1.12            # ₸/kWh: 50 incl. 12 % VAT
 ZH_SERVICE = 6.0                 # ₸ per rated kWh of every engine hour
@@ -2114,7 +2114,7 @@ def _year_basis(out: dict, hours: int) -> str:
     """How 'per year' was reached, in words for the notes under a table."""
     t = out.get("time")
     if t and len(t) == hours and out.get("values") == VALUES_ZH:
-        return ("per year as the Tailscale app has it: each month scaled up to its full "
+        return ("per year as the battery payback study has it: each month scaled up to its full "
                 "length, a month with under 25 % of its hours dropped, the mean of the rest "
                 "× 12")
     if t and len(t) == hours:
@@ -2368,7 +2368,7 @@ def render() -> None:
     vk = (lambda k: f"{k}_zh") if zh else (lambda k: k)
     if zh:
         explain(
-            "Every input below is the Tailscale app's: its twelve months of a measured plant, "
+            "Every input below is the battery payback study's: its twelve months of a measured plant, "
             "prices ex VAT, its J320 efficiencies (not the passport's), its service per engine "
             "hour, no O&M, no replacement, no discount, engines always available. Its 3 MWh "
             "battery fills between 10 and 95 %, so it is entered as the 2,850 kWh it can hold, "
@@ -2771,7 +2771,7 @@ def render() -> None:
                          "The service's own downtime is not modelled (8 h in 2,000 is "
                          "0.4 %; on a measured plant the logger's stops already hold "
                          "it). If O&M per running hour is a full service contract "
-                         "already -- as in the Tailscale app's values -- leave this at 0."),
+                         "already -- as in the payback study's values -- leave this at 0."),
             })
         wear_h = st.number_input(
             "Start wear, equivalent running hours per start (report only)", 0.0, 100.0,
