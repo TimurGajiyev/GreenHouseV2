@@ -72,6 +72,18 @@ SRC_FILE, SRC_HOURLY = "5-minute run file", "Hourly measurements"
 SIZE_OPTS = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 5.5, 6.0, 7.0, 8.0, 10.0]
 VIEWS = ["Battery payback", "Today, measured", "Measured data"]
 HOURS_AXIS = alt.Axis(values=list(range(0, 9)), format="d")
+MODES = ["By the rule: every ticked engine", "One engine tied to the battery",
+         "Battery first, a further engine later", "Charge at low load, follow at high load",
+         "Planned ahead (MPC)"]
+MODE_KEYS = ["rule", "tied", "delayed", "combined", "mpc"]
+FORECASTS = {"previous": "From the 7 days before", "perfect": "The load itself (the ceiling)"}
+TIED_ENGINES = ["zh2", "zh3"]
+
+
+def _tied_on() -> bool:
+    """Whether one engine is tied to the battery, as the switch below the Battery panel was
+    last set (the Generators panel is drawn before it)."""
+    return ss.get("bp_mode") == MODES[1]
 
 
 def _g(x: float) -> str:
@@ -130,7 +142,10 @@ def generators() -> tuple[tuple, tuple, tuple]:
                 st.markdown(f"{T.LONG[u]}  \n:gray[{PLANT[u]}]")
             with row[1]:
                 if st.checkbox(f"{T.LONG[u]} works with the battery", value=D.works(u),
-                               key=f"bp_on_{u}", label_visibility="collapsed"):
+                               key=f"bp_on_{u}", label_visibility="collapsed",
+                               disabled=_tied_on(),
+                               help="One engine is tied to the battery: it is chosen in "
+                                    "Battery operation." if _tied_on() else None):
                     works.append(u)
             with row[2]:
                 kw = st.number_input(f"{T.LONG[u]} rated output (kW)", 1.0, 10_000.0,
@@ -258,6 +273,7 @@ def inputs() -> tuple[T.Inputs, str]:
                 help="Energies for the payback, profit, saving and starts charts, each with "
                      "this battery's own hours of storage and priced in proportion to its "
                      "CAPEX.")
+    tied = battery_operation()
     UT.panel_head("Measured steps")
     with st.expander("Measured steps", expanded=True):
         c1, c2 = st.columns(2)
@@ -290,8 +306,118 @@ def inputs() -> tuple[T.Inputs, str]:
                   replace_frac=float(rep_pct) / 100.0, cycle_life=float(cycles),
                   calendar_life=float(cal),
                   sizes_mwh=tuple(sorted(float(x) for x in sizes)) or D.sizes_mwh,
-                  bridge_h=float(bridge))
+                  bridge_h=float(bridge), **tied)
     return inp, source
+
+
+def battery_operation() -> dict:
+    """How the battery works with the engines. By the rule (the default) nothing about the
+    rule changes; each other way shows only its own fields."""
+    D = T.DEFAULTS
+    UT.panel_head("Battery operation")
+    with st.expander("Battery operation", expanded=True):
+        mode = st.radio(
+            "How the battery works with the engines", MODES, horizontal=True, key="bp_mode",
+            help="By the rule: every engine ticked in Generators follows the rule with the "
+                 "battery. One engine tied to the battery: that engine charges it, the battery "
+                 "gives in its place (the 17 Nov meeting). Battery first, a further engine "
+                 "later: the battery covers the gap first; another engine starts only once the "
+                 "gap has lasted longer than set, or the charge is down to the level set "
+                 "(Владимир). Charge at low load, follow at high load: HOMER's Combined "
+                 "Dispatch. Planned ahead (MPC): the engines and the battery are planned every "
+                 "hour a day ahead on a load forecast, the least-cost plan by dynamic "
+                 "programming.")
+        key = MODE_KEYS[MODES.index(mode)]
+        out: dict = {} if key == "rule" else {"mode": key}
+        if key == "tied":
+            c1, c2, c3, c4, c5 = st.columns([1.4, 1, 1, 1, 1.3])
+            with c1:
+                eng = st.selectbox("Engine tied to the battery", TIED_ENGINES,
+                                   index=TIED_ENGINES.index(D.tied_engine),
+                                   format_func=lambda u: T.LONG[u], key="bp_tied_engine",
+                                   help="Жаркент 3 has the most spare output while Универсал "
+                                        "draws little; Жаркент 2 can cover anything at ЖКПЗ.")
+            with c2:
+                on = st.number_input("Engine starts at charge (%)", 10.0, 90.0, 100 * D.tied_on,
+                                     step=5.0, key="bp_tied_on",
+                                     help="It also starts whenever the battery cannot cover "
+                                          "the gap.")
+            with c3:
+                off = st.number_input("Engine stops at charge (%)", 20.0, 100 * D.soc_hi,
+                                      100 * D.tied_off, step=5.0, key="bp_tied_off",
+                                      help="It also stops, once its minimum run is over, when "
+                                           "it could only run below the band and the battery "
+                                           "covers the gap.")
+            with c4:
+                run_h = st.number_input("Minimum run (hours)", 0.0, 12.0, D.tied_min_run_h,
+                                        step=0.5, key="bp_tied_run")
+            with c5:
+                give = st.number_input("Battery gives only above load (kW, 0 = always)", 0.0,
+                                       20_000.0, D.give_from_kw, step=100.0, key="bp_give_from",
+                                       help="Below this load of the plant the battery holds its "
+                                            "charge for the bigger loads, and the engines and "
+                                            "the grid serve the load.")
+            out.update(tied_engine=eng, tied_on=round(float(on) / 100.0, 6),
+                       tied_off=round(float(off) / 100.0, 6), tied_min_run_h=float(run_h),
+                       give_from_kw=float(give))
+        elif key == "delayed":
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                dh = st.number_input("Further engine starts after the gap lasts (hours)", 0.5,
+                                     24.0, D.delay_h, step=0.5, key="bp_delay_h",
+                                     help="Until then the battery covers the gap, and the grid "
+                                          "what the battery cannot.")
+            with c2:
+                ds = st.number_input("... or once the charge is down to (%)", 10.0, 95.0,
+                                     100 * D.delay_soc, step=5.0, key="bp_delay_soc")
+            with c3:
+                dr = st.number_input("Minimum run of an engine so started (hours)", 0.5, 12.0,
+                                     D.delay_min_run_h, step=0.5, key="bp_delay_run")
+            out.update(delay_h=float(dh), delay_soc=round(float(ds) / 100.0, 6),
+                       delay_min_run_h=float(dr))
+        elif key == "combined":
+            c1, c2 = st.columns(2)
+            with c1:
+                cl = st.number_input("Engines charge the battery below load (kW, 0 = the largest "
+                                     "engine's rating)", 0.0, 20_000.0, D.cd_load_kw,
+                                     step=100.0, key="bp_cd_load",
+                                     help="Below it, cycle charging: engines at full output "
+                                          "charge the battery up to the level on the right; above "
+                                          "it, load following: engines make what the load needs.")
+            with c2:
+                cs = st.number_input("Charge to (%)", 20.0, 100 * D.soc_hi, 100 * D.cd_setpoint,
+                                     step=5.0, key="bp_cd_set")
+            out.update(cd_load_kw=float(cl), cd_setpoint=round(float(cs) / 100.0, 6))
+        elif key == "mpc":
+            c1, c2, c3 = st.columns([1.6, 1, 1])
+            with c1:
+                fc = st.radio("Load forecast", list(FORECASTS), horizontal=True, key="bp_mpc_fc",
+                              format_func=lambda k: FORECASTS[k],
+                              help="From the 7 days before: each clock hour's mean over the "
+                                   "week before, the hour itself as measured -- what a "
+                                   "controller would know. The load itself: as if the load "
+                                   "were known in advance -- the ceiling no way of running "
+                                   "can beat.")
+            with c2:
+                hz = st.number_input("Plan horizon (hours)", 6.0, 72.0, D.mpc_horizon_h,
+                                     step=6.0, key="bp_mpc_h")
+            with c3:
+                rp = st.number_input("Re-plan every (hours)", 1.0, 24.0, D.mpc_replan_h,
+                                     step=1.0, key="bp_mpc_rp",
+                                     help="Every hour is what makes it work: re-planned less "
+                                          "often it follows a stale forecast.")
+            out.update(mpc_forecast=fc, mpc_horizon_h=float(hz), mpc_replan_h=float(rp))
+            st.caption("Planning every hour takes about 10 s per battery size and plant, so a "
+                       "run takes a few minutes.")
+        if key in ("tied", "delayed", "combined"):
+            if st.checkbox("Tune these thresholds on the data, per plant", value=False,
+                           key="bp_tune",
+                           help="Tries a grid of values for your battery on each plant's year "
+                                "and keeps the set that saves the most with the engines in the "
+                                "band. Tuned on the year it is judged on: it shows what the "
+                                "thresholds can do here, not what they would do next year."):
+                out["tune"] = True
+    return out
 
 
 # ---- the arithmetic, cached --------------------------------------------------------------
@@ -384,6 +510,20 @@ def _cards(r: T.Run) -> None:
     st.html('<div class="bp-cards">' + "".join(
         f'<div class="bp-card"><div class="bp-card-k">{k}</div><div class="bp-card-v">{v}</div>'
         f'<div class="bp-card-s">{s}</div></div>' for k, v, s in cards) + "</div>")
+    own = T.battery_own(r, y)
+    if own is not None:
+        eng = T.LONG[r.inp.tied_engine]
+        pay_own = ("never pays back" if own["payback"] != own["payback"] else
+                   f"pays back in {own['payback']:.1f} y against a life of {y.life_y:.1f} y")
+        who = (f"{eng} switched on by the rule would save {_m(own['engine'])} {CUR} a year by "
+               "itself" if r.inp.tied else "the same engines switched on by the rule would save "
+               f"{_m(own['engine'])} {CUR} a year by themselves")
+        st.html('<div class="bp-note">'
+                + (f'Without the battery, {who}. ' if not r.inp.tied or r.inp.tied_engine in
+                   T.GROUPS[r.group]["units"] else "")
+                + f'The battery adds {_m(own["gross"])} {CUR} a year on top'
+                + (f', {_m(own["net"])} after its O&M' if y.bat_om_kzt else "")
+                + f': on that share alone it {pay_own}.</div>')
     with st.expander("How each value was built", expanded=False):
         cols = st.columns(3)
         with cols[0]:
@@ -429,6 +569,14 @@ def _size_lines(r: T.Run, y: pd.Series) -> list[str]:
              + (f", battery wear {_m(y.wear_kzt)}" if y.wear_kzt else "")]
     if y.bat_om_kzt:
         lines.append(f"Battery O&M {_m(y.bat_om_kzt)} a year: net saving {_m(y.net_kzt)}")
+    own = T.battery_own(r, y)
+    if own is not None:
+        lines.append(f"The same engines without the battery {_m(r.alone.cost_kzt)} {CUR}/yr: "
+                     f"they save {_m(own['engine'])} by themselves, the battery adds "
+                     f"{_m(own['gross'])}"
+                     + (f" ({_m(own['net'])} after its O&M)" if y.bat_om_kzt else "")
+                     + (f", payback on that share {own['payback']:.1f} years"
+                        if own["payback"] == own["payback"] else ", which never pays it back"))
     lines += [
         f"Running in the band {_m(y.band_kzt)} = (today {t.kzt_per_kwh_gen:.2f} – "
         f"{y.kzt_per_kwh_gen:.2f} {CUR} per kWh the engines make) × today's "
@@ -537,7 +685,10 @@ def _day_chart(r: T.Run) -> None:
     st.markdown('<div class="bp-h">Today, measured</div>', unsafe_allow_html=True)
     st.altair_chart(bars(m_df, order_m, load), width="stretch")
     st.caption("Black line: the load.")
-    st.markdown('<div class="bp-h">With the battery, by the rule</div>', unsafe_allow_html=True)
+    st.markdown('<div class="bp-h">With the battery, '
+                + (f'{T.LONG[r.inp.tied_engine]} tied to it' if r.inp.tied
+                   else T.mode_label(r.inp))
+                + '</div>', unsafe_allow_html=True)
     st.altair_chart(bars(r_df, order_r, need), width="stretch")
     st.caption("Black line: the load and the battery's own use.")
     soc = pd.DataFrame(dict(time=tt, soc=100 * s["soc"][mask]))
@@ -628,6 +779,41 @@ def _periods(r: T.Run) -> None:
     A.render_periods(state)
 
 
+def _mode_text(inp: T.Inputs) -> str:
+    """The run's battery operation, in a sentence for the report's header."""
+    gens = (f'Generators with the battery: {", ".join(T.LONG[u] for u in inp.with_battery)}; '
+            'the others run as measured. ' if len(inp.with_battery) < len(T.RATED) else "")
+    tuned = "Thresholds tuned on the data, per plant. " if inp.tune and inp.mode in T.TUNE_GRID else ""
+    if inp.mode == "tied":
+        return (f'{T.LONG[inp.tied_engine]} is tied to the battery: it starts at '
+                f'{100 * inp.tied_on:g} % charge, runs at full output and stops at '
+                f'{100 * inp.tied_off:g} %; the other engines run as measured. ' + tuned)
+    if inp.mode == "delayed":
+        return (gens + f'Battery first: a further engine starts only once the gap has lasted '
+                f'longer than {inp.delay_h:g} h, or the charge is down to {100 * inp.delay_soc:g} %. '
+                + tuned)
+    if inp.mode == "combined":
+        lim = f"{inp.cd_load_kw:,.0f} kW" if inp.cd_load_kw > 0 else "the largest engine's rating"
+        return (gens + f'Combined Dispatch: below {lim} the engines charge the battery to '
+                f'{100 * inp.cd_setpoint:g} %; above it they follow the load. ' + tuned)
+    if inp.mode == "mpc":
+        return (gens + f'Planned ahead (MPC): every {inp.mpc_replan_h:g} h the engines and the '
+                f'battery are planned {inp.mpc_horizon_h:g} h ahead on '
+                + ("the forecast from the 7 days before. " if inp.mpc_forecast == "previous"
+                   else "the load itself -- the ceiling, as if the load were known. "))
+    return gens
+
+
+def _tuned_text(inp: T.Inputs) -> str:
+    """The tuned thresholds in words."""
+    if inp.mode == "tied":
+        return (f"starts at {100 * inp.tied_on:g} %, stops at {100 * inp.tied_off:g} %, "
+                f"runs at least {inp.tied_min_run_h:g} h")
+    if inp.mode == "delayed":
+        return f"after {inp.delay_h:g} h of gap, or at {100 * inp.delay_soc:g} % charge"
+    return (f"cycle charging below {inp.cd_load_kw:,.0f} kW, to {100 * inp.cd_setpoint:g} %")
+
+
 def _report(res: dict) -> None:
     inp = res["inp"]
     st.html(
@@ -637,8 +823,7 @@ def _report(res: dict) -> None:
         f'{inp.energy_kwh:,.0f} kWh / {inp.power_kw:,.0f} kW ({inp.hours:.2f} h of storage), '
         f'CAPEX {inp.capex_kzt:,.0f} {CUR}. Engines run at least at {inp.band * 100:g} % of '
         f'rated; a start wears them as {inp.start_wear_h:g} hours of running. '
-        + (f'Generators with the battery: {", ".join(T.LONG[u] for u in inp.with_battery)}; '
-           f'the others run as measured. ' if len(inp.with_battery) < len(T.RATED) else "")
+        + _mode_text(inp)
         + f'Measured steps: {res["source"].lower()}.</div>'
         f'<div class="bp-ph">Inputs still waiting for a contract or a supplier\'s figure: '
         f'{", ".join(T.PLACEHOLDERS)}.</div>')
@@ -649,13 +834,25 @@ def _report(res: dict) -> None:
     st.html(f'<div class="bp-about">{T.GROUPS[g]["about"]}</div>')
     units = T.GROUPS[g]["units"]
     off = [T.LONG[u] for u in units if not inp.works(u)]
-    if off and len(off) == len(units):
+    if inp.tied and inp.tied_engine not in units:
+        st.html(f'<div class="bp-note">The engine tied to the battery, '
+                f'{T.LONG[inp.tied_engine]}, is at the other plant: here the engines run as '
+                'measured, and the battery charges only from what they export.</div>')
+    elif inp.tied:
+        st.html(f'<div class="bp-note">{T.LONG[inp.tied_engine]} is tied to the battery'
+                + (f'; {", ".join(off)} {"run" if len(off) > 1 else "runs"} as measured'
+                   if off else "") + '.</div>')
+    elif off and len(off) == len(units):
         st.html('<div class="bp-note">No generator of this plant works with the battery: '
                 'its engines run as measured, and the battery charges only from what they '
                 'export.</div>')
     elif off:
-        st.html(f'<div class="bp-note">{", ".join(off)} runs as measured; the battery works '
-                'with the other engines.</div>')
+        st.html(f'<div class="bp-note">{", ".join(off)} {"run" if len(off) > 1 else "runs"} '
+                'as measured; the battery works with the other engines.</div>')
+    if r.tuned is not None:
+        st.html(f'<div class="bp-note">Thresholds tuned on this plant\'s year '
+                f'({len(r.tuned)} sets tried): {_tuned_text(r.inp)}. Tuned on the year they are '
+                'judged on, they show what the thresholds can do here, not a forecast.</div>')
     _cards(r)
     d = _sizes_frame(r.sizes)
     sizes = list(inp.sizes_mwh)
@@ -888,10 +1085,14 @@ def render() -> None:
     UT.step("Battery payback study")
     inp, source = inputs()
     ch = T.changed(inp)
-    if not inp.with_battery:
-        st.warning("Tick at least one generator to work with the battery.",
-                   icon=":material/warning:")
-    if st.button("Run scenario", type="primary", key="bp_run", disabled=not inp.with_battery):
+    blocked = None
+    if inp.tied and inp.tied_on >= inp.tied_off:
+        blocked = "The tied engine must start at a lower charge than the one it stops at."
+    elif not inp.tied and not inp.with_battery:
+        blocked = "Tick at least one generator to work with the battery."
+    if blocked:
+        st.warning(blocked, icon=":material/warning:")
+    if st.button("Run scenario", type="primary", key="bp_run", disabled=bool(blocked)):
         ss["bp_result"] = dict(inp=inp, source=source, time=dt.datetime.now(),
                                results=_run(inp, source))
     st.caption("Changed from the defaults: " + (", ".join(ch) if ch else "nothing"))

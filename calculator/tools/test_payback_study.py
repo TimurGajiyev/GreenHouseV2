@@ -30,7 +30,16 @@
   G. this project's period view on the rule: every hour balances, the hover panel's saving
      is the rule's (recomputed here from the steps, independently), the starts add up, the
      days are whole and dated, and the page draws the Measured chart and the rule's chart
-     for every plant.
+     for every plant;
+  H. one engine tied to the battery (the «машина на батарею» of the 17 Nov 2026 meeting):
+     off by default, so nothing above moves; every step balances, the other engines run as
+     measured, the tied engine starts and stops on the charge, keeps its minimum run and
+     never runs under the floor; the battery's own share is told apart from the engine's;
+     the page's Battery operation panel, its notes and its warnings;
+  I. battery first, a further engine later (Владимир), HOMER's Combined Dispatch, planned
+     ahead (MPC: dynamic programming on a forecast, re-planned every hour) and tuning: every
+     step balances, the formulas hold, MPC beats the rule on every plant, the triggers and the
+     load following do what they say, tuning keeps the best set, and the page runs each.
 """
 from __future__ import annotations
 
@@ -588,6 +597,269 @@ def g_periods() -> None:
               str(titles[:3]))
 
 
+# ------------------------------------------------------------------------------------- H
+MODES = ["By the rule: every ticked engine", "One engine tied to the battery",
+         "Battery first, a further engine later", "Charge at low load, follow at high load",
+         "Planned ahead (MPC)"]
+
+
+def _runs(on: np.ndarray, new: np.ndarray) -> list[tuple[int, int]]:
+    """Each run of the engine within a stretch, as (first step, length)."""
+    out, start = [], None
+    for i, v in enumerate(on):
+        if start is not None and (not v or new[i]):
+            out.append((start, i - start))
+            start = None
+        if v and start is None:
+            start = i
+    if start is not None:
+        out.append((start, len(on) - start))
+    return out
+
+
+def h_tied() -> None:
+    print("\nH. one engine tied to the battery")
+    D = T.DEFAULTS
+    check("off by default: the rule as before, nothing extra in the table",
+          D.mode == "rule" and not D.tied and T.run_group("K").alone is None
+          and len(T.inputs_table(D)) == 46 and T.changed(D) == [])
+    for eng in ("zh2", "zh3"):
+        inp = T.with_inputs(mode="tied", tied_engine=eng, tied_on=0.45, tied_off=0.90,
+                            tied_min_run_h=2.0)
+        for g in T.GROUPS:
+            units = T.GROUPS[g]["units"]
+            r = T.run_group(g, inp)
+            x, s, y = r.x, r.sim, r.yours
+            dt = x.attrs.get("dt", 1.0)
+            bal = np.abs(sum(s["out"][u] for u in units) + s["imp"] + s["dis"] - s["need"]
+                         - s["ch"] - s["exp"]).max()
+            others = all(np.array_equal(s["out"][u], x[f"{u}_measured"].fillna(0).values)
+                         for u in units if u != eng)
+            both = int(((s["ch"] > 1e-9) & (s["dis"] > 1e-9)).sum())
+            soc_ok = s["soc"].min() >= inp.soc_lo - 1e-9 and s["soc"].max() <= inp.soc_hi + 1e-9
+            check(f"{eng} tied, {g}: every step balances, the other engines as measured, never "
+                  "charging and discharging at once, the charge inside its window",
+                  bal < 1e-6 and others and both == 0 and soc_ok,
+                  f"bal {bal:.1e}, both {both}, soc {s['soc'].min():.3f}..{s['soc'].max():.3f}")
+            if eng in units:
+                R, new = inp.rated(eng), x["new"].values
+                p_out = s["out"][eng]
+                on = p_out > 0
+                floor_ok = bool((p_out[on] >= inp.floor * R - 1e-6).all() and (p_out <= R + 1e-6).all())
+                eta = inp.rte ** 0.5
+                E, P = 1000 * y.e_mwh, 1000 * y.p_mw
+                gap = x["load"].values + inp.own_kw - sum(
+                    (x[f"{u}_measured"].fillna(0).values for u in units if u != eng), np.zeros(len(x)))
+                bad_start = bad_stop = short = 0
+                for i in range(1, len(x)):
+                    if new[i]:
+                        continue
+                    soc0 = s["soc"][i - 1]
+                    give = min(P, max(0.0, (soc0 - inp.soc_lo) * E * eta / dt))
+                    take = min(P * min(1.0, (1 - soc0) / (1 - inp.taper_from)),
+                               max(0.0, (inp.soc_hi - soc0) * E / eta / dt))
+                    if on[i] and not on[i - 1] and not (soc0 <= inp.tied_on + 1e-9 or gap[i] > give):
+                        bad_start += 1
+                    if (on[i - 1] and not on[i] and not s["forced"][i]
+                            and not (soc0 >= inp.tied_off - 1e-9 or inp.band * R > gap[i] + take)):
+                        bad_stop += 1
+                runs = _runs(on, new)
+                min_run = int(round(inp.tied_min_run_h / dt))
+                for a, n in runs:
+                    end = a + n
+                    ends_early = end < len(x) and not new[end] and not s["forced"][end]
+                    if n < min_run and ends_early:
+                        short += 1
+                check(f"{eng} tied, {g}: it starts only at the lower charge or when the battery "
+                      "cannot cover the gap, stops only at the upper charge or when it could not "
+                      "run in the band, keeps its minimum run, never under the floor",
+                      not bad_start and not bad_stop and not short and floor_ok,
+                      f"starts {bad_start}, stops {bad_stop}, short runs {short}, floor {floor_ok}")
+            else:
+                check(f"{eng} tied, {g}: a plant without the tied engine keeps its engines as "
+                      "measured", all(np.array_equal(s["out"][u], x[f"{u}_measured"].fillna(0).values)
+                                      for u in units))
+            bad = _formulas(r, inp)
+            o = T.battery_own(r, y)
+            check(f"{eng} tied, {g}: the formulas hold, and the engine's part plus the battery's "
+                  "make the saving", not bad and o is not None
+                  and close(o["engine"] + o["gross"], y.saving_kzt, 1e-9, 1.0)
+                  and close(o["net"], o["gross"] - y.bat_om_kzt, 1e-9, 1.0),
+                  ", ".join(bad[:3]))
+    inp = T.with_inputs(mode="tied", give_from_kw=1e6)
+    r = T.run_group("KM", inp)
+    check("with the battery giving only above a load never reached, it never gives",
+          float(r.sim["dis"].max()) == 0.0)
+    inp = T.with_inputs(mode="tied", tied_engine="zh2", tied_on=0.4, give_from_kw=1500.0)
+    rows = {row["input"]: row for row in T.inputs_table(inp)}
+    ch = T.changed(inp)
+    check("the table names the tied engine and its settings (52 rows), the changes list them",
+          len(rows) == 52 and rows["Engine tied to the battery"]["value"] == T.LONG["zh2"]
+          and rows["Tied engine starts at charge"]["value"] == "40 %"
+          and rows["Battery gives from load"]["value"] == "1,500 kW and above"
+          and rows["Generators with the battery"]["value"] == T.LONG["zh2"]
+          and {"Battery operation", "Engine tied to the battery", "Tied engine starts at charge",
+               "Battery gives from load", "Generators with the battery"} <= set(ch)
+          and set(ch) <= set(rows), str(ch))
+
+    at = _page()
+    [w for w in at.segmented_control if w.key == "study"][0].set_value(STUDY).run(timeout=900)
+    html = " ".join(h.proto.body for h in at.get("html"))
+    keys = ("bp_tied_engine", "bp_tied_on", "bp_tied_off", "bp_tied_run", "bp_give_from")
+    fields = {w.key: w for w in [*at.number_input, *at.selectbox] if w.key in keys}
+    check("a Battery operation panel in the same design, by the rule by default, no fields of "
+          "the other ways shown",
+          'reopt-panel-head"><span>Battery operation</span>' in html
+          and at.radio(key="bp_mode").value == MODES[0] and list(at.radio(key="bp_mode").options) == MODES
+          and len(fields) == 0
+          and not any(at.checkbox(key=f"bp_on_{u}").disabled for u in T.RATED))
+    at.radio(key="bp_mode").set_value(MODES[1]).run(timeout=900)
+    fields = {w.key: w for w in [*at.number_input, *at.selectbox] if w.key in keys}
+    check("tied: its fields on, the Generators ticks off, J320 Жаркент 3 by default",
+          len(fields) == 5 and all(not w.disabled for w in fields.values())
+          and all(at.checkbox(key=f"bp_on_{u}").disabled for u in T.RATED)
+          and at.selectbox(key="bp_tied_engine").value == "zh3")
+    at.button(key="bp_run").click().run(timeout=900)
+    res = at.session_state["bp_result"]
+    html = " ".join(h.proto.body for h in at.get("html"))
+    check("the run is tied: the header says which engine and its charge levels",
+          not at.exception and res["inp"].tied and res["inp"].tied_engine == "zh3"
+          and "Jenbacher J320 (Жаркент 3) is tied to the battery: it starts at 50 % charge" in html,
+          str([e.value[:160] for e in at.exception][:1]))
+    check("ЖКПЗ says the tied engine is at the other plant",
+          "is at the other plant" in html)
+    at.segmented_control(key="bp_entity").set_value("Both plants, one battery").run(timeout=900)
+    html = " ".join(h.proto.body for h in at.get("html"))
+    r = res["results"]["KM"]
+    o = T.battery_own(r, r.yours)
+    check("both plants: the engine's own saving and the battery's share are on the page",
+          not at.exception and f"would save {o['engine'] / 1e6:,.1f} M" in html
+          and f"The battery adds {o['gross'] / 1e6:,.1f} M" in html
+          and "Jenbacher J320 (Жаркент 3) tied to it" in " ".join(m.value for m in at.markdown))
+    words = _texts(at).lower()
+    left = [w for w in BANNED if w in words] + BANNED_WORDS.findall(words)
+    check("tied mode names no person or other app", not left, str(left))
+    at.number_input(key="bp_tied_on").set_value(90.0).run(timeout=900)
+    at.number_input(key="bp_tied_off").set_value(60.0).run(timeout=900)
+    check("starting at a higher charge than it stops: Run scenario off, the page says why",
+          at.button(key="bp_run").disabled
+          and any("lower charge than the one it stops at" in w.value for w in at.warning))
+    at.radio(key="bp_mode").set_value(MODES[0]).run(timeout=900)
+    at.button(key="bp_run").click().run(timeout=900)
+    check("back to the rule: the tied fields are ignored and the run is the defaults' again",
+          not at.exception and at.session_state["bp_result"]["inp"] == T.DEFAULTS
+          and not at.button(key="bp_run").disabled)
+
+
+# ------------------------------------------------------------------------------------- I
+def i_more_ways() -> None:
+    print("\nI. battery first (Владимир), Combined Dispatch, planned ahead (MPC), tuning")
+    rule = {g: T.run_group(g).yours for g in T.GROUPS}
+    ways = [("delayed", {}), ("combined", {}), ("mpc", {"mpc_forecast": "previous"}),
+            ("mpc", {"mpc_forecast": "perfect"})]
+    for mode, kw in ways:
+        inp = T.with_inputs(mode=mode, **kw)
+        tag = mode + (f" ({kw['mpc_forecast']})" if kw else "")
+        for g in T.GROUPS:
+            units = T.GROUPS[g]["units"]
+            r = T.run_group(g, inp)
+            s, y = r.sim, r.yours
+            bal = np.abs(sum(s["out"][u] for u in units) + s["imp"] + s["dis"] - s["need"]
+                         - s["ch"] - s["exp"]).max()
+            both = int(((s["ch"] > 1e-9) & (s["dis"] > 1e-9)).sum())
+            soc_ok = s["soc"].min() >= inp.soc_lo - 1e-9 and s["soc"].max() <= inp.soc_hi + 1e-9
+            cap_ok = all(((s["out"][u] <= inp.rated(u) + 1e-6)
+                          & ((s["out"][u] == 0) | (s["out"][u] >= inp.floor * inp.rated(u) - 1e-6))).all()
+                         for u in units)
+            bad = _formulas(r, inp)
+            o = T.battery_own(r, y)
+            check(f"{tag}, {g}: every step balances, never charging and discharging at once, the "
+                  "charge in its window, engines between the floor and their rating, the formulas "
+                  "hold, the engines' part plus the battery's make the saving",
+                  bal < 1e-6 and both == 0 and soc_ok and cap_ok and not bad and o is not None
+                  and close(o["engine"] + o["gross"], y.saving_kzt, 1e-9, 1.0),
+                  f"bal {bal:.1e}, both {both}, {', '.join(bad[:2])}")
+            if mode == "mpc":
+                check(f"{tag}, {g}: in the band, and saves more than the rule "
+                      f"({y.saving_kzt / 1e6:,.1f} against {rule[g].saving_kzt / 1e6:,.1f} M)",
+                      bool(y.in_band) and y.saving_kzt > rule[g].saving_kzt)
+    # battery first: never a further engine while the triggers cannot fire
+    for g in ("K", "KM"):
+        units = T.GROUPS[g]["units"]
+        r = T.run_group(g, T.with_inputs(mode="delayed", delay_h=10_000.0, delay_soc=0.0))
+        new = r.x["new"].values
+        starts = sum(int(((r.sim["out"][u][1:] > 0) & (r.sim["out"][u][:-1] == 0) & ~new[1:]).sum())
+                     for u in units)
+        check(f"battery first, {g}: with triggers that never fire, no engine is ever started "
+              "within a stretch", starts == 0, f"{starts} starts")
+    # Combined Dispatch above every load: load following, the battery charged only by the band
+    for g in ("K", "KM"):
+        units = T.GROUPS[g]["units"]
+        inp = T.with_inputs(mode="combined", cd_load_kw=1.0)
+        r = T.run_group(g, inp)
+        s = r.sim
+        gen = sum(s["out"][u] for u in units)
+        r_on = sum(np.where(s["out"][u] > 0, inp.rated(u), 0.0) for u in units)
+        over = (s["ch"] > 1e-6) & (gen > np.maximum(s["need"], inp.band * r_on) + 1e-6)
+        check(f"Combined Dispatch, {g}: following the load, the engines charge the battery only "
+              "with what the band forces", int(over.sum()) == 0, f"{int(over.sum())} steps")
+    # tuning: the run takes the best set tried, which is at least as good as the defaults
+    for mode in ("tied", "delayed", "combined"):
+        r0 = T.run_group("KM", T.with_inputs(mode=mode))
+        r1 = T.run_group("KM", T.with_inputs(mode=mode, tune=True))
+        t = r1.tuned
+        ok_rows = t[t["in_band"]] if t["in_band"].any() else t
+        best = ok_rows.sort_values("net_kzt", ascending=False).iloc[0]
+        same = all(close(getattr(r1.inp, k), float(best[k])) for k in T.TUNE_GRID[mode])
+        check(f"tuning {mode}, both plants: {len(t)} sets tried, the run uses the best "
+              f"({r1.yours.net_kzt / 1e6:,.1f} against {r0.yours.net_kzt / 1e6:,.1f} M untuned)",
+              same and close(r1.yours.net_kzt, float(best["net_kzt"]), 1e-9, 1.0)
+              and (r1.yours.net_kzt >= r0.yours.net_kzt - 1.0 or not r0.yours.in_band))
+    rows = {m: len(T.inputs_table(T.with_inputs(mode=m))) for m in ("delayed", "combined", "mpc")}
+    check("the table names each way and its settings (49 rows), and tuning (50)",
+          rows == {"delayed": 49, "combined": 49, "mpc": 49}
+          and len(T.inputs_table(T.with_inputs(mode="delayed", tune=True))) == 50, str(rows))
+    check("the changes name the way and what was moved",
+          T.changed(T.with_inputs(mode="mpc", mpc_forecast="perfect"))
+          == ["Battery operation", "Load forecast"]
+          and T.changed(T.with_inputs(mode="delayed", delay_h=2.0, tune=True))
+          == ["Battery operation", "Further engine starts after the gap lasts", "Thresholds"])
+
+    at = _page()
+    [w for w in at.segmented_control if w.key == "study"][0].set_value(STUDY).run(timeout=900)
+    for mode, keys in ((MODES[2], ("bp_delay_h", "bp_delay_soc", "bp_delay_run")),
+                       (MODES[3], ("bp_cd_load", "bp_cd_set")),
+                       (MODES[4], ("bp_mpc_h", "bp_mpc_rp"))):
+        at.radio(key="bp_mode").set_value(mode).run(timeout=900)
+        shown = {w.key for w in at.number_input}
+        check(f"{mode}: its own fields, and only those of the other ways it shares",
+              set(keys) <= shown and not ({"bp_tied_on", "bp_tied_off"} & shown)
+              and (mode == MODES[4]) == ("bp_mpc_fc" in {w.key for w in at.radio}))
+    at.radio(key="bp_mode").set_value(MODES[2]).run(timeout=900)
+    at.button(key="bp_run").click().run(timeout=900)
+    res = at.session_state["bp_result"]
+    html = " ".join(h.proto.body for h in at.get("html"))
+    check("battery first runs from the page and says so",
+          not at.exception and res["inp"].mode == "delayed"
+          and "Battery first: a further engine starts only once the gap has lasted longer than 1 h" in html,
+          str([e.value[:160] for e in at.exception][:1]))
+    at.checkbox(key="bp_tune").check().run(timeout=900)
+    at.button(key="bp_run").click().run(timeout=900)
+    html = " ".join(h.proto.body for h in at.get("html"))
+    check("tuned from the page: the plant's tuned thresholds are named",
+          not at.exception and "Thresholds tuned on this plant's year" in html)
+    at.radio(key="bp_mode").set_value(MODES[4]).run(timeout=900)
+    at.button(key="bp_run").click().run(timeout=1800)
+    res = at.session_state["bp_result"]
+    html = " ".join(h.proto.body for h in at.get("html"))
+    words = _texts(at).lower()
+    left = [w for w in BANNED if w in words] + BANNED_WORDS.findall(words)
+    check("planned ahead runs from the page, names its forecast, no person or other app named",
+          not at.exception and res["inp"].mode == "mpc"
+          and "Planned ahead (MPC): every 1 h the engines and the battery are planned 24 h ahead" in html
+          and not left, str(left))
+
+
 if __name__ == "__main__":
     a_same_as_recreate()
     b_defaults()
@@ -596,5 +868,7 @@ if __name__ == "__main__":
     e_page()
     f_reference()
     g_periods()
+    h_tied()
+    i_more_ways()
     print("\nALL OK" if not FAILS else f"\n{len(FAILS)} FAILED: " + "; ".join(FAILS))
     sys.exit(1 if FAILS else 0)

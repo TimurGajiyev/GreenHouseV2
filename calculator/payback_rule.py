@@ -67,6 +67,35 @@ class Inputs:
     start_wear_h: float = 4.0               # equivalent engine hours per start
     service_kzt_kwh: float = 6.0            # KZT per kWh of rating -> per engine hour
     allow_export: bool = False
+    # battery operation. "rule": every engine that works with the battery follows the rule.
+    # "tied": one engine is tied to the battery (the «машина на батарею» of the 17 Nov 2026
+    # meeting) -- it starts when the charge falls to tied_on, runs at full output charging
+    # the battery, and stops at tied_off; the other engines run as the meters show
+    mode: str = "rule"
+    tied_engine: str = "zh3"
+    tied_on: float = 0.50                   # the tied engine starts at this charge
+    tied_off: float = 0.95                  # and stops at this one
+    tied_min_run_h: float = 2.0             # once started it runs at least this long
+    give_from_kw: float = 0.0               # the battery gives only above this load; 0 = always
+    # "delayed" (Владимир, 17 Nov 2026): the battery covers the gap first; a further engine
+    # starts only once the gap has lasted longer than delay_h, or the charge is down to delay_soc
+    delay_h: float = 1.0
+    delay_soc: float = 0.60
+    delay_min_run_h: float = 2.0            # an engine started so runs at least this long
+    # "combined" (HOMER's Combined Dispatch): below cd_load_kw the engines run at full output and
+    # charge the battery up to cd_setpoint (cycle charging); above it they follow the load and
+    # charge only what the band forces (load following). 0 = the largest engine's rating
+    cd_load_kw: float = 0.0
+    cd_setpoint: float = 0.80
+    # "mpc": every mpc_replan_h the engines' on and off and the battery's flow are planned
+    # mpc_horizon_h ahead (dynamic programming) on a load forecast -- "previous": each clock
+    # hour's mean over the 7 days before, the hour itself as measured; "perfect": the load itself
+    # (the ceiling) -- and the hour runs that plan, the engines taking up the forecast's error
+    mpc_forecast: str = "previous"
+    mpc_horizon_h: float = 24.0
+    mpc_replan_h: float = 1.0
+    # tune the mode's thresholds on the data, per plant (tied, delayed, combined)
+    tune: bool = False
     # data
     bridge_h: float = 3.0                   # gaps up to this long bridged by a straight line
     # prices
@@ -130,7 +159,17 @@ class Inputs:
         return dict(zip((0.5, 0.75, 1.0), dict(self.gen_eff)[u]))
 
     def works(self, u: str) -> bool:        # the battery works with this engine
+        if self.mode == "tied":
+            return u == self.tied_engine
         return u in self.with_battery
+
+    @property
+    def tied(self) -> bool:
+        return self.mode == "tied"
+
+    @property
+    def ext(self) -> bool:                  # one of the ways beyond the rule
+        return self.mode != "rule"
 
     def om_h(self, u: str) -> float:        # KZT per engine hour
         return self.service_kzt_kwh * self.rated(u)
@@ -187,11 +226,66 @@ def _generator_rows(g: Inputs) -> list[tuple]:
     return rows
 
 
+TIED_ROWS = ("Battery operation", "Engine tied to the battery", "Tied engine starts at charge",
+             "Tied engine stops at charge", "Tied engine minimum run", "Battery gives from load")
+
+
+MODE_NAME = {"rule": "by the rule", "tied": "one engine tied to the battery",
+             "delayed": "battery first, a further engine later",
+             "combined": "charge at low load, follow at high load (Combined Dispatch)",
+             "mpc": "planned a day ahead (MPC)"}
+MODE_ROWS = {"delayed": ("Further engine starts after the gap lasts", "Further engine starts at charge"),
+             "combined": ("Engines charge the battery below load", "Charge to"),
+             "mpc": ("Load forecast", "Plan horizon")}
+TUNE_ROW = "Thresholds"
+
+
+def _mode_rows(g: Inputs) -> list[tuple]:
+    """The battery operation and its settings, when it is not the rule."""
+    if g.mode == "tied":
+        rows = _tied_rows(g)
+    elif g.mode in MODE_ROWS:
+        a, b = MODE_ROWS[g.mode]
+        rows = [(TIED_ROWS[0], MODE_NAME[g.mode], {
+            "delayed": "Project input: the battery covers the gap first; a further engine starts only once the gap has lasted longer than the time below, or the charge is down to the level below",
+            "combined": "HOMER's Combined Dispatch: below the load below the engines run at full output and charge the battery; above it they follow the load",
+            "mpc": "Model predictive control: the engines' on and off and the battery's flow are planned ahead by dynamic programming on the load forecast and re-planned as each hour comes; the engines take up the forecast's error"}[g.mode], "confirmed")]
+        if g.mode == "delayed":
+            rows += [(a, f"{g.delay_h:g} h", "Project input", "confirmed"),
+                     (b, f"{100 * g.delay_soc:g} %", "Project input", "confirmed")]
+        elif g.mode == "combined":
+            rows += [(a, (f"{g.cd_load_kw:,.0f} kW" if g.cd_load_kw > 0 else "the largest engine's rating"), "Project input", "confirmed"),
+                     (b, f"{100 * g.cd_setpoint:g} %", "Project input", "confirmed")]
+        else:
+            rows += [(a, "each clock hour's mean over the 7 days before" if g.mpc_forecast == "previous" else "the load itself (the ceiling: perfect foresight)", "Project input", "confirmed"),
+                     (b, f"{g.mpc_horizon_h:g} h, re-planned every {g.mpc_replan_h:g} h", "Project input", "confirmed")]
+    else:
+        rows = []
+    if rows and g.tune and g.mode in ("tied", "delayed", "combined"):
+        rows.append((TUNE_ROW, "tuned on the data, per plant", "The values above are the starting point; each plant runs with the set that saves the most in the band", "confirmed"))
+    return rows
+
+
+def _tied_rows(g: Inputs) -> list[tuple]:
+    """The tied engine's settings; only when one engine is tied to the battery."""
+    if not g.tied:
+        return []
+    return [
+        (TIED_ROWS[0], "one engine tied to the battery", "Project input: the engine below starts at the lower charge, runs at full output charging the battery and stops at the upper charge; the other engines run as the meters show", "confirmed"),
+        (TIED_ROWS[1], LONG[g.tied_engine], "Project input", "confirmed"),
+        (TIED_ROWS[2], f"{100 * g.tied_on:g} %", "Project input; it also starts whenever the battery cannot cover the gap", "confirmed"),
+        (TIED_ROWS[3], f"{100 * g.tied_off:g} %", "Project input; it also stops when it could not run in the band and the battery covers the gap", "confirmed"),
+        (TIED_ROWS[4], f"{g.tied_min_run_h:g} h", "Project input", "confirmed"),
+        (TIED_ROWS[5], (f"{g.give_from_kw:,.0f} kW and above" if g.give_from_kw > 0 else "always"), "Project input; below this load the battery holds its charge", "confirmed"),
+    ]
+
+
 def inputs_table(inp: Inputs) -> list[dict]:
     """Every input of the run: value, where it comes from, and its status."""
     g = inp
     R = [
         *_generator_rows(g),
+        *_mode_rows(g),
         ("Fuel below 50 % load", "extend fuel line", "Below 50 % the fuel input is extended along the 50–75 % slope; datasheets stop at 50 %", "placeholder"),
         ("Engine counts as running above", f"{g.run_kw:g} kW", "A unit counts as running above this output", "placeholder"),
         ("Service cost basis", f"{g.service_kzt_kwh:.1f} ₸/kWh of rating, per engine hour", "Service company's rate; sets the cost of an engine hour", "confirmed"),
@@ -255,8 +349,25 @@ def changed(inp: Inputs) -> list[str]:
             out.append(_rated_row(u))
         if inp.eff(u) != DEFAULTS.eff(u):
             out.append(_eff_row(u))
-    if set(inp.with_battery) != set(DEFAULTS.with_battery):
+    if {u for u in RATED if inp.works(u)} != {u for u in RATED if DEFAULTS.works(u)}:
         out.append(WITH_BATTERY_ROW)
+    if inp.ext:
+        out.append(TIED_ROWS[0])
+    if inp.tied:
+        for k, label in zip(("tied_engine", "tied_on", "tied_off", "tied_min_run_h", "give_from_kw"),
+                            TIED_ROWS[1:]):
+            if getattr(inp, k) != getattr(DEFAULTS, k):
+                out.append(label)
+    if inp.mode in MODE_ROWS:
+        keys = {"delayed": ("delay_h", "delay_soc"), "combined": ("cd_load_kw", "cd_setpoint"),
+                "mpc": ("mpc_forecast", "mpc_horizon_h")}[inp.mode]
+        for k, label in zip(keys, MODE_ROWS[inp.mode]):
+            if getattr(inp, k) != getattr(DEFAULTS, k) and label not in out:
+                out.append(label)
+        if inp.mode == "mpc" and inp.mpc_replan_h != DEFAULTS.mpc_replan_h and MODE_ROWS["mpc"][1] not in out:
+            out.append(MODE_ROWS["mpc"][1])
+    if inp.tune and inp.mode in ("tied", "delayed", "combined"):
+        out.append(TUNE_ROW)
     for k, label in LABELS.items():
         if getattr(inp, k) != getattr(DEFAULTS, k) and label not in out:
             out.append(label)
@@ -533,6 +644,366 @@ def simulate(x: pd.DataFrame, units: list[str], e_kwh: float, p_kw: float,
                 forced=forced, need=total + (inp.own_kw if e_kwh > 0 else 0.0))
 
 
+def simulate_tied(x: pd.DataFrame, units: list[str], e_kwh: float, p_kw: float,
+                  inp: Inputs = DEFAULTS) -> dict:
+    """One engine tied to the battery: the «машина на батарею» of the 17 Nov 2026 meeting.
+
+    The tied engine starts when the charge falls to ``tied_on``, or whenever the battery
+    cannot cover the gap; it runs at full output, the load first and the rest into the
+    battery, and stops at ``tied_off`` -- or earlier, once its minimum run is over, when it
+    could only run below the band and the battery covers the gap. Like the rule, it never
+    runs under the datasheet floor and, with export forbidden, stops rather than export.
+    The other engines run as the meters show; what they make beyond the load may go into
+    the battery. The grid takes what is left. With ``give_from_kw`` set, the battery holds
+    its charge while the load is below it. A plant without the tied engine keeps its
+    engines as measured, and its battery charges only from what they would export."""
+    dt = x.attrs.get("dt", 1.0)
+    n, eta = len(x), inp.rte ** 0.5
+    D = inp.tied_engine
+    has = D in units
+    meas = {u: x[f"{u}_measured"].fillna(0).values for u in units}
+    total = x["load"].values
+    own = inp.own_kw if e_kwh > 0 else 0.0
+    # what the tied engine, the battery and the grid serve
+    gap = total + own - sum((meas[u] for u in units if u != D), np.zeros(n))
+    new = x["new"].values
+    R = inp.rated(D) if has else 0.0
+    min_run = max(1, int(round(inp.tied_min_run_h / dt)))
+    min_off = max(1, int(round(inp.min_off_h / dt)))
+    out_d, soc_s, ch_s, dis_s, imp_s, exp_s, oob, forced = (np.zeros(n) for _ in range(8))
+    on, age, soc = False, 10 ** 6, inp.soc_start
+    for i in range(n):
+        if new[i]:                               # a new stretch: start charge, engine as measured
+            soc = inp.soc_start
+            on, age = (bool(meas[D][i] > inp.run_kw) if has else False), 10 ** 6
+        d = gap[i]
+        give = min(p_kw, max(0.0, (soc - inp.soc_lo) * e_kwh * eta / dt)) if e_kwh > 0 else 0.0
+        if inp.give_from_kw > 0 and total[i] < inp.give_from_kw:
+            give = 0.0                           # the battery holds its charge for bigger loads
+        taper = min(1.0, (1.0 - soc) / (1.0 - inp.taper_from))
+        take = min(p_kw * taper, max(0.0, (inp.soc_hi - soc) * e_kwh / eta / dt)) if e_kwh > 0 else 0.0
+        if has:
+            if not on and age >= min_off and (soc <= inp.tied_on or d > give):
+                on, age = True, 0
+            elif (on and age >= min_run and d <= give
+                  and (soc >= inp.tied_off or inp.band * R > d + take)):
+                on, age = False, 0
+            if on and not inp.allow_export and inp.floor * R > d + take:
+                on, age = False, 0               # it could only export: stopped whatever the cover
+                forced[i] = 1.0
+        gen = min(R, max(inp.floor * R, d + take)) if on else 0.0
+        if on and gen < inp.band * R - 1e-6:
+            oob[i] = 1.0
+        net = gen - d
+        if net >= 0:
+            ch = min(net, take)
+            dis = 0.0
+            exp_s[i] = net - ch
+        else:
+            ch = 0.0
+            dis = min(-net, give)
+            imp_s[i] = -net - dis
+        soc += (ch * eta - dis / eta) * dt / e_kwh if e_kwh > 0 else 0.0
+        out_d[i], soc_s[i], ch_s[i], dis_s[i] = gen, soc, ch, dis
+        age += 1
+    out = {u: (out_d if u == D else meas[u]) for u in units}
+    return dict(out=out, soc=soc_s, ch=ch_s, dis=dis_s, imp=imp_s, exp=exp_s, oob=oob,
+                forced=forced, need=total + own)
+
+
+def _fuel_line(u: str, inp: Inputs) -> tuple[float, float]:
+    """kW of gas = a × on + b × kW out: the straight line through the 50 % and 100 % points of
+    the fuel curve (the planner's; the costs are still taken on the full curve)."""
+    R = inp.rated(u)
+    f50, f100 = (float(fuel_kw(u, np.array([f * R]), 0.0, inp)[0]) for f in (0.5, 1.0))
+    b = (f100 - f50) / (0.5 * R)
+    return f50 - b * 0.5 * R, b
+
+
+def _forecast(gap: np.ndarray, hour: np.ndarray, day: np.ndarray, i0: int, idx: range) -> np.ndarray:
+    """The gap for the steps idx, as known at step i0: the step itself measured, each later
+    step the mean of its clock hour over the 7 days before i0's day (else the gap at i0)."""
+    past = (day < day[i0]) & (day >= day[i0] - 7)
+    prof = {}
+    if past.any():
+        h, g = hour[past], gap[past]
+        for k in np.unique(h):
+            prof[int(k)] = float(g[h == k].mean())
+    out = np.array([prof.get(int(hour[j]), gap[i0]) for j in idx], dtype=float)
+    out[0] = gap[i0]
+    return out
+
+
+SOC_GRID = 35            # charge levels the planner works on (about 2.5 % of the window apart)
+
+
+def _plan(units: list[str], R: dict, gap: np.ndarray, e_kwh: float, p_kw: float, soc0: float,
+          on0: dict, inp: Inputs, dt: float, cache: dict | None = None) -> dict:
+    """The plan that costs least over the window, by dynamic programming on the engines that
+    are on (every combination) and the battery's charge (SOC_GRID levels): fuel on each
+    engine's own curve, engine hours and start wear at the service rate, grid and battery
+    wear, less the charge left at the end valued at the cheapest full-load engine. Engines run
+    in the band or not at all; the battery charges only from the engines' surplus. Returns,
+    per hour, which engines are on and the battery's planned flow (kW, + charging)."""
+    T_, U = len(gap), len(units)
+    eta = inp.rte ** 0.5
+    E, P = float(e_kwh), (float(p_kw) if e_kwh > 0 else 0.0)
+    combos = np.arange(2 ** U)
+    member = np.array([[(c >> k) & 1 for k in range(U)] for c in combos], dtype=bool)     # C x U
+    r_on = member @ np.array([R[u] for u in units]) if U else np.zeros(1)
+    om = member @ np.array([inp.om_h(u) for u in units]) if U else np.zeros(1)
+    st_cost = np.array([inp.start_wear_h * inp.om_h(u) for u in units]) if U else np.zeros(0)
+    # starting: what turning on the engines of c that are off in c_prev costs (C x C)
+    start = (~member[:, None, :] & member[None, :, :]).astype(float) @ st_cost if U else np.zeros((1, 1))
+    if E > 0:
+        levels = np.linspace(inp.soc_lo * E, inp.soc_hi * E, SOC_GRID)
+    else:
+        levels = np.zeros(1)
+    full = [inp.gas_kzt_kwh * float(fuel_kw(u, np.array([R[u]]), 0.0, inp)[0]) / R[u]
+            + inp.om_h(u) / R[u] for u in units]
+    v_end = eta * min(full + [inp.grid_ex_vat]) if E > 0 else 0.0
+
+    tol = 0.6 * (levels[1] - levels[0]) / (eta * dt) if len(levels) > 1 else 1e-6
+    ro3 = r_on[:, None, None]
+    on_eng = r_on > 0
+    rated = np.array([R[u] for u in units]) if U else np.zeros(0)
+    fixed_cost = (om * dt)[:, None, None]
+    exp_ok_any = bool(inp.allow_export)
+
+    def step_cost(g: float, s_prev: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Cost (C x len(s_prev) x N) of an hour with load g, from charge s_prev to each level,
+        and the battery flow (kW, + charging): every combination of engines at once."""
+        d = levels[None, :] - s_prev[:, None]                            # kWh into the battery
+        ch = np.where(d > 0, d / (eta * dt), 0.0)
+        dis = np.where(d < 0, -d * eta / dt, 0.0)
+        ok_b = (ch <= P + 1e-6) & (dis <= P + 1e-6)
+        gen = (g + ch - dis)[None, :, :]                                 # what the engines must make
+        p = np.where(on_eng[:, None, None], np.clip(gen, inp.band * ro3, ro3), 0.0)
+        imp = np.maximum(gen - ro3, 0.0)
+        exp = np.maximum(p - gen, 0.0)
+        # a charge level is a step of the grid: the engines' output may miss the band by up to
+        # half a step's power, which the hour itself evens out (the steps run the plan's flow)
+        ok = (ok_b[None] & ((ch[None] == 0) | (gen <= ro3 + tol))
+              & ((exp <= max(0.0, -g) + tol) | exp_ok_any))
+        fuel = np.zeros_like(p)
+        if U:
+            frac = np.where(on_eng[:, None, None], p / np.where(ro3 > 0, ro3, 1.0), 0.0)
+            for k, u in enumerate(units):
+                fuel += np.where(member[:, k][:, None, None],
+                                 fuel_kw(u, frac * rated[k], 0.0, inp), 0.0)
+        cost = ((fuel * inp.gas_kzt_kwh + imp * inp.grid_ex_vat + dis[None] * inp.wear_kzt_kwh) * dt
+                + np.where(on_eng[:, None, None], fixed_cost, 0.0))
+        return np.where(ok, cost, np.inf), ch - dis
+
+    # backward: V[c, s] = least cost from the start of hour t with engines c on before it
+    V = np.tile(-v_end * levels, (len(combos), 1))
+    choice = []                                                          # per hour: (best c, best s) per (c_prev, s_prev)
+    for t in range(T_ - 1, 0, -1):
+        key = int(round(float(gap[t])))                                  # an hour's table, by its load
+        if cache is not None and key in cache:
+            sc = cache[key]
+        else:
+            sc, _ = step_cost(float(key), levels)                        # C x N x N
+            if cache is not None:
+                cache[key] = sc
+        W = sc + V[:, None, :]                                           # + value after
+        s_best = W.argmin(axis=2)                                        # C x N
+        Wmin = np.take_along_axis(W, s_best[:, :, None], 2)[:, :, 0]     # C x N
+        tot = start[:, :, None] + Wmin[None, :, :]                       # C_prev x C x N
+        c_best = tot.argmin(axis=1)                                      # C_prev x N
+        V = np.take_along_axis(tot, c_best[:, None, :], 1)[:, 0, :]
+        choice.append((c_best, s_best))
+    choice.reverse()
+    # the first hour from the charge as it is
+    c0 = sum(1 << k for k, u in enumerate(units) if on0.get(u))
+    sc0, fl0 = step_cost(gap[0], np.array([soc0 * E if E > 0 else 0.0]))
+    tot0 = start[c0][:, None] + sc0[:, 0, :] + (V if T_ > 1 else np.tile(-v_end * levels, (len(combos), 1)))
+    c, si = np.unravel_index(np.argmin(tot0), tot0.shape)
+    if not np.isfinite(tot0[c, si]):
+        return {u: np.zeros(T_, bool) for u in units} | {"_flow": np.zeros(T_)}
+    on_plan = [c]
+    flows = [fl0[0, si]]
+    for t in range(1, T_):
+        c_best, s_best = choice[t - 1]
+        c_next = c_best[c, si]
+        s_next = s_best[c_next, si]
+        flows.append(levels[s_next] - levels[si])
+        on_plan.append(c_next)
+        c, si = c_next, s_next
+    flows = np.array(flows, dtype=float)
+    flows[1:] = np.where(flows[1:] > 0, flows[1:] / (eta * dt), flows[1:] * eta / dt)
+    plan = {u: np.array([bool(member[cc, k]) for cc in on_plan]) for k, u in enumerate(units)}
+    plan["_flow"] = flows
+    return plan
+
+
+def _simulate_ext(x: pd.DataFrame, units: list[str], e_kwh: float, p_kw: float,
+                  inp: Inputs = DEFAULTS) -> dict:
+    """The battery's operation beyond the rule -- "delayed", "combined" or "mpc" -- with the
+    rule's mechanics otherwise: engines that work with the battery run at full output when on,
+    in the band or stopped, the battery taking the surplus and giving the shortfall, the grid
+    the rest; the other engines as the meters show.
+
+    * delayed: the battery covers the gap first; a further engine starts only once the gap
+      has lasted longer than ``delay_h`` (the grid covers what the battery cannot until then)
+      or the charge is down to ``delay_soc``.
+    * combined: below ``cd_load_kw`` cycle charging -- engines at full output until the charge
+      reaches ``cd_setpoint``, then stopped while the battery covers; above it load following
+      -- engines make what the load needs and charge only what the band forces.
+    * mpc: every ``mpc_replan_h`` the engines' on and off and the battery's flow are planned
+      ``mpc_horizon_h`` ahead on the forecast (``_plan``), and the steps run that plan: the
+      engines take up the forecast's error; an engine is still started when the plan leaves a
+      gap the battery cannot cover, and stopped rather than run below the band or export."""
+    dt = x.attrs.get("dt", 1.0)
+    kind = inp.mode
+    min_on = max(1, int(round(inp.min_run_h / dt)))
+    min_off = max(1, int(round(inp.min_off_h / dt)))
+    n, eta = len(x), inp.rte ** 0.5
+    fixed = [u for u in units if not inp.works(u)]
+    measured = {u: x[f"{u}_measured"].fillna(0).values for u in fixed}
+    all_units, units = list(units), [u for u in units if inp.works(u)]
+    R = {u: inp.rated(u) for u in units}
+    total = x["load"].values
+    own = inp.own_kw if e_kwh > 0 else 0.0
+    load = total - sum(measured.values()) if fixed else total
+    gap = load + own
+    new = x["new"].values
+    meas_on = {u: (x[f"{u}_measured"].fillna(0).values > inp.run_kw) for u in units}
+    out = {u: np.zeros(n) for u in units}
+    soc_s, ch_s, dis_s, imp_s, exp_s, oob, forced = (np.zeros(n) for _ in range(7))
+    on = {u: False for u in units}
+    age = {u: 0 for u in units}
+    soc, peak = inp.soc_start, 0
+    delay = max(1, int(round(inp.delay_h / dt)))
+    delay_run = max(1, int(round(inp.delay_min_run_h / dt)))
+    cd_load = inp.cd_load_kw if inp.cd_load_kw > 0 else max(R.values(), default=0.0)
+    horizon = max(1, int(round(inp.mpc_horizon_h / dt)))
+    replan = max(1, int(round(inp.mpc_replan_h / dt)))
+    blk = max(1, int(round(1.0 / dt)))              # steps in an hour
+    stretch_end = np.r_[np.flatnonzero(new)[1:], n] if new.any() else np.array([n])
+    starts_at = np.flatnonzero(new)
+    hour = x["time"].dt.hour.values
+    day = (x["time"].dt.normalize().values.astype("datetime64[D]").astype(np.int64))
+    plan, plan_at, s_end = None, -10 ** 9, n
+    tables: dict = {}                               # the planner's hour tables, by load
+
+    def start_longest_off():
+        cand = [u for u in units if not on[u] and age[u] >= min_off]
+        if not cand:
+            return False
+        u = max(cand, key=lambda k: age[k])
+        on[u], age[u] = True, 0
+        return True
+
+    for i in range(n):
+        if new[i]:                               # a new stretch: start charge, engines as measured
+            soc, peak = inp.soc_start, 0
+            for u in units:
+                on[u], age[u] = bool(meas_on[u][i]), 10 ** 6
+            s_end = int(stretch_end[np.searchsorted(starts_at, i, side="right") - 1]) if len(starts_at) else n
+            plan, plan_at = None, -10 ** 9
+        need = gap[i]
+        give = min(p_kw, max(0.0, (soc - inp.soc_lo) * e_kwh * eta / dt)) if e_kwh > 0 else 0.0
+        taper = min(1.0, (1.0 - soc) / (1.0 - inp.taper_from))
+        take = min(p_kw * taper, max(0.0, (inp.soc_hi - soc) * e_kwh / eta / dt)) if e_kwh > 0 else 0.0
+        r_on = sum(R[u] for u in units if on[u])
+        follow, flow = False, 0.0
+        if kind == "mpc" and units:
+            if i - plan_at >= replan:
+                idx = range(i, min(i + horizon, s_end))
+                g_f = gap[list(idx)] if inp.mpc_forecast == "perfect" else _forecast(gap, hour, day, i, idx)
+                # planned by the hour, whatever the steps
+                g_h = np.array([g_f[j:j + blk].mean() for j in range(0, len(g_f), blk)])
+                ph = _plan(units, R, g_h, e_kwh, p_kw, soc, dict(on), inp, blk * dt, tables)
+                plan = {k_: np.repeat(v_, blk)[:len(g_f)] for k_, v_ in ph.items()}
+                plan_at = i
+            k = i - plan_at
+            if plan is not None and k < len(plan["_flow"]):
+                flow = float(plan["_flow"][k])
+                for u in units:
+                    want = bool(plan[u][k])
+                    if want and not on[u] and age[u] >= min_off:
+                        on[u], age[u] = True, 0
+                    elif (not want and on[u] and age[u] >= min_on
+                          and r_on - R[u] + give >= need):
+                        on[u], age[u] = False, 0
+                    r_on = sum(R[v] for v in units if on[v])
+            while r_on + give < need and start_longest_off():   # the plan left a gap
+                r_on = sum(R[u] for u in units if on[u])
+            if inp.band * r_on > need + take:                    # the forecast was high: keep the band
+                cand = [u for u in units if on[u] and age[u] >= min_on]
+                for u in sorted(cand, key=lambda q: -age[q]):
+                    if r_on - R[u] + give >= need:
+                        on[u], age[u] = False, 0
+                        break
+        elif kind == "delayed":
+            open_gap = need > r_on + 1e-9
+            peak = peak + 1 if open_gap else 0
+            if open_gap and (peak > delay or soc <= inp.delay_soc):
+                start_longest_off()                               # one engine at a time
+            elif inp.band * r_on > need + take:                   # surplus even at the band
+                cand = [u for u in units if on[u] and age[u] >= max(min_on, delay_run)]
+                for u in sorted(cand, key=lambda k: -age[k]):
+                    if r_on - R[u] + give >= need:
+                        on[u], age[u] = False, 0
+                        break
+        else:                                                     # combined
+            low = need <= cd_load
+            if r_on + give < need:
+                while r_on + give < need and start_longest_off():
+                    r_on = sum(R[u] for u in units if on[u])
+            elif low and soc >= inp.cd_setpoint or inp.band * r_on > need + take:
+                cand = [u for u in units if on[u] and age[u] >= min_on]
+                for u in sorted(cand, key=lambda k: -age[k]):
+                    if r_on - R[u] + give >= need:
+                        on[u], age[u] = False, 0
+                        break
+            follow = not low
+        r_on = sum(R[u] for u in units if on[u])
+        while not inp.allow_export and r_on and inp.floor * r_on > need + take:
+            u = max((k for k in units if on[k]), key=lambda k: age[k])
+            on[u], age[u] = False, 0
+            forced[i] = 1.0
+            r_on = sum(R[k] for k in units if on[k])
+        if follow:                                                # the load, and what the band forces
+            gen = min(r_on, max(need, inp.band * r_on), need + take)
+        elif kind == "mpc" and r_on:                              # the load and the planned charge
+            gen = min(r_on, max(inp.band * r_on, need + max(flow, -give)), need + take)
+        else:
+            gen = min(r_on, need + take)
+        gen = max(gen, inp.floor * r_on)
+        if r_on and gen < inp.band * r_on - 1e-6:
+            oob[i] = 1.0
+        for u in units:
+            out[u][i] = gen * R[u] / r_on if on[u] else 0.0
+        if gen >= need:
+            ch = min(gen - need, take)
+            dis = 0.0
+            exp_s[i] = gen - need - ch
+        else:
+            ch = 0.0
+            dis = min(need - gen, give)
+            imp_s[i] = need - gen - dis
+        soc += (ch * eta - dis / eta) * dt / e_kwh if e_kwh > 0 else 0.0
+        soc_s[i], ch_s[i], dis_s[i] = soc, ch, dis
+        for u in units:
+            age[u] += 1
+    for u in all_units:
+        if u not in out:
+            out[u] = measured[u]
+    return dict(out=out, soc=soc_s, ch=ch_s, dis=dis_s, imp=imp_s, exp=exp_s, oob=oob,
+                forced=forced, need=total + own)
+
+
+def _sim(x: pd.DataFrame, units: list[str], e_kwh: float, p_kw: float, inp: Inputs) -> dict:
+    """The battery's operation the inputs ask for."""
+    if inp.mode == "tied":
+        return simulate_tied(x, units, e_kwh, p_kw, inp)
+    if inp.mode in ("delayed", "combined", "mpc"):
+        return _simulate_ext(x, units, e_kwh, p_kw, inp)
+    return simulate(x, units, e_kwh, p_kw, inp)
+
+
 def power_for(e_kwh: float, inp: Inputs = DEFAULTS) -> float:
     """A size's power: the battery's own hours of storage."""
     if abs(e_kwh - inp.energy_kwh) < 1e-6:
@@ -602,6 +1073,8 @@ class Run:
     sim: dict = field(repr=False, default_factory=dict)
     sims: dict = field(repr=False, default_factory=dict)
     inp: Inputs = DEFAULTS
+    alone: pd.Series | None = None          # beyond the rule: the same engines, no battery
+    tuned: pd.DataFrame | None = None       # the thresholds tried, when tuned
 
     @property
     def best(self) -> pd.Series | None:
@@ -617,6 +1090,9 @@ def run_group(group: str, inp: Inputs = DEFAULTS, x: pd.DataFrame | None = None,
     """Today, your battery and every size compared, for one entity."""
     x = hourly_steps(group, inp) if x is None else x
     units = GROUPS[group]["units"]
+    tried = None
+    if inp.tune and inp.mode in TUNE_GRID:
+        inp, tried = tune(group, inp, x)
     today = base(x, units, inp)
     compared = {round(1000.0 * float(e), 6) for e in inp.sizes_mwh}
     sizes = sorted(compared | {round(float(inp.energy_kwh), 6)})
@@ -625,7 +1101,7 @@ def run_group(group: str, inp: Inputs = DEFAULTS, x: pd.DataFrame | None = None,
         if on_size:
             on_size(i, len(sizes))
         p = power_for(e, inp)
-        s = simulate(x, units, e, p, inp)
+        s = _sim(x, units, e, p, inp)
         sims[e] = s
         r = evaluate(x, units, e, p, s, today, inp)
         r["compared"] = e in compared
@@ -636,6 +1112,12 @@ def run_group(group: str, inp: Inputs = DEFAULTS, x: pd.DataFrame | None = None,
     r = Run(group=group, x=x, today=today, yours=yours,
             sizes=table[table["compared"]].reset_index(drop=True), sim=sims[key], sims=sims,
             inp=inp)
+    if inp.ext:
+        # the same engines without a battery, switched on by the rule: what the engines give
+        # by themselves, so the battery's own share can be told apart
+        s0 = simulate(x, units, 0.0, 0.0, inp)
+        r.alone = cost(x, s0["out"], s0["imp"], s0["exp"], inp)
+        r.tuned = tried
     # keep the step series only of the sizes the page draws step by step: yours and the
     # shortest payback
     b = r.best
@@ -644,13 +1126,62 @@ def run_group(group: str, inp: Inputs = DEFAULTS, x: pd.DataFrame | None = None,
     return r
 
 
+TUNE_GRID = {
+    "tied": {"tied_on": (0.3, 0.4, 0.5, 0.6, 0.7), "tied_off": (0.8, 0.9, 0.95),
+             "tied_min_run_h": (1.0, 2.0, 4.0)},
+    "delayed": {"delay_h": (1.0, 2.0, 3.0, 4.0, 6.0), "delay_soc": (0.2, 0.3, 0.4, 0.5, 0.6)},
+    "combined": {"cd_load_kw": (0.5, 0.75, 1.0, 1.5, 2.0, 3.0), "cd_setpoint": (0.6, 0.8, 0.95)},
+}
+
+
+def tune(group: str, inp: Inputs, x: pd.DataFrame) -> tuple[Inputs, pd.DataFrame]:
+    """The mode's thresholds that save the most for your battery on this plant's steps,
+    keeping the engines in the band (a grid of values, TUNE_GRID). cd_load_kw is tried as a
+    multiple of the largest engine's rating. Tuned on the same year it is judged on, so it
+    shows what the thresholds can do here, not what they would do next year."""
+    import itertools
+    units = GROUPS[group]["units"]
+    grid = TUNE_GRID[inp.mode]
+    biggest = max((inp.rated(u) for u in units if inp.works(u)), default=0.0)
+    today = base(x, units, inp)
+    rows = []
+    for vals in itertools.product(*grid.values()):
+        kw = dict(zip(grid, vals))
+        if inp.mode == "tied" and kw["tied_on"] >= kw["tied_off"]:
+            continue
+        if "cd_load_kw" in kw:
+            kw["cd_load_kw"] = kw["cd_load_kw"] * biggest
+        cand = replace(inp, **kw)
+        s = _sim(x, units, cand.energy_kwh, cand.power_kw, cand)
+        y = evaluate(x, units, cand.energy_kwh, cand.power_kw, s, today, cand)
+        rows.append({**kw, "net_kzt": float(y["net_kzt"]), "in_band": bool(y["in_band"]),
+                     "starts": float(y["starts"])})
+    table = pd.DataFrame(rows)
+    ok = table[table["in_band"]] if table["in_band"].any() else table
+    best = ok.sort_values("net_kzt", ascending=False).iloc[0]
+    return replace(inp, **{k: float(best[k]) for k in grid}), table
+
+
+def battery_own(r: Run, y: pd.Series) -> dict | None:
+    """Tied mode: what the same engines save without a battery, what the battery adds on
+    top (before and after its O&M), and the payback of that share alone."""
+    if r.alone is None:
+        return None
+    engine = float(r.today["cost_kzt"] - r.alone["cost_kzt"])
+    gross = float(r.alone["cost_kzt"] - y["cost_kzt"])
+    net = gross - float(y["bat_om_kzt"])
+    pay = payback(float(y["capex_kzt"]), net, r.inp)
+    return dict(engine=engine, gross=gross, net=net, payback=pay,
+                pays_back=bool(pay == pay and pay <= float(y["life_y"])))
+
+
 def start_wear_curve(r: Run, e_kwh: float) -> list[tuple[float, float]]:
     """Payback of one size at every start wear compared."""
     units = GROUPS[r.group]["units"]
     p = power_for(e_kwh, r.inp)
     s = r.sims.get(round(float(e_kwh), 6))
     if s is None:
-        s = simulate(r.x, units, e_kwh, p, r.inp)
+        s = _sim(r.x, units, e_kwh, p, r.inp)
     out = []
     for w in r.inp.start_wear_compared:
         t = base(r.x, units, r.inp, start_h=w)
@@ -922,8 +1453,15 @@ def period_state(r: Run) -> dict:
            "price_mean": inp.grid_ex_vat, "spread": spread if spread > 0 else inp.grid_ex_vat}
     return {"res": res, "tariff": tariff, "currency": "₸", "savings": sav,
             "time": list(h.index), "measured_site": _site(r.group),
-            "label": f"{_label(r.yours)} · by the rule",
+            "label": f"{_label(r.yours)} · {mode_label(inp)}",
             "days": n_days, "hours_dropped": int(len(x) * dt) - H}
+
+
+def mode_label(inp: Inputs) -> str:
+    """A few words for how the battery works with the engines."""
+    return {"rule": "by the rule", "tied": f"{NAME[inp.tied_engine]} tied to it",
+            "delayed": "battery first, a further engine later",
+            "combined": "Combined Dispatch", "mpc": "planned ahead (MPC)"}[inp.mode]
 
 
 def _label(y: pd.Series) -> str:

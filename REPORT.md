@@ -3063,6 +3063,142 @@ come out ahead.
 Part F now checks the published figures with the reference's own battery, 3,000 kWh /
 990 kW, typed in explicitly.
 
+## Revised 17.11.2026 (4): one engine tied to the battery («машина на батарею»)
+
+This adds a Battery operation panel to the battery payback study, after the Battery panel. It
+comes from the 17 Nov meeting. Its switch has two positions:
+* **By the rule: every ticked engine.** This is the default, and everything is as before.
+* **One engine tied to the battery,** with these fields:
+  * the engine: J320 Жаркент 2 or Жаркент 3, the switch promised at the meeting; Жаркент 3 by
+    default;
+  * the charge at which it starts (default 50 %) and stops (default 95 %);
+  * its minimum run (default 2 h);
+  * optionally, a load below which the battery holds its charge.
+
+**How the tied engine runs** (`payback_rule.simulate_tied`):
+* **It starts** when the charge falls to the lower level, or whenever the battery cannot
+  cover the gap.
+* **It runs at full output,** the load first and the rest into the battery.
+* **It stops** at the upper level. Once its minimum run is over, it also stops when it could
+  only run below the band and the battery covers the gap.
+* **Like the rule,** it never runs under the datasheet floor, and with export forbidden it
+  stops rather than export.
+
+**The other engines run as the meters show,** and what they would export may go into the
+battery. The grid takes the rest. On a plant without the tied engine, the engines stay as
+measured.
+
+**The Generators ticks.** In this mode they are greyed out, because the tied engine is the one
+that works with the battery.
+
+**The battery's own share.** In this mode the page also runs the same engine without a
+battery, switched on by the rule. Under the cards it says what the engine saves by itself,
+what the battery adds on top, and the payback of that share alone. The arithmetic carries the
+same line.
+
+Results with every other input at the defaults, hourly steps, battery 5,500 kWh / 1,375 kW:
+
+| Both plants, one battery | Saving | The engine by itself | The battery adds | Payback, total / battery's own share |
+|---|---:|---:|---:|---:|
+| J320 Жаркент 3 tied | 54.9 M | 34.1 M | 20.8 M | 8.6 y / 22.8 y (life 15 y) |
+| J320 Жаркент 2 tied | 44.1 M | 24.5 M | 19.6 M | 10.8 y / 24.2 y |
+
+* Жаркент 3 is the better engine to tie, as Владимир said.
+* Most of the saving is the engine running better, and the battery's own share does not pay
+  back within its life.
+* When all three engines are at full output and the grid still makes up the rest, there is
+  nothing to recharge the battery with. On 21.04.2026 it stays empty from 11:00 to midnight.
+
+`tools/test_payback_study.py` part H adds 29 checks (176 in all):
+* the mode is off by default, and nothing in A–G moves;
+* every step balances, and the other engines run exactly as measured;
+* there is never charge and discharge in the same step, and the charge stays inside its window;
+* the tied engine starts only at the lower level or when the battery cannot cover the gap, and
+  stops only at the upper level or when it could not run in the band;
+* it keeps its minimum run and never runs under the floor;
+* the formulas hold, and the engine's part plus the battery's make the saving;
+* a load threshold never reached means the battery never gives;
+* the inputs table grows to 52 rows in this mode;
+* the page: the panel, the greyed-out ticks, the notes, the warning when the levels are the
+  wrong way round, and the return to the rule.
+
+## Revised 17.11.2026 (5): more ways to run the battery -- Владимир's, Combined Dispatch, MPC, tuning
+
+The Battery operation panel now offers five ways; the rule stays the default:
+1. **By the rule** (as before).
+2. **One engine tied to the battery** (section (4)).
+3. **Battery first, a further engine later** -- Владимир at the 17 Nov meeting. The battery
+   covers the gap first. A further engine starts only once the gap has lasted longer than
+   1 h, or the charge is down to 60 %. An engine started this way runs at least 2 h.
+4. **Charge at low load, follow at high load** -- HOMER's Combined Dispatch:
+   * below a load (default: the largest engine's rating), cycle charging -- the engines run at
+     full output and charge the battery to a setpoint (80 %);
+   * above it, load following -- the engines make what the load needs and charge only what the
+     band forces.
+5. **Planned ahead (MPC).** Every hour the engines' on and off and the battery's flow are
+   planned 24 h ahead on a load forecast, and the hour then runs that plan, with the engines
+   taking up the forecast's error. The plan is the least-cost one found by dynamic programming:
+   * every combination of the engines that are on, times 35 charge levels;
+   * the real fuel curves, engine hours and start wear at the service rate, the grid and battery
+     wear;
+   * engines in the band or off.
+
+   It is planned by the hour even on 5-minute steps. Two forecasts:
+   * each clock hour's mean over the 7 days before, with the hour itself as measured -- what a
+     controller would know;
+   * the load itself -- the ceiling no way of running can beat on these inputs.
+
+   One plan takes about 18 ms; with the hour tables cached, a year takes about 8 s per battery
+   size and plant. Re-planning less often than every hour lost to the rule with the realistic
+   forecast (both plants: 96.2 M at 3 h, 80.0 M at 24 h), so the default is every hour.
+
+The panel also has a **tuning tick-box** for the tied engine, battery-first and Combined
+Dispatch modes. It tries a grid of thresholds on each plant's year and keeps the set that
+saves the most with the engines in the band. It is tuned on the same year it is judged on.
+
+A first HiGHS mixed-integer planner was replaced: 0.3–1.4 s per plan was too slow to re-plan
+every hour. The first dynamic-programming version kept the engine off where the 90–100 %
+band (106 kW wide on a J320) fell between two charge levels. Its fix: the plan may miss the
+band by half a level's power, which the hour itself evens out.
+
+**On the measured year, the page's defaults, battery 5,500 kWh / 1,375 kW** (saving after the
+battery's O&M, M ₸ a year; payback, years):
+
+| | ЖКПЗ | Жаркент 3 | Both plants, one battery |
+|---|---:|---:|---:|
+| The engines by themselves, by the rule, no battery | 70.4 | −1.1 | 68.0 |
+| 1. Rule (as now) | 85.5 · 5.56 | 23.3 · 20.4 | 100.9 · 4.71 |
+| 3. Battery first, 1 h / 60 % | 58.6 · 8.11 | −5.7 · never | 52.5 · 9.05 |
+| 3. … tuned (6 h / 20 %) | 84.5 · 5.62 | 22.2 · 21.4 | 92.7 · 5.13 |
+| 4. Combined Dispatch | 82.4 · 5.77 | 22.3 · 21.3 | 96.6 · 4.92 |
+| 4. … tuned | 85.4 · 5.56 | 23.4 · 20.3 | 100.5 · 4.73 |
+| 5. MPC, forecast from the 7 days before | **86.6 · 5.49** | **23.8 · 19.9** | **104.0 · 4.57** |
+| 5. MPC, perfect forecast (the ceiling) | 89.5 · 5.31 | 24.9 · 19.1 | 110.8 · 4.29 |
+
+**MPC with a realistic forecast is the only way that beats the rule on every plant:**
+* by 1.1, 0.5 and 3.1 M a year;
+* the ceiling is 4.0, 1.6 and 9.9 M above the rule;
+* on both plants the battery's own share, over the engines by themselves, rises from 32.9 M
+  (14.4 y) to 36.0 M (13.2 y);
+* on ЖКПЗ and Жаркент 3 alone that share still takes 29 y and 19 y, beyond the 15-year life.
+
+**Владимир's way, as said** -- the battery bridges at most an hour:
+* the engines start 1,377–2,033 times a year against about 450 by the rule;
+* at 4 engine hours per start that costs more than it saves;
+* tuned, it drifts back to the rule (6 h, 20 %), as does Combined Dispatch tuned, whose best
+  setting is all cycle charging -- which is what the rule already does.
+
+`tools/test_payback_study.py` part I checks:
+* every step balances in every way and plant, with no charge and discharge at once;
+* the charge stays in its window, and the engines stay between the floor and their rating;
+* the formulas hold, and the engines' part plus the battery's make the saving;
+* MPC, with either forecast, beats the rule on every plant and keeps the band;
+* battery-first never starts an engine when its triggers cannot fire;
+* Combined Dispatch, following the load, charges only what the band forces;
+* tuning keeps the best set, at least as good as the defaults;
+* the table names each way;
+* the page runs each way, tuning included.
+
 ## Reproduce
 
 ```bash
