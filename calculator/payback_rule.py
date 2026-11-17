@@ -56,6 +56,12 @@ GROUPS = {
 class Inputs:
     """Every input of the rule-based battery payback study. The defaults are the
     reference run's; the battery is described by the dispatch study's own fields."""
+    # generators: each engine's rated output and efficiency at 50 / 75 / 100 % load (the
+    # datasheets), and the engines the battery works with; the others run as measured
+    gen_kw: tuple = (("mwm", 1200.0), ("zh2", 1066.0), ("zh3", 1066.0))
+    gen_eff: tuple = (("mwm", (0.402, 0.424, 0.436)), ("zh2", (0.396, 0.419, 0.432)),
+                      ("zh3", (0.396, 0.419, 0.432)))
+    with_battery: tuple = ("mwm", "zh2", "zh3")
     # engines and the rule
     band: float = 0.90                      # engines run at least at, fraction of rated
     start_wear_h: float = 4.0               # equivalent engine hours per start
@@ -69,13 +75,16 @@ class Inputs:
     vat: float = 0.12
     gas_kwh_m3: float = 9.44
     # battery: the dispatch study's fields
-    power_kw: float = 990.0
-    energy_kwh: float = 3000.0
+    # the default battery: of the reference run's own sizes (1, 2, 3, 4, 5.5, 7 MWh × 0.25,
+    # 0.33, 0.5, 1 C), the one with the most profit over its life that keeps the engines in
+    # the band and pays back before it wears out -- on ЖКПЗ and on both plants together
+    power_kw: float = 1375.0
+    energy_kwh: float = 5500.0
     own_kw: float = 15.0                    # cooling and controls, while there is a battery
     rte: float = 0.88
     soc_lo: float = 0.10                    # minimum state of charge
     wear_kzt_kwh: float = 0.0               # per kWh discharged
-    capex_kzt: float = 273_024_000.0        # (3,000 kWh × 150 + 990 kW × 120) USD × 480
+    capex_kzt: float = 475_200_000.0        # (5,500 kWh × 150 + 1,375 kW × 120) USD × 480
     soc_start: float = 0.50                 # every unbroken run of data starts here
     om_frac: float = 0.0                    # battery O&M, of CAPEX per year
     replace_year: int = 0                   # 0 = none
@@ -114,8 +123,17 @@ class Inputs:
     def hours(self) -> float:               # hours of storage: energy ÷ power
         return self.energy_kwh / self.power_kw if self.power_kw else 0.0
 
+    def rated(self, u: str) -> float:       # kW
+        return dict(self.gen_kw)[u]
+
+    def eff(self, u: str) -> dict:          # electrical efficiency at 50 / 75 / 100 % load
+        return dict(zip((0.5, 0.75, 1.0), dict(self.gen_eff)[u]))
+
+    def works(self, u: str) -> bool:        # the battery works with this engine
+        return u in self.with_battery
+
     def om_h(self, u: str) -> float:        # KZT per engine hour
-        return self.service_kzt_kwh * RATED[u]
+        return self.service_kzt_kwh * self.rated(u)
 
 
 DEFAULTS = Inputs()
@@ -128,14 +146,52 @@ PLACEHOLDERS = ["Fuel below 50 % load", "Engine counts as running above", "Start
                 "Month coverage needed"]
 
 
+# where each engine's datasheet figures come from
+SHEET = {"mwm": ("Tedom Quanto 1200, MWM TCG 2020 V12 (technical sheet)",
+                 "Tedom Quanto 1200 (MWM TCG 2020) technical sheet: 1200/900/600 kW, fuel "
+                 "2750/2123/1492 kW"),
+         "zh2": ("Jenbacher JMC 320 NG technical description; installed units are JMC 320",
+                 "Jenbacher JMC 320 NG technical description"),
+         "zh3": ("Jenbacher JMC 320 NG technical description; installed units are JMC 320",
+                 "Jenbacher JMC 320 NG technical description")}
+
+
+def _rated_row(u: str) -> str:
+    return f"{LONG[u]}: rated output"
+
+
+def _eff_row(u: str) -> str:
+    return f"{LONG[u]}: efficiency at 50/75/100 %"
+
+
+WITH_BATTERY_ROW = "Generators with the battery"
+
+
+def _generator_rows(g: Inputs) -> list[tuple]:
+    """Each engine's rating and efficiencies (datasheet, or typed when changed), and the
+    engines the battery works with."""
+    rows = []
+    for u in RATED:
+        same_kw = g.rated(u) == DEFAULTS.rated(u)
+        rows.append((_rated_row(u), f"{g.rated(u):,.0f} kW",
+                     SHEET[u][0] if same_kw else "Typed on this page", "datasheet" if same_kw else "typed"))
+        e = g.eff(u)
+        same_e = e == DEFAULTS.eff(u)
+        rows.append((_eff_row(u), " / ".join(f"{100 * v:.1f}" for v in e.values()) + " %, LHV",
+                     SHEET[u][1] if same_e else "Typed on this page", "datasheet" if same_e else "typed"))
+    on = [LONG[u] for u in RATED if g.works(u)]
+    off = [LONG[u] for u in RATED if not g.works(u)]
+    rows.append((WITH_BATTERY_ROW, ", ".join(on) or "none",
+                 "Project input; " + ("the others run as the meters show: " + ", ".join(off)
+                                      if off else "every engine follows the rule"), "confirmed"))
+    return rows
+
+
 def inputs_table(inp: Inputs) -> list[dict]:
     """Every input of the run: value, where it comes from, and its status."""
     g = inp
     R = [
-        ("MWM rated output", "1200 kW", "Tedom Quanto 1200, MWM TCG 2020 V12 (technical sheet)", "datasheet"),
-        ("Jenbacher rated output", "1066 kW", "Jenbacher JMC 320 NG technical description; installed units are JMC 320", "datasheet"),
-        ("Jenbacher efficiency at 50/75/100 %", "39.6 / 41.9 / 43.2 %, LHV", "Jenbacher JMC 320 NG technical description", "datasheet"),
-        ("MWM efficiency at 50/75/100 %", "40.2 / 42.4 / 43.6 %, LHV", "Tedom Quanto 1200 (MWM TCG 2020) technical sheet: 1200/900/600 kW, fuel 2750/2123/1492 kW", "datasheet"),
+        *_generator_rows(g),
         ("Fuel below 50 % load", "extend fuel line", "Below 50 % the fuel input is extended along the 50–75 % slope; datasheets stop at 50 %", "placeholder"),
         ("Engine counts as running above", f"{g.run_kw:g} kW", "A unit counts as running above this output", "placeholder"),
         ("Service cost basis", f"{g.service_kzt_kwh:.1f} ₸/kWh of rating, per engine hour", "Service company's rate; sets the cost of an engine hour", "confirmed"),
@@ -144,7 +200,7 @@ def inputs_table(inp: Inputs) -> list[dict]:
         ("Start wear values compared", ", ".join(f"{x:g}" for x in g.start_wear_compared) + " engine hours per start", "No published figure for gas engines; results are shown across this range", "placeholder"),
         ("Battery power", f"{g.power_kw:,.0f} kW", "Project input", "confirmed"),
         ("Battery energy", f"{g.energy_kwh:,.0f} kWh ({g.hours:.2f} h of storage)", "Project input", "confirmed"),
-        ("Battery CAPEX", f"{g.capex_kzt:,.0f} ₸", "Project input; the sizes compared are priced in proportion to their energy", "confirmed"),
+        ("Battery CAPEX", f"{g.capex_kzt:,.0f} ₸", "Project input; by default (5,500 kWh × 150 + 1,375 kW × 120) USD × 480 ₸/USD. The sizes compared are priced in proportion to their energy", "confirmed"),
         ("Battery O&M", f"{100 * g.om_frac:g} % of CAPEX per year", "Project input", "confirmed"),
         ("Replacement", (f"year {g.replace_year}, {100 * g.replace_frac:g} % of CAPEX" if g.replace_year else "none"), "Project input", "confirmed"),
         ("Wear cost", f"{g.wear_kzt_kwh:g} ₸ per kWh discharged", "Project input", "confirmed"),
@@ -194,6 +250,13 @@ LABELS = {"band": "Engines run at least at", "start_wear_h": "Start wear",
 def changed(inp: Inputs) -> list[str]:
     """The inputs that differ from the defaults, as the inputs table names them."""
     out = []
+    for u in RATED:
+        if inp.rated(u) != DEFAULTS.rated(u):
+            out.append(_rated_row(u))
+        if inp.eff(u) != DEFAULTS.eff(u):
+            out.append(_eff_row(u))
+    if set(inp.with_battery) != set(DEFAULTS.with_battery):
+        out.append(WITH_BATTERY_ROW)
     for k, label in LABELS.items():
         if getattr(inp, k) != getattr(DEFAULTS, k) and label not in out:
             out.append(label)
@@ -302,15 +365,17 @@ def his_steps(group: str) -> pd.DataFrame:
 
 
 # ---- the arithmetic ------------------------------------------------------------------------
-def fuel_kw(u: str, p: np.ndarray, run_kw: float = 50.0) -> np.ndarray:
+def fuel_kw(u: str, p: np.ndarray, run_kw: float = 50.0, inp: Inputs | None = None) -> np.ndarray:
     """kW of gas: straight lines through rated × load ÷ efficiency at 50, 75 and 100 %,
-    the 50–75 % slope extended below 50 %; nothing below the running threshold."""
-    e = EFF[u]
-    xs = [RATED[u] * f for f in e]
-    ys = [RATED[u] * f / v for f, v in e.items()]
+    the 50–75 % slope extended below 50 %; nothing below the running threshold. The rating
+    and efficiencies are the inputs' (the datasheets' by default)."""
+    rated = inp.rated(u) if inp is not None else RATED[u]
+    e = inp.eff(u) if inp is not None else EFF[u]
+    xs = [rated * f for f in e]
+    ys = [rated * f / v for f, v in e.items()]
     slope = (ys[1] - ys[0]) / (xs[1] - xs[0])
     f = np.where(p < xs[0], ys[0] + slope * (p - xs[0]), np.interp(p, xs, ys))
-    return np.where(p > run_kw, f, 0.0)
+    return np.where(p > run_kw, np.maximum(f, 0.0), 0.0)
 
 
 def _months(x: pd.DataFrame) -> tuple:
@@ -359,7 +424,7 @@ def cost(x: pd.DataFrame, out: dict[str, np.ndarray], imp: np.ndarray, exp: np.n
         # engine the meters show off there (how the reference run counts its starts)
         meas = x[f"{u}_measured"].fillna(0).values > inp.run_kw
         start = (run & ~np.r_[False, run[:-1]] & ~new) | (new & run & ~meas)
-        cols[f"{u}_fuel"] = fuel_kw(u, p, inp.run_kw) * dt
+        cols[f"{u}_fuel"] = fuel_kw(u, p, inp.run_kw, inp) * dt
         cols[f"{u}_run_h"] = run * dt
         cols[f"{u}_starts"] = start.astype(float)
         cols[f"{u}_kwh"] = p * dt
@@ -391,12 +456,21 @@ def base(x: pd.DataFrame, units: list[str], inp: Inputs = DEFAULTS,
 
 def simulate(x: pd.DataFrame, units: list[str], e_kwh: float, p_kw: float,
              inp: Inputs = DEFAULTS) -> dict:
-    """The rule, step by step (docs/zharkent-app/recreate.py, its constants as inputs)."""
+    """The rule, step by step (docs/zharkent-app/recreate.py, its constants as inputs).
+
+    Only the engines the battery works with follow the rule. The others run as the meters
+    show: their output is taken off the load the rule serves, and where they make more than
+    the load the battery may take the surplus (the rest is exported, as measured)."""
     dt = x.attrs.get("dt", 1.0)
     min_on = max(1, int(round(inp.min_run_h / dt)))
     min_off = max(1, int(round(inp.min_off_h / dt)))
     n, eta = len(x), inp.rte ** 0.5
-    load = x["load"].values
+    fixed = [u for u in units if not inp.works(u)]
+    measured = {u: x[f"{u}_measured"].fillna(0).values for u in fixed}
+    all_units, units = list(units), [u for u in units if inp.works(u)]
+    RATED = {u: inp.rated(u) for u in units}        # noqa: N806 -- the inputs' ratings
+    total = x["load"].values
+    load = total - sum(measured.values()) if fixed else total
     new = x["new"].values
     meas_on = {u: (x[f"{u}_measured"].fillna(0).values > inp.run_kw) for u in units}
     out = {u: np.zeros(n) for u in units}
@@ -454,8 +528,9 @@ def simulate(x: pd.DataFrame, units: list[str], e_kwh: float, p_kw: float,
         soc_s[i], ch_s[i], dis_s[i] = soc, ch, dis
         for u in units:
             age[u] += 1
+    out = {u: (out[u] if u in out else measured[u]) for u in all_units}
     return dict(out=out, soc=soc_s, ch=ch_s, dis=dis_s, imp=imp_s, exp=exp_s, oob=oob,
-                forced=forced, need=load + (inp.own_kw if e_kwh > 0 else 0.0))
+                forced=forced, need=total + (inp.own_kw if e_kwh > 0 else 0.0))
 
 
 def power_for(e_kwh: float, inp: Inputs = DEFAULTS) -> float:
@@ -508,7 +583,9 @@ def evaluate(x: pd.DataFrame, units: list[str], e_kwh: float, p_kw: float, sim: 
            if 0 < inp.replace_year < y["life_y"] else 0.0)
     y["replace_kzt"] = rep
     y["profit_kzt"] = y["net_kzt"] * y["life_y"] - y["capex_kzt"] - rep
-    y["in_band"] = bool(y["oob_h"] <= inp.below_band_allowed * y["run_h"])
+    # in the band: hours below it against the hours of the engines that follow the rule
+    y["rule_run_h"] = sum(y[f"{u}_run_h"] for u in units if inp.works(u))
+    y["in_band"] = bool(y["oob_h"] <= inp.below_band_allowed * y["rule_run_h"])
     y["pays_back"] = bool(y["payback_y"] == y["payback_y"] and y["payback_y"] <= y["life_y"])
     y["battery_wear_kzt"] = y["capex_kzt"] / y["life_y"] if y["life_y"] else 0.0
     return y
@@ -601,12 +678,12 @@ def today_breakdown(r: Run) -> dict:
     excess_h = excess_kzt = penalty_kwh = 0.0
     for u in units:
         gen, run_h = t[f"{u}_kwh"], t[f"{u}_run_h"]
-        loading = gen / (run_h * RATED[u]) if run_h else 0.0
+        loading = gen / (run_h * inp.rated(u)) if run_h else 0.0
         eng[u] = dict(kwh=gen, run_h=run_h, starts=t[f"{u}_starts"], loading=loading)
-        xh = max(0.0, run_h - gen / RATED[u])
+        xh = max(0.0, run_h - gen / inp.rated(u))
         excess_h += xh
         excess_kzt += xh * inp.om_h(u)
-        penalty_kwh += max(0.0, t[f"{u}_fuel"] - gen / EFF[u][1.0])
+        penalty_kwh += max(0.0, t[f"{u}_fuel"] - gen / inp.eff(u)[1.0])
     fuel_per_kwh = t["fuel_kzt"] / t["gen_kwh"] if t["gen_kwh"] else 0.0
     return dict(total=t["cost_kzt"], fuel=t["fuel_kzt"], fuel_kwh=t["fuel_kwh"],
                 service=t["om_kzt"], grid=t["grid_kzt"], imp=t["imp_kwh"], exp=t["exp_kwh"],
@@ -633,7 +710,7 @@ def months_table(x: pd.DataFrame, units: list[str], inp: Inputs = DEFAULTS) -> p
         for u in units:
             pw = s[f"{u}_measured"].fillna(0).values
             r[f"{u}_mwh"] = pw.sum() * dt / 1e3
-            fuel += fuel_kw(u, pw, inp.run_kw).sum() * dt * inp.gas_kzt_kwh
+            fuel += fuel_kw(u, pw, inp.run_kw, inp).sum() * dt * inp.gas_kzt_kwh
             on = pw > inp.run_kw
             om += on.sum() * dt * inp.om_h(u)
         gm = s["grid_measured"].values
@@ -749,7 +826,7 @@ def _step_costs(x: pd.DataFrame, out: dict, imp: np.ndarray, inp: Inputs,
         run = p > inp.run_kw
         meas = x[f"{u}_measured"].fillna(0).values > inp.run_kw
         start = (run & ~np.r_[False, run[:-1]] & ~new) | (new & run & ~meas)
-        energy = energy + fuel_kw(u, p, inp.run_kw) * dt * inp.gas_kzt_kwh + run * dt * inp.om_h(u)
+        energy = energy + fuel_kw(u, p, inp.run_kw, inp) * dt * inp.gas_kzt_kwh + run * dt * inp.om_h(u)
         ops = ops + start * inp.start_wear_h * inp.om_h(u)
         starts[u] = start.astype(float)
     return energy, ops, starts
@@ -786,7 +863,7 @@ def period_state(r: Run) -> dict:
         f[f"on_{u}"] = (s["out"][u] > inp.run_kw).astype(float)
         f[f"st_{u}"] = st_rule[u]
         f[f"st0_{u}"] = st_today[u]
-        f[f"fuel_{u}"] = fuel_kw(u, s["out"][u], inp.run_kw) * dt
+        f[f"fuel_{u}"] = fuel_kw(u, s["out"][u], inp.run_kw, inp) * dt
     g = f.groupby("hour")
     mean_cols = ["need", "imp", "ch", "dis", "exp"] + [f"p_{u}" for u in units]
     sum_cols = (["e_rule", "o_rule", "e_today", "o_today", "n"]
@@ -817,9 +894,9 @@ def period_state(r: Run) -> dict:
         st_h = list(h[f"st_{u}"])
         energy = float(h[f"p_{u}"].sum())
         rows.append({
-            "index": len(rows), "name": names[u], "kind": "CHP", "size_kw": RATED[u],
+            "index": len(rows), "name": names[u], "kind": "CHP", "size_kw": inp.rated(u),
             "energy_kwh": energy, "running_hours": int(h[f"on_{u}"].sum()),
-            "capacity_factor": energy / (RATED[u] * H) if H else 0.0,
+            "capacity_factor": energy / (inp.rated(u) * H) if H else 0.0,
             "fuel_units": float(h[f"fuel_{u}"].sum()) / 1000.0, "fuel_unit_name": "MWh gas",
             "spill_kwh": 0.0, "starts": int(round(sum(st_h))),
             "starts_by_day": [int(round(sum(st_h[d * 24:(d + 1) * 24]))) for d in range(n_days)],
@@ -830,9 +907,9 @@ def period_state(r: Run) -> dict:
                  "full_cycles": thru / (e_kwh * (inp.soc_hi - inp.soc_lo))}] if battery else [])
     res = {"series": series, "status": "rule",
            "sizes": {"fueltech_units": rows, "storage_units": storage, "pv_kw": 0.0,
-                     "fueltech_kw": sum(RATED[u] for u in units)}}
+                     "fueltech_kw": sum(inp.rated(u) for u in units)}}
     tariff = type("Tariff", (), {"energy_cost_per_kwh": [inp.grid_ex_vat] * H})()
-    eng_full = float(np.mean([inp.gas_kzt_kwh / EFF[u][1.0] + inp.om_h(u) / RATED[u]
+    eng_full = float(np.mean([inp.gas_kzt_kwh / inp.eff(u)[1.0] + inp.om_h(u) / inp.rated(u)
                               for u in units]))
     spread = inp.grid_ex_vat - eng_full
     starts_cur = [int(round(v)) for v in h[[f"st_{u}" for u in units]].sum(axis=1)]

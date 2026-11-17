@@ -2973,6 +2973,96 @@ by typing 2,000 kWh / 1,000 kW and the CAPEX.
 * **F.** The published figures, when the run file is present.
 * **G.** The period view.
 
+## Revised 17.11.2026 (3): generators, and the default battery set to the most profit
+
+**Generators.** A Generators panel now opens the page, with one row per engine:
+* **Works with the battery:** a tick-box.
+* **Rated output (kW):** the defaults are the datasheets' (TEDOM 1,200 kW; each J320
+  1,066 kW).
+* **Efficiency at 50 / 75 / 100 % load:** the defaults are the datasheets' (TEDOM
+  40.2 / 42.4 / 43.6 %; J320 39.6 / 41.9 / 43.2 %).
+
+The reference app has no such fields. Its engines are fixed by the plant tab, and their
+datasheet figures appear only in its inputs table.
+
+A typed rating or efficiency enters three things:
+* the fuel curve, today's and the rule's alike;
+* the engine hour (service rate × rated kW);
+* the rule's output when the engine runs.
+
+An unticked engine runs as the meters show. Its output is taken off the load the rule serves,
+and the battery may take what it exports. Its fuel, hours and starts are the same in both
+columns, so it adds nothing to the saving. The band test counts only the hours of the engines
+that follow the rule. With every engine ticked, everything is as before.
+
+The inputs table now lists each engine's rating, its efficiencies and the generators with the
+battery, so it has 46 rows. A typed value is marked "typed". Run scenario is disabled when no
+engine is ticked.
+
+One case on hourly steps, at the default battery below: only the TEDOM works with the
+battery. On ЖКПЗ:
+* the saving falls from 85.5 M to 71.4 M ₸ a year;
+* the payback rises from 5.6 to 6.7 years;
+* the profit over life falls from 807.7 M to 595.1 M ₸.
+
+**The default battery: the most profit over its life.** The default is now
+**5,500 kWh / 1,375 kW** (0.25 C, 4 h of storage), with all three engines working with the
+battery. Its CAPEX is 475,200,000 ₸ at the reference's prices: (5,500 kWh × 150 +
+1,375 kW × 120) USD × 480.
+
+Nothing was fitted to make the results look better. Only the battery's size and the engines
+that work with it were chosen; prices, start wear, the rule and every placeholder are as
+before. The choice was made on this project's hourly steps:
+* **Measure:** the page's own "profit over the battery's life" (saving × life − CAPEX).
+* **Test:** the page's own: the engines stay in the band, and the battery pays back before it
+  wears out.
+* **Candidates:** the reference run's own 24 sizes (1, 2, 3, 4, 5.5, 7 MWh × 0.25, 0.33,
+  0.5, 1 C), each with every set of engines working with the battery.
+* **Result:** 5.5 MWh × 0.25 C earns the most on ЖКПЗ, and on both plants together. All
+  three engines with the battery beat any subset.
+
+A wider search (0.5–7 MWh, 0.25–2 C, then 4–7 MWh at 700–2,000 kW) finds the profit flat at
+the top. Everything from 5 to 5.5 MWh at 850–1,400 kW is within about 3 %. The last few
+percent come only from odd sizes with the power cut close to the band limit: 4,250 kWh /
+700 kW on both plants runs the engines below the band for 0.78 % of their hours, against
+the 1 % limit. That would be fitting, so the default stays a standard size with a wide margin
+(0.01 % below the band on ЖКПЗ, 0.07 % on both plants).
+
+| At the new default, hourly steps | Today, ₸ a year | Saving a year | Payback | Life | Profit over life |
+|---|---:|---:|---:|---:|---:|
+| ЖКПЗ | 447.8 M | 85.5 M | 5.6 y | 15.0 y | **807.7 M** |
+| Жаркент 3 | 169.5 M | 23.3 M | 20.4 y | 15.0 y | −125.3 M (never pays back) |
+| Both plants, one battery | 588.8 M | 100.9 M | 4.7 y | 15.0 y | **1,038.2 M** |
+
+For comparison, the reference's 3,000 kWh / 990 kW earns 395.7 M on ЖКПЗ, and the
+shortest-payback size, 2,000 kWh / 1,000 kW, earns 188.8 M. The trade is a longer payback:
+5.6 years on ЖКПЗ, against 3.7 and 3.3.
+
+What this profit rests on, unchanged and still placeholders:
+* **The 15-year calendar life.** The battery cycles about 395 times a year, so 6,000 cycles
+  would last 15.3 years. Its life is set by the calendar cap, and the profit counts 15 years
+  of saving.
+* **No discounting, no battery O&M and no replacement.** These are the page's defaults; each
+  field is on the page.
+
+With 2.5 % O&M a year, or a shorter calendar life, the profit falls and a smaller battery can
+come out ahead.
+
+`tools/test_payback_study.py` (147 checks) adds these checks:
+* **The default holds.** For ЖКПЗ and both plants, none of the reference's 24 sizes at its
+  prices earns more over its life, in the band and before wear-out.
+* **The default's datasheets** and the 46-row inputs table.
+* **Unticked engines.** They run exactly as measured, and every step balances, for one, two
+  or no engines ticked.
+* **Typed ratings and efficiencies** move the fuel curve, the engine hour and the rule.
+* **The page:**
+  * one Generators row per engine;
+  * a one-generator run says which engines run as measured;
+  * Run scenario is disabled with no engine ticked.
+
+Part F now checks the published figures with the reference's own battery, 3,000 kWh /
+990 kW, typed in explicitly.
+
 ## Reproduce
 
 ```bash

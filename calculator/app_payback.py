@@ -33,7 +33,7 @@ SERIES = {"TEDOM": "#b5762a", "J320 Жаркент 2": "#0a75ad", "J320 Жарк
           "Engine start wear, with the battery": "#b5762a", "Battery wear": "#6f42c1",
           "Engine start wear, today": INK}
 STATUS = {"datasheet": ("#0b6aa2", "#e8f2fa"), "placeholder": ("#c0392b", "#fdecea"),
-          "confirmed": ("#2e7d32", "#eaf5ea")}
+          "confirmed": ("#2e7d32", "#eaf5ea"), "typed": ("#5f6b7a", "#f1f3f5")}
 MONO = "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"
 CUR = "₸"
 
@@ -95,8 +95,62 @@ def _short(e_mwh: float) -> str:
 
 
 # ---- the inputs, in the dispatch study's panels -----------------------------------------
+PLANT = {u: T.GROUPS[g]["name"] for g in ("K", "M") for u in T.GROUPS[g]["units"]}
+GEN_COLS = [2.4, 1.5, 1.2, 1.0, 1.0, 1.0]
+GEN_HEAD = [
+    ("Generator", None),
+    ("Works with the battery",
+     "Ticked: the engine follows the rule together with the battery. Unticked: it runs as "
+     "the meters show, its output is taken off the load, and the battery works with the "
+     "other engines (and may take what this one exports)."),
+    ("Rated output (kW)",
+     "The engine's output whenever it runs under the rule, the top of its fuel curve, and "
+     "the cost of its engine hour (service rate × rated kW)."),
+    ("Efficiency at 50 %",
+     "Electrical efficiency (LHV), in %, at 50, 75 and 100 % load. Fuel follows straight "
+     "lines through the three points; below 50 % the 50–75 % slope is extended."),
+    ("at 75 %", None),
+    ("at 100 %", None),
+]
+
+
+def generators() -> tuple[tuple, tuple, tuple]:
+    """One row per engine: works with the battery, rated output, efficiency at 50 / 75 /
+    100 % load. The defaults are the datasheets'."""
+    D = T.DEFAULTS
+    UT.panel_head("Generators")
+    with st.expander("Generators", expanded=True):
+        for c, (title, help_) in zip(st.columns(GEN_COLS, vertical_alignment="bottom"), GEN_HEAD):
+            with c:
+                st.markdown(f"**{title}**", help=help_)
+        gen_kw, gen_eff, works = [], [], []
+        for u in T.RATED:
+            row = st.columns(GEN_COLS, vertical_alignment="center")
+            with row[0]:
+                st.markdown(f"{T.LONG[u]}  \n:gray[{PLANT[u]}]")
+            with row[1]:
+                if st.checkbox(f"{T.LONG[u]} works with the battery", value=D.works(u),
+                               key=f"bp_on_{u}", label_visibility="collapsed"):
+                    works.append(u)
+            with row[2]:
+                kw = st.number_input(f"{T.LONG[u]} rated output (kW)", 1.0, 10_000.0,
+                                     D.rated(u), step=1.0, format="%.0f", key=f"bp_kw_{u}",
+                                     label_visibility="collapsed")
+            effs = []
+            for c, (f, v) in zip(row[3:], D.eff(u).items()):
+                with c:
+                    effs.append(st.number_input(
+                        f"{T.LONG[u]} efficiency at {100 * f:g} % (%)", 1.0, 100.0,
+                        round(100 * v, 1), step=0.1, format="%.1f",
+                        key=f"bp_e{100 * f:g}_{u}", label_visibility="collapsed"))
+            gen_kw.append((u, float(kw)))
+            gen_eff.append((u, tuple(round(float(e) / 100.0, 6) for e in effs)))
+    return tuple(gen_kw), tuple(gen_eff), tuple(works)
+
+
 def inputs() -> tuple[T.Inputs, str]:
     D = T.DEFAULTS
+    gen_kw, gen_eff, works = generators()
     UT.panel_head("Engines and the rule")
     with st.expander("Engines and the rule", expanded=True):
         c1, c2, c3, c4 = st.columns(4)
@@ -226,7 +280,7 @@ def inputs() -> tuple[T.Inputs, str]:
                                      help="Gaps in one signal up to this long are bridged by a "
                                           "straight line; longer gaps stay empty. ЖКПЗ's "
                                           "December 2025 and February 2026 are never filled.")
-    inp = replace(D, band=band / 100.0, start_wear_h=float(wear), service_kzt_kwh=float(service),
+    inp = replace(D, gen_kw=gen_kw, gen_eff=gen_eff, with_battery=works, band=band / 100.0, start_wear_h=float(wear), service_kzt_kwh=float(service),
                   allow_export=bool(export), gas_kzt_m3=float(gas), grid_kzt_kwh=float(grid),
                   vat=float(vat) / 100.0, gas_kwh_m3=float(heat), power_kw=float(b_kw),
                   energy_kwh=float(b_kwh), own_kw=float(own), rte=float(rte) / 100.0,
@@ -365,7 +419,7 @@ def _size_lines(r: T.Run, y: pd.Series) -> list[str]:
            + (f"+ replacement {_m(inp.replace_frac * y.capex_kzt)} " if inp.replace_year
               and y.payback_y > inp.replace_year else "")
            + f"÷ {_m(y.net_kzt)} a year")
-    below = 100 * y.oob_h / y.run_h if y.run_h else 0.0
+    below = 100 * y.oob_h / y.rule_run_h if y.rule_run_h else 0.0
     lines = [f"Battery {_size(y.e_mwh, y.p_mw)} ({1000 * y.e_mwh / max(1e-9, 1000 * y.p_mw):.2f} h "
              "of storage)",
              f"Saving {_m(y.saving_kzt)} {CUR}/yr = today {_m(t.cost_kzt)} – with battery "
@@ -385,8 +439,8 @@ def _size_lines(r: T.Run, y: pd.Series) -> list[str]:
         f"Payback {pay}",
         f"Engine starts {_n(y.starts)} a year (today {_n(t.starts)}); engine hours "
         f"{_n(y.run_h)} (today {_n(t.run_h)})",
-        f"Below the {inp.band * 100:g} % band {_n(y.oob_h)} h a year ({below:.1f} % of engine "
-        "hours)",
+        f"Below the {inp.band * 100:g} % band {_n(y.oob_h)} h a year ({below:.1f} % of the "
+        "rule's engine hours)",
         f"Battery life {y.life_y:.1f} years = {inp.cycle_life:g} cycles ÷ {y.cycles:.0f} a year"
         + (f", capped at {inp.calendar_life:g}" if y.life_y >= inp.calendar_life else ""),
         f"Pays back before it wears out: {'yes' if y.pays_back else 'no'}"
@@ -582,8 +636,10 @@ def _report(res: dict) -> None:
         f'<div class="bp-run">Run {res["time"]:%d %b %Y, %H:%M}. Battery '
         f'{inp.energy_kwh:,.0f} kWh / {inp.power_kw:,.0f} kW ({inp.hours:.2f} h of storage), '
         f'CAPEX {inp.capex_kzt:,.0f} {CUR}. Engines run at least at {inp.band * 100:g} % of '
-        f'rated; a start wears them as {inp.start_wear_h:g} hours of running. Measured steps: '
-        f'{res["source"].lower()}.</div>'
+        f'rated; a start wears them as {inp.start_wear_h:g} hours of running. '
+        + (f'Generators with the battery: {", ".join(T.LONG[u] for u in inp.with_battery)}; '
+           f'the others run as measured. ' if len(inp.with_battery) < len(T.RATED) else "")
+        + f'Measured steps: {res["source"].lower()}.</div>'
         f'<div class="bp-ph">Inputs still waiting for a contract or a supplier\'s figure: '
         f'{", ".join(T.PLACEHOLDERS)}.</div>')
     names = {T.GROUPS[g]["name"]: g for g in T.GROUPS}
@@ -591,6 +647,15 @@ def _report(res: dict) -> None:
     g = names[pick]
     r = res["results"][g]
     st.html(f'<div class="bp-about">{T.GROUPS[g]["about"]}</div>')
+    units = T.GROUPS[g]["units"]
+    off = [T.LONG[u] for u in units if not inp.works(u)]
+    if off and len(off) == len(units):
+        st.html('<div class="bp-note">No generator of this plant works with the battery: '
+                'its engines run as measured, and the battery charges only from what they '
+                'export.</div>')
+    elif off:
+        st.html(f'<div class="bp-note">{", ".join(off)} runs as measured; the battery works '
+                'with the other engines.</div>')
     _cards(r)
     d = _sizes_frame(r.sizes)
     sizes = list(inp.sizes_mwh)
@@ -823,7 +888,10 @@ def render() -> None:
     UT.step("Battery payback study")
     inp, source = inputs()
     ch = T.changed(inp)
-    if st.button("Run scenario", type="primary", key="bp_run"):
+    if not inp.with_battery:
+        st.warning("Tick at least one generator to work with the battery.",
+                   icon=":material/warning:")
+    if st.button("Run scenario", type="primary", key="bp_run", disabled=not inp.with_battery):
         ss["bp_result"] = dict(inp=inp, source=source, time=dt.datetime.now(),
                                results=_run(inp, source))
     st.caption("Changed from the defaults: " + (", ".join(ch) if ch else "nothing"))

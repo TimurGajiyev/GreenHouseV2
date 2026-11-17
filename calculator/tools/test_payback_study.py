@@ -7,16 +7,22 @@
      export and yearly figures as docs/zharkent-app/recreate.py -- the rebuild that matched
      the reference run in 100 % of steps -- for every entity and several sizes, and the
      same result row when the battery is priced as the reference prices it;
-  B. the defaults are the reference run's, carried in the dispatch study's battery fields:
-     990 kW / 3,000 kWh, CAPEX 273,024,000 ₸, the derived prices and engine-hour rates,
-     the 43 rows of the inputs table, the 14 placeholders;
+  B. the defaults are the reference run's, carried in the dispatch study's battery fields,
+     except the battery: of the reference's own 24 sizes, the one with the most profit over
+     its life, in the band and before wear-out: 5,500 kWh / 1,375 kW, CAPEX 475,200,000 ₸
+     at the reference's prices; each
+     engine's rating and efficiencies from its datasheet, the derived prices and
+     engine-hour rates, the 46 rows of the inputs table, the 14 placeholders;
   C. the result formulas hold on every size of every entity, at the defaults (where they
-     are the reference's) and with battery wear, O&M and a replacement;
+     are the reference's) and with battery wear, O&M and a replacement; an engine left out
+     of the battery's runs exactly as measured, every step balances, and a changed rating
+     or efficiency enters the fuel curve, the engine hour and the rule;
   D. the steps are built by the run file's data rules: the study year, gaps bridged only up
      to the limit and never in the never-filled months, load = engines + grid, Жаркент 3
      +1 h;
   E. the page: the switch offers the dispatch study first and this second (the REopt tool
-     still hidden); the inputs sit in the dispatch study's panels with its battery fields;
+     still hidden); the inputs sit in the dispatch study's panels with its battery fields,
+     and a Generators panel has one row per engine;
      nothing runs before Run scenario; no run history, no sidebar, no C-rates, no names of
      people; the cards are the rule's own figures; changed inputs are run on the next press;
   F. with the run file on disk: the reference's published figures to the stated precision
@@ -146,7 +152,7 @@ def b_defaults() -> None:
     D = T.DEFAULTS
     want = dict(band=0.90, start_wear_h=4.0, service_kzt_kwh=6.0, allow_export=False,
                 bridge_h=3.0, gas_kzt_m3=75.0, grid_kzt_kwh=50.0, vat=0.12, gas_kwh_m3=9.44,
-                power_kw=990.0, energy_kwh=3000.0, own_kw=15.0, rte=0.88, soc_lo=0.10,
+                power_kw=1375.0, energy_kwh=5500.0, own_kw=15.0, rte=0.88, soc_lo=0.10,
                 wear_kzt_kwh=0.0, soc_start=0.50, om_frac=0.0, replace_year=0,
                 cycle_life=6000.0, calendar_life=15.0, soc_hi=0.95, min_run_h=0.5,
                 min_off_h=0.25, taper_from=0.85, floor=0.5, below_band_allowed=0.01,
@@ -154,16 +160,22 @@ def b_defaults() -> None:
     bad = [k for k, v in want.items() if getattr(D, k) != v]
     check("every default as the reference run has it", not bad,
           ", ".join(f"{k}={getattr(D, k)}" for k in bad))
-    check("CAPEX 273,024,000 ₸ = the reference's price of 3 MWh at 0.33 C",
-          close(D.capex_kzt, reference_price(3000, 990)) and D.capex_kzt == 273_024_000.0)
-    check("3.03 h of storage", round(D.hours, 2) == 3.03)
+    check("CAPEX 475,200,000 ₸ = the reference's price of 5.5 MWh at 0.25 C",
+          close(D.capex_kzt, reference_price(5500, 1375)) and D.capex_kzt == 475_200_000.0)
+    check("4 h of storage", D.hours == 4.0)
     check("sizes compared 1, 2, 3, 4, 5.5, 7 MWh", D.sizes_mwh == (1.0, 2.0, 3.0, 4.0, 5.5, 7.0))
     check("a size's power keeps the battery's hours; yours keeps its own power",
-          T.power_for(3000.0) == 990.0 and close(T.power_for(6000.0), 1980.0))
+          T.power_for(5500.0) == 1375.0 and close(T.power_for(2000.0), 500.0))
     check("a size's CAPEX is in proportion to its energy",
-          close(T.price(1500.0), D.capex_kzt / 2) and close(T.price(3000.0), D.capex_kzt))
+          close(T.price(2750.0), D.capex_kzt / 2) and close(T.price(5500.0), D.capex_kzt)
+          and all(close(T.price(1000 * e), reference_price(1000 * e, 250 * e)) for e in D.sizes_mwh))
+    check("each engine's datasheet: TEDOM 1,200 kW at 40.2 / 42.4 / 43.6 %, each J320 1,066 kW "
+          "at 39.6 / 41.9 / 43.2 %; all three work with the battery",
+          D.rated("mwm") == 1200.0 and D.rated("zh2") == D.rated("zh3") == 1066.0
+          and D.eff("mwm") == T.EFF["mwm"] and D.eff("zh2") == D.eff("zh3") == T.EFF["zh2"]
+          and all(D.works(u) for u in T.RATED))
     rows = T.inputs_table(D)
-    check("the inputs table has 43 rows", len(rows) == 43, str(len(rows)))
+    check("the inputs table has 46 rows", len(rows) == 46, str(len(rows)))
     names = [r["input"] for r in rows]
     check("each input named once", len(set(names)) == len(names))
     ph = sorted(r["input"] for r in rows if r["status"] == "placeholder")
@@ -181,9 +193,18 @@ def b_defaults() -> None:
     check("nothing changed at the defaults", T.changed(D) == [])
     check("a changed grid price is named", T.changed(T.with_inputs(grid_kzt_kwh=60.0)) == ["Grid price incl. VAT"])
     check("a changed battery is named by its fields",
-          T.changed(T.with_inputs(energy_kwh=2000.0, om_frac=0.02)) == ["Battery energy", "Battery O&M"])
+          T.changed(T.with_inputs(energy_kwh=3000.0, om_frac=0.02)) == ["Battery energy", "Battery O&M"])
     check("every changed name is a row of the table",
           set(T.LABELS.values()) <= set(names), str(set(T.LABELS.values()) - set(names)))
+    g2 = T.with_inputs(with_battery=("mwm",), gen_kw=(("mwm", 1200.0), ("zh2", 1000.0), ("zh3", 1066.0)))
+    ch = T.changed(g2)
+    rows2 = {r["input"]: r for r in T.inputs_table(g2)}
+    check("a changed rating and the generators with the battery are named, and are rows",
+          ch == ["Jenbacher J320 (Жаркент 2): rated output", "Generators with the battery"]
+          and all(c in rows2 for c in ch), str(ch))
+    check("a typed rating is marked typed, not datasheet",
+          rows2["Jenbacher J320 (Жаркент 2): rated output"]["status"] == "typed"
+          and rows2["TEDOM Quanto 1200 (Жаркент): rated output"]["status"] == "datasheet")
 
 
 # ------------------------------------------------------------------------------------- C
@@ -218,7 +239,9 @@ def _formulas(r: T.Run, inp: T.Inputs) -> list[str]:
             "cycles": close(y.cycles, y.throughput_kwh / ((inp.soc_hi - inp.soc_lo) * e)),
             "life": close(y.life_y, life),
             "profit": close(y.profit_kzt, net * life - capex - rep_in_life),
-            "in band": bool(y.in_band) == bool(y.oob_h <= inp.below_band_allowed * y.run_h),
+            "in band": bool(y.in_band) == bool(
+                y.oob_h <= inp.below_band_allowed
+                * sum(y[f"{u}_run_h"] for u in T.GROUPS[g]["units"] if inp.works(u))),
             "pays back": bool(y.pays_back) == bool(pay == pay and pay <= life),
         }
         bad += [f"{y.e_mwh:g} MWh {k}" for k, v in tests.items() if not v]
@@ -245,7 +268,7 @@ def c_formulas() -> None:
         ok = r.sizes[r.sizes.in_band & r.sizes.pays_back]
         check(f"{g}: the third card is the shortest payback in the band and before wear-out",
               (b is None and ok.empty) or (b is not None and close(b.payback_y, ok.payback_y.min())))
-        check(f"{g}: your battery is the 3,000 kWh / 990 kW", r.yours.e_mwh == 3.0 and r.yours.p_mw == 0.99)
+        check(f"{g}: your battery is the 5,500 kWh / 1,375 kW", r.yours.e_mwh == 5.5 and r.yours.p_mw == 1.375)
         r2 = T.run_group(g, extra)
         bad = _formulas(r2, extra)
         check(f"{g}: all hold with battery wear, O&M and a replacement", not bad, ", ".join(bad[:5]))
@@ -254,6 +277,59 @@ def c_formulas() -> None:
         y1 = r2.yours
         check(f"{g}: battery wear and O&M only lower the saving",
               y1.wear_kzt > 0 and y1.bat_om_kzt > 0 and y1.net_kzt < y1.saving_kzt)
+    print("   the default battery: the most profit over life of the reference's own sizes")
+    for g in ("K", "KM"):
+        x = T.hourly_steps(g)
+        units = T.GROUPS[g]["units"]
+        mine = T.run_group(g, x=x).yours
+        beaten = []
+        for e in (1.0, 2.0, 3.0, 4.0, 5.5, 7.0):
+            for c in (0.25, 0.33, 0.5, 1.0):
+                ek, pk = 1000 * e, 1000 * e * c
+                if (ek, pk) == (D.energy_kwh, D.power_kw):
+                    continue
+                inp = T.with_inputs(energy_kwh=ek, power_kw=pk, capex_kzt=reference_price(ek, pk))
+                y = T.evaluate(x, units, ek, pk, T.simulate(x, units, ek, pk, inp),
+                               T.base(x, units, inp), inp)
+                if y.in_band and y.pays_back and y.profit_kzt > mine.profit_kzt:
+                    beaten.append(f"{e:g} MWh × {c:g} C {y.profit_kzt / 1e6:,.1f} M")
+        check(f"{g}: none of the reference's 24 sizes at its prices earns more over its life "
+              f"than the default ({mine.profit_kzt / 1e6:,.1f} M ₸), in the band and before "
+              "wear-out", not beaten and bool(mine.in_band and mine.pays_back), "; ".join(beaten[:3]))
+    print("   generators: one or more with the battery, the others as measured")
+    for keep in (("mwm",), ("zh2",), ("mwm", "zh2"), ()):
+        inp = T.with_inputs(with_battery=keep)
+        for g in T.GROUPS:
+            units = T.GROUPS[g]["units"]
+            r = T.run_group(g, inp)
+            x, s, y, t = r.x, r.sim, r.yours, r.today
+            fixed = [u for u in units if u not in keep]
+            same = all(np.array_equal(s["out"][u], x[f"{u}_measured"].fillna(0).values) for u in fixed)
+            same &= all(close(y[f"{u}_{k}"], t[f"{u}_{k}"]) for u in fixed
+                        for k in ("fuel", "run_h", "starts", "kwh"))
+            bal = np.abs(sum(s["out"][u] for u in units) + s["imp"] + s["dis"]
+                         - s["need"] - s["ch"] - s["exp"]).max()
+            rule_h = sum(y[f"{u}_run_h"] for u in units if u in keep)
+            bad = _formulas(r, inp)
+            check(f"{'+'.join(keep) or 'none'} on {g}: the others run as measured (output, fuel, "
+                  "hours, starts), every step balances, the formulas hold, the band counts the "
+                  "rule's hours", same and bal < 1e-6 and not bad and close(y.rule_run_h, rule_h)
+                  and bool(y.in_band) == bool(y.oob_h <= 0.01 * rule_h),
+                  f"bal {bal:.1e}; {', '.join(bad[:3])}")
+    x = T.hourly_steps("K")
+    hi = T.with_inputs(gen_eff=(("mwm", (0.45, 0.47, 0.48)), ("zh2", (0.396, 0.419, 0.432)),
+                                ("zh3", (0.396, 0.419, 0.432))),
+                       gen_kw=(("mwm", 1000.0), ("zh2", 1066.0), ("zh3", 1066.0)))
+    p = np.array([0.0, 30.0, 300.0, 500.0, 750.0, 1000.0])
+    f = T.fuel_kw("mwm", p, 50.0, hi)
+    pts = np.array([500 / 0.45, 750 / 0.47, 1000 / 0.48])
+    check("a typed rating and efficiencies give the fuel curve through rated × load ÷ efficiency",
+          f[0] == 0 and f[1] == 0 and np.allclose(f[3:], pts) and f[2] > 0)
+    check("and the engine hour: service rate × the typed rating", hi.om_h("mwm") == 6000.0)
+    r0, r1 = T.run_group("K", x=x), T.run_group("K", hi, x=x)
+    check("and they move today's fuel and the rule's",
+          r1.today.mwm_fuel < r0.today.mwm_fuel and not np.array_equal(r1.sim["out"]["mwm"], r0.sim["out"]["mwm"])
+          and r1.sim["out"]["mwm"].max() <= 1000.0 + 1e-9)
 
 
 # ------------------------------------------------------------------------------------- D
@@ -352,9 +428,16 @@ def e_page() -> None:
                "bp_rep_cost": "Replacement cost (% of CAPEX)"}
     bad = {k: labels.get(k) for k, v in battery.items() if labels.get(k) != v}
     check("the battery's fields are the dispatch study's", not bad, str(bad))
-    check("their values are the defaults", at.number_input(key="bp_kw").value == 990.0
-          and at.number_input(key="bp_kwh").value == 3000.0
-          and at.number_input(key="bp_capex").value == 273_024_000.0)
+    gens = all(at.checkbox(key=f"bp_on_{u}").value is True
+               and at.number_input(key=f"bp_kw_{u}").value == T.DEFAULTS.rated(u)
+               and [at.number_input(key=f"bp_e{f}_{u}").value for f in (50, 75, 100)]
+               == [round(100 * v, 1) for v in T.DEFAULTS.eff(u).values()]
+               for u in T.RATED)
+    check("a Generators panel: one row per engine, ticked, with its datasheet rating and "
+          "efficiencies", gens and 'reopt-panel-head"><span>Generators</span>' in html)
+    check("their values are the defaults", at.number_input(key="bp_kw").value == 1375.0
+          and at.number_input(key="bp_kwh").value == 5500.0
+          and at.number_input(key="bp_capex").value == 475_200_000.0)
     words = _texts(at).lower()
     left = [w for w in BANNED if w in words] + BANNED_WORDS.findall(words)
     check("before a run: no names of people or other apps, no C-rates", not left, str(left))
@@ -371,7 +454,7 @@ def e_page() -> None:
             f"{r.best.payback_y:.1f} y" if r.best is not None else "none"]
     check("ЖКПЗ's three cards are the rule's figures", cards == want, f"{cards} vs {want}")
     check("the report says which steps it ran on", "Measured steps:" in html)
-    check("the inputs table, 43 rows", html.count('class="bp-badge"') == 43)
+    check("the inputs table, 46 rows", html.count('class="bp-badge"') == 46)
     check("no history table and no Show picker", "Run history" not in html
           and not any(w.key in ("ts_show", "bp_show") for w in at.selectbox))
     for name in ("Жаркент 3", "Both plants, one battery", "ЖКПЗ"):
@@ -391,17 +474,35 @@ def e_page() -> None:
     check("a changed input shows the results are stale until the next run",
           any("other inputs" in w.value for w in at.warning)
           and at.session_state["bp_result"]["inp"] == T.DEFAULTS)
-    at.number_input(key="bp_kwh").set_value(2000.0).run(timeout=900)
+    at.number_input(key="bp_kwh").set_value(3000.0).run(timeout=900)
     at.number_input(key="bp_capex").set_value(180_000_000.0).run(timeout=900)
     at.button(key="bp_run").click().run(timeout=900)
     res = at.session_state["bp_result"]
     y = res["results"]["K"].yours
-    check("the next press runs the inputs typed: 2,000 kWh / 990 kW at 180 M ₸, grid 60",
-          not at.exception and res["inp"].energy_kwh == 2000.0 and res["inp"].grid_kzt_kwh == 60.0
-          and y.e_mwh == 2.0 and y.p_mw == 0.99 and close(y.capex_kzt, 180e6)
+    check("the next press runs the inputs typed: 3,000 kWh / 1,375 kW at 180 M ₸, grid 60",
+          not at.exception and res["inp"].energy_kwh == 3000.0 and res["inp"].grid_kzt_kwh == 60.0
+          and y.e_mwh == 3.0 and y.p_mw == 1.375 and close(y.capex_kzt, 180e6)
           and not any("other inputs" in w.value for w in at.warning))
     check("and names what was changed", any("Battery energy" in c.value and "Battery CAPEX" in c.value
                                             and "Grid price incl. VAT" in c.value for c in at.caption))
+
+    for u in ("zh2", "zh3"):
+        at.checkbox(key=f"bp_on_{u}").uncheck().run(timeout=900)
+    at.button(key="bp_run").click().run(timeout=900)
+    res = at.session_state["bp_result"]
+    html = " ".join(h.proto.body for h in at.get("html"))
+    check("one generator with the battery: the run takes it, and the page says the others run "
+          "as measured", not at.exception and res["inp"].with_battery == ("mwm",)
+          and "Generators with the battery: TEDOM Quanto 1200 (Жаркент)" in html
+          and "runs as measured" in html)
+    at.segmented_control(key="bp_entity").set_value("Жаркент 3").run(timeout=900)
+    html = " ".join(h.proto.body for h in at.get("html"))
+    check("a plant with none of its generators ticked says so and still draws",
+          not at.exception and "No generator of this plant works with the battery" in html)
+    at.checkbox(key="bp_on_mwm").uncheck().run(timeout=900)
+    run = at.button(key="bp_run")
+    check("with no generator ticked, Run scenario is off and the page says why",
+          run.disabled and any("at least one generator" in w.value for w in at.warning))
 
 
 # ------------------------------------------------------------------------------------- F
@@ -410,8 +511,10 @@ def f_reference() -> None:
     if not T.his_steps_available():
         print("  skipped: the run file is not on this machine (.playwright/output/zharkent/)")
         return
+    # the reference's own battery: 3,000 kWh / 990 kW at its price
+    ref = T.with_inputs(energy_kwh=3000.0, power_kw=990.0, capex_kzt=reference_price(3000, 990))
     for g in T.GROUPS:
-        r = T.run_group(g, x=T.his_steps(g))
+        r = T.run_group(g, ref, x=T.his_steps(g))
         h, hr = T.HIS_TODAY[g], T.HIS_RESULT[g]
         check(f"{g}: today {r.today.cost_kzt / 1e6:.1f} M = published {h['cost'] / 1e6:.1f}",
               round(r.today.cost_kzt / 1e5) == round(h["cost"] / 1e5))
@@ -468,11 +571,11 @@ def g_periods() -> None:
         check(f"{g}: each unit's starts by day add up to its starts",
               all(sum(u["starts_by_day"]) == u["starts"] for u in rows))
         b = st_["res"]["sizes"]["storage_units"]
-        check(f"{g}: the battery is yours, 3,000 kWh / 990 kW, cycles over the 85 % window",
-              len(b) == 1 and b[0]["energy_kwh"] == 3000 and b[0]["power_kw"] == 990
-              and close(b[0]["full_cycles"], sum(s["battery_discharge_kw"]) / (3000 * 0.85)))
+        check(f"{g}: the battery is yours, 5,500 kWh / 1,375 kW, cycles over the 85 % window",
+              len(b) == 1 and b[0]["energy_kwh"] == 5500 and b[0]["power_kw"] == 1375
+              and close(b[0]["full_cycles"], sum(s["battery_discharge_kw"]) / (5500 * 0.85)))
         check(f"{g}: the chart is labelled by the battery, not by a person",
-              st_["label"] == "Battery 3,000 kWh / 990 kW · by the rule", st_["label"])
+              st_["label"] == "Battery 5,500 kWh / 1,375 kW · by the rule", st_["label"])
     at = _page()
     [w for w in at.segmented_control if w.key == "study"][0].set_value(STUDY).run(timeout=900)
     at.button(key="bp_run").click().run(timeout=900)
